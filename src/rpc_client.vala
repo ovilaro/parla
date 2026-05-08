@@ -227,6 +227,35 @@ namespace Dc {
             yield call ("stop_io", Params.begin ().add_int (account_id).build ());
         }
 
+        public async int get_connectivity (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            var result = yield call ("get_connectivity",
+                Params.begin ().add_int (id).build ());
+            return (int) result.get_int ();
+        }
+
+        public async string get_connectivity_html (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            var result = yield call ("get_connectivity_html",
+                Params.begin ().add_int (id).build ());
+            return result.get_string ();
+        }
+
+        public async int64 get_account_file_size (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            var result = yield call ("get_account_file_size",
+                Params.begin ().add_int (id).build ());
+            return result.get_int ();
+        }
+
+        public async string? get_blob_dir (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            var result = yield call ("get_blob_dir",
+                Params.begin ().add_int (id).build ());
+            if (result == null || result.is_null ()) return null;
+            return result.get_string ();
+        }
+
         public async void add_transport_from_qr (int acct_id, string qr_text) throws Error {
             yield call ("add_transport_from_qr",
                 Params.begin ()
@@ -352,9 +381,14 @@ namespace Dc {
         }
 
         public async Json.Array? get_chatlist_entries (string? query = null) throws Error {
+            return yield get_chatlist_entries_for (account_id, query);
+        }
+
+        public async Json.Array? get_chatlist_entries_for (int acct_id,
+                                                            string? query = null) throws Error {
             var result = yield call ("get_chatlist_entries",
                 Params.begin ()
-                    .add_int (account_id)
+                    .add_int (acct_id)
                     .add_null ()            /* listFlags */
                     .add_string (query)
                     .add_null ()            /* contactId */
@@ -364,9 +398,14 @@ namespace Dc {
         }
 
         public async Json.Object? get_chatlist_items_by_entries (Json.Array entries) throws Error {
+            return yield get_chatlist_items_by_entries_for (account_id, entries);
+        }
+
+        public async Json.Object? get_chatlist_items_by_entries_for (int acct_id,
+                                                                      Json.Array entries) throws Error {
             var result = yield call ("get_chatlist_items_by_entries",
                 Params.begin ()
-                    .add_int (account_id)
+                    .add_int (acct_id)
                     .add_json_array (entries)
                     .build ());
             if (result == null) return null;
@@ -382,9 +421,15 @@ namespace Dc {
 
         public async Json.Array? get_message_ids (int chat_id,
                                                     bool info_only = false) throws Error {
+            return yield get_message_ids_for (account_id, chat_id, info_only);
+        }
+
+        public async Json.Array? get_message_ids_for (int acct_id,
+                                                       int chat_id,
+                                                       bool info_only = false) throws Error {
             var result = yield call ("get_message_ids",
                 Params.begin ()
-                    .add_int (account_id)
+                    .add_int (acct_id)
                     .add_int (chat_id)
                     .add_bool (info_only)
                     .add_bool (false)       /* addDayMarker */
@@ -407,9 +452,14 @@ namespace Dc {
         }
 
         public async Json.Object? get_messages (int[] msg_ids) throws Error {
+            return yield get_messages_for (account_id, msg_ids);
+        }
+
+        public async Json.Object? get_messages_for (int acct_id,
+                                                     int[] msg_ids) throws Error {
             var result = yield call ("get_messages",
                 Params.begin ()
-                    .add_int (account_id)
+                    .add_int (acct_id)
                     .add_int_array (msg_ids)
                     .build ());
             if (result == null) return null;

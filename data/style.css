@@ -104,3 +104,22 @@
 .image-viewer-overlay {
     background-color: rgba(0, 0, 0, 0.9);
 }
+
+.storage-quota-bar trough,
+.storage-chat-bar trough {
+    min-height: 10px;
+    border-radius: 6px;
+}
+
+.storage-quota-bar progress,
+.storage-chat-bar progress {
+    border-radius: 6px;
+}
+
+.storage-quota-warning progress {
+    background-color: @warning_color;
+}
+
+.storage-quota-error progress {
+    background-color: @error_color;
+}
