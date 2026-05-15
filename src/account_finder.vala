@@ -1,9 +1,15 @@
 namespace Dc {
 
+    public enum RpcServerSource {
+        AUTO = 0,
+        CUSTOM = 1,
+        DESKTOP = 2
+    }
+
     /**
-     * Locates Delta Chat Desktop installations and the deltachat-rpc-server
-     * binary via a small fixed list of well-known paths. No filesystem
-     * scanning — startup stays fast and predictable.
+     * Locates standalone, Parla-owned or distro-provided
+     * deltachat-rpc-server binaries. Delta Chat Desktop is only consulted
+     * when explicitly requested.
      */
     public class AccountFinder {
 
@@ -12,30 +18,62 @@ namespace Dc {
         /**
          * Return an absolute path to deltachat-rpc-server, or null if none found.
          *
-         * When `override_path` is non-empty, it is used exclusively: if it is
-         * not executable, null is returned so the caller can surface a
-         * "configured path is broken" error instead of silently falling back
-         * to the scan.
+         * Custom and Desktop modes are exclusive so broken explicit choices
+         * can be surfaced instead of silently falling back.
          */
-        public static string? find_rpc_server (string? override_path = null) {
-            if (override_path != null && override_path.length > 0) {
-                return FileUtils.test (override_path, FileTest.IS_EXECUTABLE) ? override_path : null;
+        public static string? find_rpc_server (string? custom_path = null,
+                                               RpcServerSource source = RpcServerSource.AUTO) {
+            switch (source) {
+            case RpcServerSource.CUSTOM:
+                return is_executable (custom_path) ? custom_path : null;
+            case RpcServerSource.DESKTOP:
+                return find_desktop_rpc_server ();
+            case RpcServerSource.AUTO:
+            default:
+                return find_standalone_rpc_server ();
+            }
+        }
+
+        private static string? find_standalone_rpc_server () {
+            string? env_path = Environment.get_variable ("PARLA_RPC_SERVER");
+            if (env_path != null && env_path.length > 0) {
+                return is_executable (env_path) ? env_path : null;
             }
 
-            /* PATH first — covers distro packages, /usr/local, and ~/.local/bin
-             * when the user has it exported. */
+            string? exe_dir = get_executable_dir ();
+            if (exe_dir != null) {
+                string prefix = Path.get_dirname (exe_dir);
+                string[] packaged = {
+                    Path.build_filename (exe_dir, RPC_BIN),
+                    Path.build_filename (prefix, "libexec", "parla", RPC_BIN),
+                    Path.build_filename (prefix, "lib", "parla", RPC_BIN),
+                    Path.build_filename ("/app", "bin", RPC_BIN),
+                    Path.build_filename ("/app", "libexec", "parla", RPC_BIN),
+                };
+                foreach (string candidate in packaged) {
+                    if (is_executable (candidate)) return candidate;
+                }
+            }
+
+            /* PATH covers distro packages and local installs. */
             string? in_path = Environment.find_program_in_path (RPC_BIN);
             if (in_path != null) return in_path;
 
             string home = Environment.get_home_dir ();
 
-            /* pip --user or manual install. */
-            string user_bin = Path.build_filename (home, ".local", "bin", RPC_BIN);
-            if (FileUtils.test (user_bin, FileTest.IS_EXECUTABLE)) return user_bin;
+            string[] user_bins = {
+                Path.build_filename (home, ".local", "bin", RPC_BIN),
+                Path.build_filename (home, ".cargo", "bin", RPC_BIN),
+            };
+            foreach (string candidate in user_bins) {
+                if (is_executable (candidate)) return candidate;
+            }
 
-            /* Electron-bundled binary inside a Delta Chat Desktop install.
-             * All installs share the same node_modules layout; only the root
-             * and the arch suffix differ. */
+            return null;
+        }
+
+        public static string? find_desktop_rpc_server () {
+            string home = Environment.get_home_dir ();
             string[] app_roots = {
                 "/opt/DeltaChat/resources/app.asar.unpacked",
                 Path.build_filename (home, ".local", "share", "flatpak", "app",
@@ -52,7 +90,7 @@ namespace Dc {
                 foreach (string arch in arch_dirs) {
                     string candidate = Path.build_filename (
                         root, "node_modules", "@deltachat", arch, RPC_BIN);
-                    if (FileUtils.test (candidate, FileTest.IS_EXECUTABLE)) {
+                    if (is_executable (candidate)) {
                         return candidate;
                     }
                 }
@@ -60,11 +98,42 @@ namespace Dc {
             return null;
         }
 
+        private static bool is_executable (string? path) {
+            return path != null && path.length > 0
+                && FileUtils.test (path, FileTest.IS_EXECUTABLE);
+        }
+
+        private static string? get_executable_dir () {
+            try {
+                string exe_path = FileUtils.read_link ("/proc/self/exe");
+                return Path.get_dirname (exe_path);
+            } catch (FileError e) {
+                return null;
+            }
+        }
+
         /**
-         * Return a Delta Chat Desktop data directory to reuse, or create
-         * and return a private fallback under ~/.config/parla.
+         * Return Parla's private Delta Chat data directory. Existing early
+         * Parla accounts under ~/.config/parla are kept in place.
          */
-        public static string get_data_dir () {
+        public static string get_parla_data_dir () {
+            string data_dir = Path.build_filename (
+                Environment.get_user_data_dir (), "parla");
+            string old_config_dir = Path.build_filename (
+                Environment.get_user_config_dir (), "parla");
+
+            string data_accounts = Path.build_filename (data_dir, "accounts");
+            string old_accounts = Path.build_filename (old_config_dir, "accounts");
+            if (!FileUtils.test (data_accounts, FileTest.IS_DIR) &&
+                FileUtils.test (old_accounts, FileTest.IS_DIR)) {
+                return old_config_dir;
+            }
+
+            DirUtils.create_with_parents (data_dir, 0700);
+            return data_dir;
+        }
+
+        public static string? find_desktop_data_dir () {
             string home = Environment.get_home_dir ();
             string[] candidates = {
                 Path.build_filename (home, ".var", "app",
@@ -77,9 +146,19 @@ namespace Dc {
                 string accounts = Path.build_filename (dir, "accounts");
                 if (FileUtils.test (accounts, FileTest.IS_DIR)) return dir;
             }
-            string fallback = Path.build_filename (home, ".config", "parla");
-            DirUtils.create_with_parents (fallback, 0700);
-            return fallback;
+            return null;
+        }
+
+        /**
+         * Return the account store to use. Parla owns its data by default;
+         * Delta Chat Desktop data is an explicit compatibility option.
+         */
+        public static string? get_data_dir (bool use_desktop_store = false) {
+            if (use_desktop_store) {
+                string? desktop_dir = find_desktop_data_dir ();
+                return desktop_dir;
+            }
+            return get_parla_data_dir ();
         }
 
         /**

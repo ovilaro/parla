@@ -256,16 +256,32 @@ namespace Dc {
             empty_status.title = "Parla";
             empty_status.description = "Select a chat to start messaging,\nor wait for the connection…";
 
-            /* Find the RPC server binary — user override then auto-scan. */
-            string? rpc_path = AccountFinder.find_rpc_server (settings.rpc_server_path);
+            /* Find the RPC server binary. Auto mode uses Parla/distro-owned
+               standalone servers; Desktop is an explicit compatibility mode. */
+            string? rpc_path = AccountFinder.find_rpc_server (
+                settings.rpc_server_path, settings.rpc_server_source);
             if (rpc_path == null) {
                 set_connection_status (false, "RPC server not found");
                 show_rpc_not_found ();
                 return;
             }
 
-            /* Determine data directory and accounts path */
-            string data_dir = AccountFinder.get_data_dir ();
+            /* Desktop mode reuses Delta Chat Desktop's account store; all
+             * other server sources use Parla's private account store.
+             */
+            string? data_dir = AccountFinder.get_data_dir (
+                settings.rpc_server_source == RpcServerSource.DESKTOP);
+            if (data_dir == null) {
+                empty_status.icon_name = "dialog-error-symbolic";
+                empty_status.title = "Desktop accounts not found";
+                empty_status.description =
+                    "Delta Chat Desktop's account store was not found.\n" +
+                    "Open Settings to choose another server source.";
+                set_connection_status (false, "Desktop accounts not found");
+                content_stack.visible_child_name = "empty";
+                show_toast ("Delta Chat Desktop accounts not found");
+                return;
+            }
             string accounts_path = Path.build_filename (data_dir, "accounts");
 
             /* Try to connect */
@@ -274,11 +290,11 @@ namespace Dc {
             } catch (Error e) {
                 string msg = e.message;
                 if ("already running" in msg.down () || "accounts.lock" in msg.down ()) {
-                    show_toast ("Cannot connect — Delta Chat Desktop is already running");
+                    show_toast ("Cannot connect - account store is already in use");
                     empty_status.description =
-                        "Delta Chat Desktop is already running.\n\n" +
-                        "Close it first, then restart this app.";
-                    set_connection_status (false, "Delta Chat Desktop is already running");
+                        "The Delta Chat account store is already in use.\n\n" +
+                        "Close the other Delta Chat or Parla process, then restart this app.";
+                    set_connection_status (false, "Account store is already in use");
                 } else {
                     show_toast ("RPC server error: " + msg);
                     empty_status.description = "Failed to start RPC server:\n\n" + Markup.escape_text (msg);
@@ -328,9 +344,20 @@ namespace Dc {
         private void show_rpc_not_found () {
             empty_status.icon_name = "dialog-error-symbolic";
             empty_status.title = "RPC server not found";
-            empty_status.description = settings.rpc_server_path.length > 0
-                ? "Configured path is missing or not executable:\n" + Markup.escape_text (settings.rpc_server_path)
-                : "deltachat-rpc-server was not found.\nOpen Settings to locate it, or install it.";
+            if (settings.rpc_server_source == RpcServerSource.CUSTOM &&
+                settings.rpc_server_path.length > 0) {
+                empty_status.description =
+                    "Configured path is missing or not executable:\n" +
+                    Markup.escape_text (settings.rpc_server_path);
+            } else if (settings.rpc_server_source == RpcServerSource.DESKTOP) {
+                empty_status.description =
+                    "Delta Chat Desktop's bundled server was not found.\n" +
+                    "Open Settings to choose a standalone server.";
+            } else {
+                empty_status.description =
+                    "Standalone deltachat-rpc-server was not found.\n" +
+                    "Open Settings to choose a server source, or install it.";
+            }
 
             var btn = new Gtk.Button.with_label ("Open Settings…");
             btn.add_css_class ("suggested-action");

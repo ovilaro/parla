@@ -13,6 +13,33 @@
     ],
     "modules": [
         {
+            "name": "deltachat-rpc-server",
+            "buildsystem": "simple",
+            "build-commands": [
+                "install -Dm755 deltachat-rpc-server /app/bin/deltachat-rpc-server"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "url": "https://github.com/chatmail/core/releases/download/v2.49.0/deltachat-rpc-server-x86_64-linux",
+                    "sha256": "28e10b40518f55fa8ce20edd119fa743dd29a22df372b58443ec53eb753cb50c",
+                    "dest-filename": "deltachat-rpc-server",
+                    "only-arches": [
+                        "x86_64"
+                    ]
+                },
+                {
+                    "type": "file",
+                    "url": "https://github.com/chatmail/core/releases/download/v2.49.0/deltachat-rpc-server-aarch64-linux",
+                    "sha256": "33acdc048060fcd51bc585f2eefdaa2cf93cca9306440f45be8c5936024732cf",
+                    "dest-filename": "deltachat-rpc-server",
+                    "only-arches": [
+                        "aarch64"
+                    ]
+                }
+            ]
+        },
+        {
             "name": "parla",
             "buildsystem": "meson",
             "sources": [

@@ -46,8 +46,8 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 
 ### Accounts & profile
 
-- **Auto-discovery** of existing Delta Chat accounts from Delta Chat Desktop, Flatpak and Snap installations — no re-login needed.
-- **Auto-discovery of `deltachat-rpc-server`** from `$PATH`, `~/.local/bin`, pip user installs, virtualenvs, and Flatpak runtimes.
+- **Private Parla account store** by default; Delta Chat Desktop compatibility mode reuses Desktop accounts.
+- **Auto-discovery of standalone `deltachat-rpc-server`** from the Parla bundle, distro packages, `$PATH`, `~/.local/bin`, and `~/.cargo/bin`.
 - **Multi-account** switching from the settings dialog.
 - **My Profile** dialog to edit display name, status and avatar.
 - **End-to-end encryption** via Autocrypt, handled by the Delta Chat core.
@@ -58,6 +58,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - Toggle Markdown rendering.
 - Toggle Shift+Enter vs Enter to send.
 - Toggle desktop notifications for incoming messages when the window is unfocused.
+- Choose the JSON-RPC server source: Parla/system, custom binary, or Delta Chat Desktop compatibility mode.
 
 ### Keyboard shortcuts
 
@@ -80,8 +81,9 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 # Install dependencies (Ubuntu)
 sudo apt install valac meson libgtk-4-dev libadwaita-1-dev libjson-glib-dev
 
-# Install the RPC backend
+# Install the RPC backend for source builds
 pip install deltachat-rpc-server
+# Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
 
 # Build & run
 make ; make run
@@ -94,8 +96,11 @@ make ; make run
 
 **Arch:** `sudo pacman -S vala meson gtk4 libadwaita json-glib`
 
-**FlatPak:** `flatpak install io.github.trufae.Parla.flatpak`
+**Flatpak:** `flatpak install io.github.trufae.Parla.flatpak`
 </details>
+
+See [docs/rpc-server.md](docs/rpc-server.md) for how Parla finds the JSON-RPC
+server and how to package it for Flatpak or distro packages.
 
 ## Contributing
 
