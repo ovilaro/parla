@@ -1112,6 +1112,12 @@ namespace Dc {
             about.release_notes_version = Parla.VERSION;
             about.release_notes =
                 "<ul>" +
+                "<li>Show user cache and server quota stats</li>" +
+                "<li>Download and update chatmail jsonrpc server</li>" +
+                "<li>No longer depends on deltachat desktop by default</li>" +
+                "</ul>" +
+                "<p>Version 0.2.4</p>" +
+                "<ul>" +
                 "<li>Account creation</li>" +
                 "<li>Enter chat via invite link</li>" +
                 "<li>Manage relay profiles</li>" +
@@ -1121,7 +1127,7 @@ namespace Dc {
                 "<li>Prompt before destructive actions</li>" +
                 "<li>Next/prev picture with arrows</li>" +
                 "</ul>" +
-                "<p>Previously in 0.2.2</p>" +
+                "<p>Version 0.2.2</p>" +
                 "<ul>" +
                 "<li>Focusable conversation list</li>" +
                 "<li>Paste images from clipboard</li>" +
@@ -1130,7 +1136,7 @@ namespace Dc {
                 "<li>Improve delete experience</li>" +
                 "<li>Composebar with emoji-picker</li>" +
                 "</ul>" +
-                "<p>Previously in 0.2.1</p>" +
+                "<p>Version 0.2.1</p>" +
                 "<ul>" +
                 "<li>Add factory reset option in settings</li>" +
                 "<li>Custom path to the JSONRPC server</li>" +

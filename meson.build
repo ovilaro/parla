@@ -1,5 +1,5 @@
 project('parla', ['vala', 'c'],
-  version: '0.2.4',
+  version: '0.2.6',
   meson_version: '>= 0.59.0',
 )
 
