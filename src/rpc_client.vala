@@ -1,197 +1,37 @@
 namespace Dc {
 
     /**
-     * JSONRPC client that communicates with deltachat-rpc-server over stdio.
-     * Each request is a JSON object terminated by newline.
+     * Typed Delta Chat RPC API facade.
+     * Transport/process concerns live in RpcTransport.
      */
     public class RpcClient : Object {
 
-        private Subprocess? process = null;
-        private DataInputStream? reader = null;
-        private OutputStream? writer = null;
-        private int next_id = 1;
-        private GenericArray<PendingCall> pending = new GenericArray<PendingCall> ();
-        private string last_stderr = "";
+        private RpcTransport transport;
 
         public signal void disconnected (string reason);
 
-        public bool is_connected { get; private set; default = false; }
+        public bool is_connected { get { return transport.is_connected; } }
         public int account_id { get; set; default = 0; }
         public string? self_email { get; set; default = null; }
 
-        /* ---- Connection lifecycle ---- */
+        construct {
+            transport = new RpcTransport ();
+            transport.disconnected.connect ((reason) => {
+                disconnected (reason);
+            });
+        }
 
         public async void start (string[] argv, string? cwd = null,
                                    string? accounts_path = null) throws Error {
-            var flags = SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDOUT_PIPE
-                        | SubprocessFlags.STDERR_PIPE;
-            var launcher = new SubprocessLauncher (flags);
-            if (cwd != null) {
-                launcher.set_cwd (cwd);
-            }
-            if (accounts_path != null) {
-                launcher.setenv ("DC_ACCOUNTS_PATH", accounts_path, true);
-            }
-            process = launcher.spawnv (argv);
-            writer = process.get_stdin_pipe ();
-            reader = new DataInputStream (process.get_stdout_pipe ());
-            reader.set_newline_type (DataStreamNewlineType.LF);
-
-            /* Drain stderr in background to prevent pipe buffer deadlock */
-            drain_stderr.begin ();
-
-            /* Start the read loop */
-            read_loop.begin ();
-
-            /* Test connectivity — if the process died, report stderr */
-            try {
-                yield call ("get_system_info", Params.begin ().build ());
-            } catch (Error e) {
-                /* Give stderr drain a moment to collect output */
-                yield nap (200);
-                if (last_stderr.length > 0) {
-                    throw new IOError.FAILED ("%s", last_stderr);
-                }
-                throw e;
-            }
-            is_connected = true;
-        }
-
-        private async void drain_stderr () {
-            if (process == null) return;
-            try {
-                var err_stream = new DataInputStream (process.get_stderr_pipe ());
-                string? line;
-                size_t len;
-                while ((line = yield err_stream.read_line_utf8_async (
-                            Priority.DEFAULT, null, out len)) != null) {
-                    last_stderr = line.strip ();
-                }
-            } catch (Error e) {
-                /* ignore */
-            }
-        }
-
-        private async void nap (uint ms) {
-            Timeout.add (ms, nap.callback);
-            yield;
+            yield transport.start (argv, cwd, accounts_path);
         }
 
         public void stop () {
-            is_connected = false;
-            if (process != null) {
-                process.force_exit ();
-                process = null;
-            }
-            writer = null;
-            reader = null;
+            transport.stop ();
         }
-
-        /* ---- Low-level JSONRPC ---- */
 
         public async Json.Node? call (string method, Json.Node params) throws Error {
-            if (writer == null || reader == null) {
-                throw new IOError.NOT_CONNECTED ("RPC client not connected");
-            }
-
-            int id = next_id++;
-            send_request (id, method, params);
-
-            var pc = new PendingCall (id);
-            pc.callback = call.callback;
-            pending.add (pc);
-            yield;
-
-            /* Resumed — remove from pending and check result */
-            remove_pending (id);
-
-            if (pc.error_msg != null) {
-                throw new IOError.FAILED ("RPC %s: %s", method, pc.error_msg);
-            }
-            return pc.result;
-        }
-
-        private void send_request (int id, string method, Json.Node params) throws Error {
-            var b = new Json.Builder ();
-            b.begin_object ();
-            b.set_member_name ("jsonrpc"); b.add_string_value ("2.0");
-            b.set_member_name ("id");      b.add_int_value (id);
-            b.set_member_name ("method");  b.add_string_value (method);
-            b.set_member_name ("params");  b.add_value (params);
-            b.end_object ();
-
-            var gen = new Json.Generator ();
-            gen.set_root (b.get_root ());
-            size_t json_len;
-            string json = gen.to_data (out json_len);
-            string line = json + "\n";
-
-            size_t written;
-            writer.write_all (line.data, out written);
-            writer.flush ();
-        }
-
-        private async void read_loop () {
-            try {
-                while (true) {
-                    size_t len;
-                    string? line = yield reader.read_line_utf8_async (
-                        Priority.DEFAULT, null, out len);
-                    if (line == null) break;
-                    if (line.strip ().length == 0) continue;
-
-                    var parser = new Json.Parser ();
-                    parser.load_from_data (line);
-                    var root = parser.get_root ();
-                    if (root == null || root.get_node_type () != Json.NodeType.OBJECT)
-                        continue;
-
-                    var obj = root.get_object ();
-                    if (!obj.has_member ("id")) continue;
-
-                    int resp_id = (int) obj.get_int_member ("id");
-                    PendingCall? pc = find_pending (resp_id);
-                    if (pc == null) continue;
-
-                    if (obj.has_member ("error") &&
-                        !obj.get_member ("error").is_null ()) {
-                        var err = obj.get_object_member ("error");
-                        pc.error_msg = err.has_member ("message")
-                            ? err.get_string_member ("message")
-                            : "Unknown RPC error";
-                    } else if (obj.has_member ("result")) {
-                        var result_member = obj.get_member ("result");
-                        pc.result = (result_member != null) ? result_member.copy () : null;
-                    }
-
-                    if (pc.callback != null) {
-                        var cb = (owned) pc.callback;
-                        pc.callback = null;
-                        Idle.add ((owned) cb);
-                    }
-                }
-            } catch (Error e) {
-                warning ("RPC read loop error: %s", e.message);
-            }
-
-            is_connected = false;
-            disconnected ("RPC server closed");
-        }
-
-        private PendingCall? find_pending (int id) {
-            for (int i = 0; i < pending.length; i++) {
-                if (pending[i].id == id) return pending[i];
-            }
-            return null;
-        }
-
-        private void remove_pending (int id) {
-            for (int i = 0; i < pending.length; i++) {
-                if (pending[i].id == id) {
-                    pending.remove_index (i);
-                    return;
-                }
-            }
+            return yield transport.call (method, params);
         }
 
         /* ---- High-level RPC methods ---- */
@@ -448,7 +288,7 @@ namespace Dc {
         public async Message? fetch_message (int msg_id) throws Error {
             var obj = yield get_message (msg_id);
             if (obj == null) return null;
-            return parse_message (obj, self_email);
+            return RpcParsers.parse_message (obj, self_email);
         }
 
         public async Json.Object? get_messages (int[] msg_ids) throws Error {
@@ -689,232 +529,5 @@ namespace Dc {
                     .build ());
         }
 
-        /* ---- Parsing helpers ---- */
-
-        /**
-         * Parse a JSON contact object into a Dc.Contact model.
-         */
-        public static Contact parse_contact (int contact_id, Json.Object obj) {
-            var c = new Contact ();
-            c.id = contact_id;
-            c.display_name = json_str (obj, "displayName") ?? "";
-            c.address = json_str (obj, "address") ?? "";
-            c.profile_image = json_str (obj, "profileImage");
-            c.is_verified = json_bool (obj, "isVerified");
-            return c;
-        }
-
-        /**
-         * Parse a JSON message object into a Dc.Message model.
-         */
-        public static Message parse_message (Json.Object obj, string? self_email = null) {
-            var msg = new Message ();
-            msg.id = (int) json_int (obj, "id");
-            msg.chat_id = (int) json_int (obj, "chatId");
-            msg.text = json_str (obj, "text");
-            msg.timestamp = json_int (obj, "timestamp");
-            msg.is_info = json_bool (obj, "isInfo");
-
-            msg.file_path = json_str (obj, "file");
-            msg.file_name = json_str (obj, "fileName");
-            msg.file_mime = json_str (obj, "fileMime");
-            msg.file_bytes = (int) json_int (obj, "fileBytes");
-            msg.view_type = json_str (obj, "viewType");
-            msg.state = (int) json_int (obj, "state");
-
-            if (obj.has_member ("sender") && !obj.get_member ("sender").is_null ()) {
-                var sender = obj.get_object_member ("sender");
-                msg.sender_address = json_str (sender, "address");
-                msg.sender_name = json_str (sender, "displayName")
-                    ?? json_str (sender, "name");
-            }
-
-            /* Determine outgoing status */
-            if (self_email != null && msg.sender_address != null) {
-                msg.is_outgoing = msg.sender_address.down () == self_email.down ();
-            }
-            /* fromId == 1 means self in DeltaChat */
-            if (obj.has_member ("fromId") && obj.get_int_member ("fromId") == 1) {
-                msg.is_outgoing = true;
-            }
-
-            /* Reactions */
-            if (obj.has_member ("reactions") && !obj.get_member ("reactions").is_null ()) {
-                var reactions_obj = obj.get_object_member ("reactions");
-                if (reactions_obj != null &&
-                    reactions_obj.has_member ("reactionsByContact") &&
-                    !reactions_obj.get_member ("reactionsByContact").is_null ()) {
-                    var by_contact = reactions_obj.get_object_member ("reactionsByContact");
-                    string[] r_emojis = {};
-                    int[] r_counts = {};
-
-                    var members = by_contact.get_members ();
-                    foreach (unowned string cid in members) {
-                        var node = by_contact.get_member (cid);
-                        if (node.get_node_type () != Json.NodeType.ARRAY) continue;
-                        var arr = node.get_array ();
-                        for (uint j = 0; j < arr.get_length (); j++) {
-                            string emoji = arr.get_string_element (j);
-                            int found = -1;
-                            for (int k = 0; k < r_emojis.length; k++) {
-                                if (r_emojis[k] == emoji) { found = k; break; }
-                            }
-                            if (found >= 0) {
-                                r_counts[found] = r_counts[found] + 1;
-                            } else {
-                                r_emojis += emoji;
-                                r_counts += 1;
-                            }
-                        }
-                    }
-
-                    if (r_emojis.length > 0) {
-                        var sb = new StringBuilder ();
-                        for (int k = 0; k < r_emojis.length; k++) {
-                            if (sb.len > 0) sb.append (",");
-                            sb.append_printf ("%s:%d", r_emojis[k], r_counts[k]);
-                        }
-                        msg.reactions = sb.str;
-                    }
-                }
-            }
-
-            /* Quote / reply */
-            if (obj.has_member ("quote") && !obj.get_member ("quote").is_null ()) {
-                var quote = obj.get_object_member ("quote");
-                msg.quote_text = json_str (quote, "text");
-                msg.quote_sender_name = json_str (quote, "authorDisplayName");
-                msg.quote_msg_id = (int) json_int (quote, "messageId");
-            }
-
-            return msg;
-        }
-
-        /**
-         * Parse a chatlist item JSON object into a Dc.ChatEntry model.
-         */
-        public static ChatEntry parse_chat_item (int chat_id, Json.Object obj) {
-            var entry = new ChatEntry ();
-            entry.id = chat_id;
-            entry.name = json_str (obj, "name") ?? "";
-
-            var s1 = json_str (obj, "summaryText1");
-            if (s1 != null && s1.length > 0) entry.summary_prefix = s1;
-
-            var s2 = json_str (obj, "summaryText2");
-            if (s2 != null && s2.length > 0) entry.last_message = s2;
-
-            if (entry.last_message == null) {
-                entry.last_message = json_str (obj, "lastMessageText");
-            }
-
-            entry.unread_count = (int) json_int (obj, "freshMessageCounter");
-            entry.timestamp = json_int (obj, "lastMessageTimestamp");
-            entry.avatar_path = json_str (obj, "avatarPath");
-            entry.is_muted = json_bool (obj, "isMuted");
-            entry.is_contact_request = json_bool (obj, "isContactRequest");
-            entry.is_archived = json_bool (obj, "isArchived");
-            entry.is_pinned = json_bool (obj, "isPinned");
-            return entry;
-        }
-    }
-
-    /* Pending call bookkeeping for async RPC */
-    private class PendingCall {
-        public int id;
-        public SourceFunc? callback = null;
-        public Json.Node? result = null;
-        public string? error_msg = null;
-
-        public PendingCall (int id) {
-            this.id = id;
-        }
-    }
-
-    /**
-     * Fluent builder for JSONRPC "params" arrays.
-     * Replaces the build_params_* overload family and scattered inline Json.Builder use.
-     */
-    public class Params : Object {
-        private Json.Builder b;
-
-        private Params () {
-            b = new Json.Builder ();
-            b.begin_array ();
-        }
-
-        public static Params begin () {
-            return new Params ();
-        }
-
-        public Params add_int (int v) {
-            b.add_int_value (v);
-            return this;
-        }
-
-        public Params add_string (string? v) {
-            if (v != null) b.add_string_value (v);
-            else b.add_null_value ();
-            return this;
-        }
-
-        public Params add_bool (bool v) {
-            b.add_boolean_value (v);
-            return this;
-        }
-
-        public Params add_null () {
-            b.add_null_value ();
-            return this;
-        }
-
-        public Params add_int_array (int[] values) {
-            b.begin_array ();
-            foreach (int v in values) b.add_int_value (v);
-            b.end_array ();
-            return this;
-        }
-
-        public Params add_string_array (string[] values) {
-            b.begin_array ();
-            foreach (string v in values) b.add_string_value (v);
-            b.end_array ();
-            return this;
-        }
-
-        public Params add_json_array (Json.Array arr) {
-            var node = new Json.Node (Json.NodeType.ARRAY);
-            node.set_array (arr);
-            b.add_value (node);
-            return this;
-        }
-
-        public Params begin_object () {
-            b.begin_object ();
-            return this;
-        }
-
-        public Params end_object () {
-            b.end_object ();
-            return this;
-        }
-
-        public Params set_string_member (string name, string? value) {
-            b.set_member_name (name);
-            if (value != null) b.add_string_value (value);
-            else b.add_null_value ();
-            return this;
-        }
-
-        public Params set_null_member (string name) {
-            b.set_member_name (name);
-            b.add_null_value ();
-            return this;
-        }
-
-        public Json.Node build () {
-            b.end_array ();
-            return b.get_root ();
-        }
     }
 }

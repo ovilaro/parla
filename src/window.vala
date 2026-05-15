@@ -416,7 +416,7 @@ namespace Dc {
 
                     if (items != null && items.has_member (id_str)) {
                         var item = items.get_object_member (id_str);
-                        var entry = RpcClient.parse_chat_item (chat_id, item);
+                        var entry = RpcParsers.parse_chat_item (chat_id, item);
                         chat_store.append (entry);
 
                         var row = new Gtk.ListBoxRow ();

@@ -118,7 +118,7 @@ namespace Dc {
                     var obj = yield rpc.get_contact (cid);
                     if (obj == null) continue;
 
-                    var ci = RpcClient.parse_contact (cid, obj);
+                    var ci = RpcParsers.parse_contact (cid, obj);
                     if (ci.address.length == 0) continue;
 
                     all_contacts.add (ci);

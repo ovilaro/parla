@@ -623,7 +623,7 @@ namespace Dc {
             if (items != null) {
                 string key = chat_id.to_string ();
                 if (items.has_member (key)) {
-                    var entry = RpcClient.parse_chat_item (
+                    var entry = RpcParsers.parse_chat_item (
                         chat_id, items.get_object_member (key));
                     if (entry.name.length > 0) return entry.name;
                 }
@@ -659,7 +659,7 @@ namespace Dc {
                     if (node == null || node.get_node_type () != Json.NodeType.OBJECT)
                         continue;
 
-                    var msg = RpcClient.parse_message (node.get_object ());
+                    var msg = RpcParsers.parse_message (node.get_object ());
                     add_message_usage (usage, msg);
                 }
             }

@@ -334,7 +334,7 @@ namespace Dc {
                 foreach (int mid in ids) {
                     string k = mid.to_string ();
                     if (map.has_member (k)) {
-                        result.add (RpcClient.parse_message (
+                        result.add (RpcParsers.parse_message (
                             map.get_object_member (k), rpc.self_email));
                     }
                 }

@@ -168,7 +168,7 @@ namespace Dc {
                         member_contact_ids += cid;
                         var contact_obj = yield rpc.get_contact (cid);
                         if (contact_obj == null) continue;
-                        var contact = RpcClient.parse_contact (cid, contact_obj);
+                        var contact = RpcParsers.parse_contact (cid, contact_obj);
 
                         var row = build_contact_row (contact);
                         members_list.append (row);
@@ -314,7 +314,7 @@ namespace Dc {
                 /* Refresh the member list */
                 var contact_obj = yield rpc.get_contact (contact_id);
                 if (contact_obj != null && members_list != null) {
-                    var contact = RpcClient.parse_contact (contact_id, contact_obj);
+                    var contact = RpcParsers.parse_contact (contact_id, contact_obj);
                     var row = build_contact_row (contact);
                     members_list.append (row);
                 }
