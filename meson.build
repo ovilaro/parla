@@ -36,6 +36,7 @@ sources = files(
   'src/contact_picker_dialog.vala',
   'src/new_group_dialog.vala',
   'src/settings_dialog.vala',
+  'src/storage_quota.vala',
   'src/profile_dialog.vala',
   'src/pinned_messages_manager.vala',
   'src/quick_switch_dialog.vala',
@@ -60,3 +61,12 @@ install_data(
   'data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
+
+storage_quota_test = executable(
+  'storage-quota-test',
+  files('tests/storage_quota_test.vala', 'src/storage_quota.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0')],
+  install: false,
+)
+
+test('storage-quota', storage_quota_test)

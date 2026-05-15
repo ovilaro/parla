@@ -270,7 +270,7 @@ namespace Dc {
                     connection_label_for_state (connectivity);
 
                 string html = yield rpc.get_connectivity_html (account_id);
-                var quota = StorageQuota.from_connectivity_html (html);
+                var quota = StorageQuota.parse_connectivity_report (html);
                 set_storage_quota_summary (quota);
             } catch (Error e) {
                 connectivity_status_label.label = "Connection details unavailable";
@@ -381,71 +381,6 @@ namespace Dc {
                 avatar_changed = true;
                 avatar_widget.custom_image = load_avatar (path);
             }
-        }
-    }
-
-    private class StorageQuota : Object {
-        public bool available { get; set; default = false; }
-        public int64 used_bytes { get; set; default = 0; }
-        public int64 limit_bytes { get; set; default = 0; }
-
-        public static StorageQuota from_connectivity_html (string html) {
-            var quota = new StorageQuota ();
-            string text = strip_html (html);
-
-            try {
-                var rx = new Regex (
-                    "([0-9]+(?:[\\.,][0-9]+)?)\\s*([KMGT]?i?B)\\s+of\\s+" +
-                    "([0-9]+(?:[\\.,][0-9]+)?)\\s*([KMGT]?i?B)\\s+used",
-                    RegexCompileFlags.CASELESS);
-                MatchInfo match;
-                if (rx.match (text, 0, out match)) {
-                    double used = parse_number (match.fetch (1));
-                    string used_unit = match.fetch (2);
-                    double limit = parse_number (match.fetch (3));
-                    string limit_unit = match.fetch (4);
-                    quota.used_bytes = unit_to_bytes (used, used_unit);
-                    quota.limit_bytes = unit_to_bytes (limit, limit_unit);
-                    quota.available = quota.limit_bytes > 0;
-                }
-            } catch (Error e) {
-                /* keep unavailable */
-            }
-
-            return quota;
-        }
-
-        private static string strip_html (string html) {
-            string text = html;
-            try {
-                var tags = new Regex ("<[^>]+>");
-                text = tags.replace (text, -1, 0, " ");
-            } catch (Error e) { /* fallback */ }
-
-            text = text.replace ("&nbsp;", " ");
-            text = text.replace ("&amp;", "&");
-            text = text.replace ("&lt;", "<");
-            text = text.replace ("&gt;", ">");
-            text = text.replace ("&quot;", "\"");
-            try {
-                var spaces = new Regex ("\\s+");
-                text = spaces.replace (text, -1, 0, " ");
-            } catch (Error e) { /* fallback */ }
-            return text.strip ();
-        }
-
-        private static double parse_number (string s) {
-            return double.parse (s.replace (",", "."));
-        }
-
-        private static int64 unit_to_bytes (double value, string unit) {
-            string u = unit.up ();
-            double mult = 1.0;
-            if (u == "KB" || u == "KIB") mult = 1024.0;
-            else if (u == "MB" || u == "MIB") mult = 1024.0 * 1024.0;
-            else if (u == "GB" || u == "GIB") mult = 1024.0 * 1024.0 * 1024.0;
-            else if (u == "TB" || u == "TIB") mult = 1024.0 * 1024.0 * 1024.0 * 1024.0;
-            return (int64) (value * mult);
         }
     }
 
@@ -602,7 +537,7 @@ namespace Dc {
 
                 try {
                     string html = yield rpc.get_connectivity_html (account_id);
-                    set_quota (StorageQuota.from_connectivity_html (html));
+                    set_quota (StorageQuota.parse_connectivity_report (html));
                 } catch (Error e) {
                     quota_progress.fraction = 0.0;
                     quota_label.label = "Server quota unavailable: " + e.message;

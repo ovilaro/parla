@@ -1,0 +1,174 @@
+namespace Dc {
+
+    public class StorageQuota : Object {
+        public bool available { get; set; default = false; }
+        public int64 used_bytes { get; set; default = 0; }
+        public int64 limit_bytes { get; set; default = 0; }
+
+        private static Regex? quota_re = null;
+
+        public static StorageQuota parse_connectivity_report (string report) {
+            var quota = new StorageQuota ();
+            string text = html_to_text (report);
+
+            try {
+                ensure_regex ();
+                MatchInfo match;
+                if (quota_re.match (text, 0, out match)) {
+                    double used = parse_number (match.fetch (1));
+                    string used_unit = match.fetch (2);
+                    double limit = parse_number (match.fetch (3));
+                    string limit_unit = match.fetch (4);
+                    quota.used_bytes = unit_to_bytes (used, used_unit);
+                    quota.limit_bytes = unit_to_bytes (limit, limit_unit);
+                    quota.available = quota.limit_bytes > 0;
+                }
+            } catch (Error e) {
+                /* Keep quota unavailable when the server report changes shape. */
+            }
+
+            return quota;
+        }
+
+        private static void ensure_regex () throws RegexError {
+            if (quota_re != null) return;
+            quota_re = new Regex (
+                "([0-9]+(?:[\\.,][0-9]+)?)\\s*([KMGT]?i?B)\\s+of\\s+" +
+                "([0-9]+(?:[\\.,][0-9]+)?)\\s*([KMGT]?i?B)\\s+used",
+                RegexCompileFlags.CASELESS);
+        }
+
+        private static string html_to_text (string html) {
+            var sb = new StringBuilder ();
+            bool in_tag = false;
+            bool last_space = false;
+
+            for (int i = 0; i < html.length; i++) {
+                char c = html[i];
+                if (in_tag) {
+                    if (c == '>') {
+                        in_tag = false;
+                        append_space (sb, ref last_space);
+                    }
+                    continue;
+                }
+
+                if (c == '<') {
+                    in_tag = true;
+                    append_space (sb, ref last_space);
+                    continue;
+                }
+
+                if (c == '&') {
+                    int semi = html.index_of_char (';', i + 1);
+                    if (semi > i && semi - i <= 16) {
+                        string? decoded = decode_entity (
+                            html.substring (i + 1, semi - i - 1));
+                        if (decoded != null) {
+                            append_text (sb, decoded, ref last_space);
+                            i = semi;
+                            continue;
+                        }
+                    }
+                }
+
+                if (is_space (c)) {
+                    append_space (sb, ref last_space);
+                } else {
+                    sb.append_c (c);
+                    last_space = false;
+                }
+            }
+
+            return sb.str.strip ();
+        }
+
+        private static string? decode_entity (string entity) {
+            string e = entity.down ();
+            switch (e) {
+            case "amp":
+                return "&";
+            case "lt":
+                return "<";
+            case "gt":
+                return ">";
+            case "quot":
+                return "\"";
+            case "apos":
+                return "'";
+            case "nbsp":
+                return " ";
+            default:
+                if (e.has_prefix ("#")) {
+                    return decode_numeric_entity (e);
+                }
+                return null;
+            }
+        }
+
+        private static string? decode_numeric_entity (string entity) {
+            int start = 1;
+            int radix = 10;
+            if (entity.length > 2 && entity[1] == 'x') {
+                start = 2;
+                radix = 16;
+            }
+
+            uint code = 0;
+            for (int i = start; i < entity.length; i++) {
+                int digit = digit_for_base (entity[i], radix);
+                if (digit < 0) return null;
+                code = code * radix + digit;
+                if (code > 0x10ffff) return null;
+            }
+            if (code == 0) return null;
+
+            unichar ch = (unichar) code;
+            return ch.to_string ();
+        }
+
+        private static int digit_for_base (char c, int radix) {
+            int digit = -1;
+            if (c >= '0' && c <= '9') digit = c - '0';
+            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            return digit >= 0 && digit < radix ? digit : -1;
+        }
+
+        private static void append_text (StringBuilder sb, string text,
+                                          ref bool last_space) {
+            if (text.length == 0) return;
+            if (text.strip ().length == 0) {
+                append_space (sb, ref last_space);
+                return;
+            }
+            sb.append (text);
+            last_space = false;
+        }
+
+        private static void append_space (StringBuilder sb, ref bool last_space) {
+            if (last_space || sb.len == 0) return;
+            sb.append_c (' ');
+            last_space = true;
+        }
+
+        private static bool is_space (char c) {
+            return c == ' ' || c == '\t' || c == '\n' ||
+                   c == '\r' || c == '\f';
+        }
+
+        private static double parse_number (string s) {
+            return double.parse (s.replace (",", "."));
+        }
+
+        private static int64 unit_to_bytes (double value, string unit) {
+            string u = unit.up ();
+            double mult = 1.0;
+            if (u == "KB" || u == "KIB") mult = 1024.0;
+            else if (u == "MB" || u == "MIB") mult = 1024.0 * 1024.0;
+            else if (u == "GB" || u == "GIB") mult = 1024.0 * 1024.0 * 1024.0;
+            else if (u == "TB" || u == "TIB") mult = 1024.0 * 1024.0 * 1024.0 * 1024.0;
+            return (int64) (value * mult);
+        }
+    }
+}
