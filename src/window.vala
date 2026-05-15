@@ -419,11 +419,12 @@ namespace Dc {
                         var entry = RpcClient.parse_chat_item (chat_id, item);
                         chat_store.append (entry);
 
-                        var chat_row = new ChatRow (entry);
-                        chat_listbox.append (chat_row);
+                        var row = new Gtk.ListBoxRow ();
+                        row.child = new ChatRow (entry);
+                        chat_listbox.append (row);
 
                         if (chat_id == current_chat_id) {
-                            reselect_row = chat_listbox.get_row_at_index ((int) i);
+                            reselect_row = row;
                         }
                     }
                 }
