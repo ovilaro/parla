@@ -349,10 +349,6 @@ namespace Dc {
             var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             row.halign = Gtk.Align.END;
 
-            var paste_btn = new Gtk.Button.with_label ("Paste from Clipboard");
-            paste_btn.clicked.connect (paste_from_clipboard);
-            row.append (paste_btn);
-
             start_btn = new Gtk.Button.with_label ("Create Profile");
             start_btn.add_css_class ("suggested-action");
             start_btn.sensitive = false;
@@ -401,23 +397,6 @@ namespace Dc {
 
         private void update_start_sensitivity () {
             start_btn.sensitive = invite_entry.text.strip ().length > 0;
-        }
-
-        private void paste_from_clipboard () {
-            var display = this.get_display ();
-            if (display == null) return;
-            var clipboard = display.get_clipboard ();
-            clipboard.read_text_async.begin (null, (obj, res) => {
-                try {
-                    string? text = clipboard.read_text_async.end (res);
-                    if (text != null) {
-                        invite_entry.text = text.strip ();
-                        invite_entry.grab_focus_without_selecting ();
-                    }
-                } catch (Error e) {
-                    /* no clipboard text */
-                }
-            });
         }
 
         private async void start_create () {
@@ -646,10 +625,6 @@ namespace Dc {
             var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             row.halign = Gtk.Align.END;
 
-            var paste_btn = new Gtk.Button.with_label ("Paste from Clipboard");
-            paste_btn.clicked.connect (paste_from_clipboard);
-            row.append (paste_btn);
-
             start_btn = new Gtk.Button.with_label ("Start Import");
             start_btn.add_css_class ("suggested-action");
             start_btn.sensitive = false;
@@ -700,23 +675,6 @@ namespace Dc {
         private void update_start_sensitivity () {
             string t = url_entry.text.strip ();
             start_btn.sensitive = t.length > 0;
-        }
-
-        private void paste_from_clipboard () {
-            var display = this.get_display ();
-            if (display == null) return;
-            var clipboard = display.get_clipboard ();
-            clipboard.read_text_async.begin (null, (obj, res) => {
-                try {
-                    string? text = clipboard.read_text_async.end (res);
-                    if (text != null) {
-                        url_entry.text = text.strip ();
-                        url_entry.grab_focus_without_selecting ();
-                    }
-                } catch (Error e) {
-                    /* no clipboard text */
-                }
-            });
         }
 
         private void show_progress (string msg) {
