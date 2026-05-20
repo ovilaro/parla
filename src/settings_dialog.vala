@@ -2,6 +2,20 @@ namespace Dc {
 
     public delegate void SettingWriter (KeyFile kf);
 
+    public enum SidebarMode {
+        FULL = 0,
+        COMPACT = 1,
+        HIDDEN = 2;
+
+        public SidebarMode next () {
+            switch (this) {
+            case FULL: return COMPACT;
+            case COMPACT: return HIDDEN;
+            default: return FULL;
+            }
+        }
+    }
+
     public class SettingsManager : Object {
 
         public int double_click_action { get; set; default = 0; }
@@ -10,6 +24,7 @@ namespace Dc {
         public bool notifications_enabled { get; set; default = true; }
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
+        public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
 
         public static string get_config_path () {
             return Path.build_filename (
@@ -33,6 +48,9 @@ namespace Dc {
             int source = kf_int (kf, "rpc_server_source", default_source);
             if (source < 0 || source > 2) source = default_source;
             rpc_server_source = (RpcServerSource) source;
+            int sb = kf_int (kf, "sidebar_mode", (int) SidebarMode.FULL);
+            if (sb < 0 || sb > 2) sb = (int) SidebarMode.FULL;
+            sidebar_mode = (SidebarMode) sb;
         }
 
         private static int kf_int (KeyFile kf, string k, int d) {
@@ -76,6 +94,13 @@ namespace Dc {
             rpc_server_source = v;
             save_to_file ((kf) => {
                 kf.set_integer ("General", "rpc_server_source", (int) v);
+            });
+        }
+
+        public void save_sidebar_mode (SidebarMode v) {
+            sidebar_mode = v;
+            save_to_file ((kf) => {
+                kf.set_integer ("General", "sidebar_mode", (int) v);
             });
         }
 

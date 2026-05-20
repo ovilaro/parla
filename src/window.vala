@@ -4,11 +4,14 @@ namespace Dc {
 
         /* Layout */
         private Adw.ToastOverlay toast_overlay;
-        private Adw.NavigationSplitView split_view;
+        private Adw.OverlaySplitView split_view;
         private Adw.HeaderBar sidebar_header;
         private Adw.HeaderBar content_header;
         private Gtk.Label content_title_label;
         private Gtk.SearchEntry search_entry;
+        private Gtk.Box sidebar_box;
+        private Gtk.Button sidebar_toggle_btn;
+        private Adw.WindowTitle sidebar_title;
 
         /* Chat list */
         private Gtk.ListBox chat_listbox;
@@ -56,6 +59,8 @@ namespace Dc {
                 application: app,
                 default_width: 920,
                 default_height: 640,
+                width_request: 360,
+                height_request: 320,
                 title: "Parla"
             );
         }
@@ -83,11 +88,11 @@ namespace Dc {
 
         private void build_ui () {
             /* ---- Sidebar ---- */
-            var sidebar_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            sidebar_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
 
             sidebar_header = new Adw.HeaderBar ();
-            var title_widget = new Adw.WindowTitle ("Parla", "");
-            sidebar_header.title_widget = title_widget;
+            sidebar_title = new Adw.WindowTitle ("Parla", "");
+            sidebar_header.title_widget = sidebar_title;
 
             /* Profile/account menu button in header */
             profile_avatar = new Adw.Avatar (24, "", true);
@@ -156,8 +161,6 @@ namespace Dc {
             chat_scroll.child = chat_listbox;
             sidebar_box.append (chat_scroll);
 
-            var sidebar_page = new Adw.NavigationPage (sidebar_box, "Chats");
-
             /* ---- Content area ---- */
             var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
 
@@ -166,8 +169,11 @@ namespace Dc {
             content_title_label.add_css_class ("heading");
             content_header.title_widget = content_title_label;
 
-            /* Show sidebar on mobile */
-            content_header.show_back_button = true;
+            /* Sidebar tri-state cycle button (Full → Compact → Hidden → Full) */
+            sidebar_toggle_btn = new Gtk.Button.from_icon_name ("sidebar-show-symbolic");
+            sidebar_toggle_btn.add_css_class ("flat");
+            sidebar_toggle_btn.clicked.connect (() => { cycle_sidebar_mode (); });
+            content_header.pack_start (sidebar_toggle_btn);
 
             /* Search/filter button on the right side */
             var search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
@@ -189,17 +195,33 @@ namespace Dc {
             content_stack.visible_child_name = "empty";
             content_box.append (content_stack);
 
-            var content_page = new Adw.NavigationPage (content_box, "Messages");
-
             /* ---- Split view ---- */
-            split_view = new Adw.NavigationSplitView ();
-            split_view.sidebar = sidebar_page;
-            split_view.content = content_page;
+            split_view = new Adw.OverlaySplitView ();
+            split_view.sidebar = sidebar_box;
+            split_view.content = content_box;
             split_view.max_sidebar_width = 340;
             split_view.min_sidebar_width = 260;
+            split_view.sidebar_width_fraction = 0.32;
+            split_view.enable_show_gesture = true;
+            split_view.enable_hide_gesture = true;
 
             toast_overlay = new Adw.ToastOverlay ();
             toast_overlay.child = split_view;
+
+            /* Auto-collapse on narrow widths — sidebar slides over content */
+            var breakpoint = new Adw.Breakpoint (
+                Adw.BreakpointCondition.parse ("max-width: 600px"));
+            breakpoint.add_setter (split_view, "collapsed", true);
+            this.add_breakpoint (breakpoint);
+
+            /* When the window widens out of the collapsed breakpoint, re-apply
+               the persisted mode so a chat-selected-while-narrow doesn't leave
+               the sidebar stuck hidden. */
+            split_view.notify["collapsed"].connect (() => {
+                if (!split_view.collapsed) apply_sidebar_mode ();
+            });
+
+            apply_sidebar_mode ();
 
             /* Fullscreen image viewer overlay */
             var image_overlay = new Gtk.Overlay ();
@@ -420,7 +442,9 @@ namespace Dc {
                         chat_store.append (entry);
 
                         var row = new Gtk.ListBoxRow ();
-                        row.child = new ChatRow (entry);
+                        var chat_row = new ChatRow (entry);
+                        chat_row.set_compact (settings.sidebar_mode == SidebarMode.COMPACT);
+                        row.child = chat_row;
                         chat_listbox.append (row);
 
                         if (chat_id == current_chat_id) {
@@ -481,7 +505,10 @@ namespace Dc {
 
             notice_chat.begin (current_chat_id);
 
-            split_view.show_content = true;
+            /* In narrow/mobile mode, hide the sidebar so the chat takes over */
+            if (split_view.collapsed) {
+                split_view.show_sidebar = false;
+            }
         }
 
         private async void notice_chat (int chat_id) {
@@ -1343,6 +1370,68 @@ namespace Dc {
         }
 
         /* ================================================================
+         *  Sidebar mode (Full / Compact / Hidden)
+         * ================================================================ */
+
+        private void cycle_sidebar_mode () {
+            /* On narrow widths the sidebar can be visually hidden by the
+               collapse breakpoint without changing the persisted mode.
+               In that case, just bring it back instead of cycling. */
+            if (split_view.collapsed && !split_view.show_sidebar) {
+                split_view.show_sidebar = true;
+                return;
+            }
+            var next = settings.sidebar_mode.next ();
+            settings.save_sidebar_mode (next);
+            apply_sidebar_mode ();
+        }
+
+        private void apply_sidebar_mode () {
+            var mode = settings.sidebar_mode;
+            switch (mode) {
+            case SidebarMode.FULL:
+                split_view.show_sidebar = true;
+                split_view.min_sidebar_width = 260;
+                split_view.max_sidebar_width = 340;
+                split_view.sidebar_width_fraction = 0.32;
+                if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
+                if (search_entry != null) search_entry.visible = true;
+                if (sidebar_title != null) sidebar_title.title = "Parla";
+                sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
+                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (F9)";
+                break;
+            case SidebarMode.COMPACT:
+                split_view.show_sidebar = true;
+                split_view.min_sidebar_width = 72;
+                split_view.max_sidebar_width = 72;
+                split_view.sidebar_width_fraction = 0.0;
+                if (sidebar_box != null) sidebar_box.add_css_class ("sidebar-compact");
+                if (search_entry != null) search_entry.visible = false;
+                if (sidebar_title != null) sidebar_title.title = "";
+                sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
+                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (F9)";
+                break;
+            case SidebarMode.HIDDEN:
+                split_view.show_sidebar = false;
+                if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
+                sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
+                sidebar_toggle_btn.tooltip_text = "Show Sidebar (F9)";
+                break;
+            }
+            apply_compact_to_rows (mode == SidebarMode.COMPACT);
+        }
+
+        private void apply_compact_to_rows (bool compact) {
+            int idx = 0;
+            Gtk.ListBoxRow? row;
+            while ((row = chat_listbox.get_row_at_index (idx)) != null) {
+                var chat_row = row.child as ChatRow;
+                if (chat_row != null) chat_row.set_compact (compact);
+                idx++;
+            }
+        }
+
+        /* ================================================================
          *  Keyboard Shortcuts
          * ================================================================ */
 
@@ -1352,6 +1441,12 @@ namespace Dc {
              * other key closes). */
             if (image_viewer.visible) {
                 return image_viewer.handle_key (keyval);
+            }
+
+            /* F9: cycle the sidebar between Full → Compact → Hidden */
+            if (keyval == Gdk.Key.F9) {
+                cycle_sidebar_mode ();
+                return true;
             }
 
             /* Escape: close any open dialog, then focus input entry */
@@ -1459,6 +1554,7 @@ namespace Dc {
             "Search in conversation","<Control>f",
             "Quick switch chat",     "<Control>k",
             "Refresh messages",      "<Control>r",
+            "Cycle sidebar mode",    "F9",
             "Focus message entry",   "Escape",
             "Close window",          "<Control>w",
             "Quit application",      "<Control>q",

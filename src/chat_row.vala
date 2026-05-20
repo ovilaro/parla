@@ -3,48 +3,96 @@ namespace Dc {
     /**
      * A single row in the chat list sidebar.
      * Shows avatar placeholder, chat name, last message preview, time, and unread badge.
+     * Can switch between full and compact (avatar-only) presentations.
      */
     public class ChatRow : Gtk.Box {
 
         public int chat_id { get; private set; }
 
-        private Gtk.Label name_label;
-        private Gtk.Label preview_label;
-        private Gtk.Label time_label;
+        private Gtk.Box mid_box;
+        private Gtk.Overlay avatar_overlay;
         private Gtk.Label? badge_label = null;
+        private Gtk.Label? compact_unread_dot = null;
+        private Gtk.Label? compact_unread_count = null;
+        private Gtk.Image? compact_pin_icon = null;
+        private bool has_unread;
+        private bool is_muted;
+        private bool is_pinned;
+        private bool is_request;
+        private int unread_count;
+        private bool compact = false;
 
         public ChatRow (ChatEntry entry) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 10);
             this.chat_id = entry.id;
+            this.has_unread = entry.unread_count > 0 && !entry.is_contact_request;
+            this.is_muted = entry.is_muted;
+            this.is_pinned = entry.is_pinned;
+            this.is_request = entry.is_contact_request;
+            this.unread_count = entry.unread_count;
             add_css_class ("chat-row");
             margin_start = 8;
             margin_end = 8;
             margin_top = 4;
             margin_bottom = 4;
 
-            /* Avatar circle */
+            /* Avatar circle wrapped in an overlay so we can stick compact-mode
+               badge/pin markers on top of it. */
             var avatar = new Adw.Avatar (40, entry.name, true);
             avatar.custom_image = load_avatar (entry.avatar_path);
-            append (avatar);
 
-            /* Middle: name + preview */
-            var mid = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
-            mid.hexpand = true;
-            mid.valign = Gtk.Align.CENTER;
+            avatar_overlay = new Gtk.Overlay ();
+            avatar_overlay.child = avatar;
+            avatar_overlay.valign = Gtk.Align.CENTER;
+            avatar_overlay.halign = Gtk.Align.CENTER;
+
+            /* Compact unread indicator (badge or count) — shown only in compact */
+            if (is_request) {
+                compact_unread_dot = new Gtk.Label ("!");
+                compact_unread_dot.add_css_class ("compact-request-marker");
+                compact_unread_dot.halign = Gtk.Align.END;
+                compact_unread_dot.valign = Gtk.Align.START;
+                compact_unread_dot.visible = false;
+                avatar_overlay.add_overlay (compact_unread_dot);
+            } else if (has_unread) {
+                string txt = unread_count > 99 ? "99+" : unread_count.to_string ();
+                compact_unread_count = new Gtk.Label (txt);
+                compact_unread_count.add_css_class (
+                    is_muted ? "compact-unread-badge-muted" : "compact-unread-badge");
+                compact_unread_count.halign = Gtk.Align.END;
+                compact_unread_count.valign = Gtk.Align.START;
+                compact_unread_count.visible = false;
+                avatar_overlay.add_overlay (compact_unread_count);
+            }
+
+            /* Compact pin indicator — small bottom-right dot */
+            if (is_pinned) {
+                compact_pin_icon = new Gtk.Image.from_icon_name ("view-pin-symbolic");
+                compact_pin_icon.pixel_size = 12;
+                compact_pin_icon.add_css_class ("compact-pin-marker");
+                compact_pin_icon.halign = Gtk.Align.END;
+                compact_pin_icon.valign = Gtk.Align.END;
+                compact_pin_icon.visible = false;
+                avatar_overlay.add_overlay (compact_pin_icon);
+            }
+
+            append (avatar_overlay);
+
+            /* Middle: name + preview (hidden in compact mode) */
+            mid_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+            mid_box.hexpand = true;
+            mid_box.valign = Gtk.Align.CENTER;
 
             /* Top row: name + time */
             var top = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
 
-            /* Show unread dot only for real unread chats, not contact requests */
-            bool has_unread = entry.unread_count > 0 && !entry.is_contact_request;
-
             if (has_unread) {
-                var dot = new Gtk.Label ("\u25CF");
-                dot.add_css_class (entry.is_muted ? "unread-dot-muted" : "unread-dot");
+                var dot = new Gtk.Label ("●");
+                dot.add_css_class (is_muted ? "unread-dot-muted" : "unread-dot");
                 top.append (dot);
             }
 
-            name_label = new Gtk.Label (entry.name);
+            var name_label = new Gtk.Label (entry.name);
             name_label.add_css_class ("heading");
             if (has_unread) {
                 name_label.add_css_class ("unread-name");
@@ -55,23 +103,23 @@ namespace Dc {
             name_label.xalign = 0;
             top.append (name_label);
 
-            if (entry.is_pinned) {
+            if (is_pinned) {
                 var pin_label = new Gtk.Label ("📌");
                 pin_label.add_css_class ("dim-label");
                 pin_label.add_css_class ("caption");
                 top.append (pin_label);
             }
 
-            time_label = new Gtk.Label (format_time (entry.timestamp));
+            var time_label = new Gtk.Label (format_time (entry.timestamp));
             time_label.add_css_class ("dim-label");
             time_label.add_css_class ("caption");
             top.append (time_label);
 
-            mid.append (top);
+            mid_box.append (top);
 
             /* Bottom row: preview + badge */
             var bot = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-            preview_label = new Gtk.Label (format_preview (entry));
+            var preview_label = new Gtk.Label (format_preview (entry));
             if (!has_unread) {
                 preview_label.add_css_class ("dim-label");
             }
@@ -83,22 +131,45 @@ namespace Dc {
             bot.append (preview_label);
 
             /* Contact requests get a "Request" label instead of a count badge */
-            if (entry.is_contact_request) {
+            if (is_request) {
                 badge_label = new Gtk.Label ("Request");
                 badge_label.add_css_class ("contact-request-badge");
                 badge_label.halign = Gtk.Align.END;
                 badge_label.valign = Gtk.Align.CENTER;
                 bot.append (badge_label);
             } else if (has_unread) {
-                badge_label = new Gtk.Label (entry.unread_count.to_string ());
-                badge_label.add_css_class (entry.is_muted ? "unread-badge-muted" : "unread-badge");
+                badge_label = new Gtk.Label (unread_count.to_string ());
+                badge_label.add_css_class (is_muted ? "unread-badge-muted" : "unread-badge");
                 badge_label.halign = Gtk.Align.END;
                 badge_label.valign = Gtk.Align.CENTER;
                 bot.append (badge_label);
             }
 
-            mid.append (bot);
-            append (mid);
+            mid_box.append (bot);
+            append (mid_box);
+        }
+
+        public void set_compact (bool compact) {
+            if (this.compact == compact) return;
+            this.compact = compact;
+            mid_box.visible = !compact;
+            avatar_overlay.hexpand = compact;
+            if (compact) {
+                margin_start = 0;
+                margin_end = 0;
+                margin_top = 2;
+                margin_bottom = 2;
+                add_css_class ("chat-row-compact");
+            } else {
+                margin_start = 8;
+                margin_end = 8;
+                margin_top = 4;
+                margin_bottom = 4;
+                remove_css_class ("chat-row-compact");
+            }
+            if (compact_unread_dot != null) compact_unread_dot.visible = compact;
+            if (compact_unread_count != null) compact_unread_count.visible = compact;
+            if (compact_pin_icon != null) compact_pin_icon.visible = compact;
         }
 
 
