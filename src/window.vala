@@ -1179,6 +1179,15 @@ namespace Dc {
             about.release_notes_version = Parla.VERSION;
             about.release_notes =
                 "<ul>" +
+                "<li>Custom accent color</li>" +
+                "<li>Bubble chat/irc view</li>" +
+                "<li>Improved message reactions</li>" +
+                "<li>Select default profile</li>" +
+                "<li>Create channels</li>" +
+                "<li>Toggle sidebar with Control+S</li>" +
+                "</ul>" +
+                "<p>Version 0.2.6</p>" +
+                "<ul>" +
                 "<li>Show user cache and server quota stats</li>" +
                 "<li>Download and update chatmail jsonrpc server</li>" +
                 "<li>No longer depends on deltachat desktop by default</li>" +
