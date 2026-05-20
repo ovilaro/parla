@@ -16,7 +16,14 @@ namespace Dc {
         }
     }
 
+    public enum MessageStyle {
+        BUBBLES = 0,
+        IRC = 1;
+    }
+
     public class SettingsManager : Object {
+
+        public signal void appearance_changed ();
 
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
@@ -26,6 +33,8 @@ namespace Dc {
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
         public string default_account_addr { get; set; default = ""; }
+        public MessageStyle message_style { get; set; default = MessageStyle.BUBBLES; }
+        public string accent_color { get; set; default = ""; }
 
         public static string get_config_path () {
             return Path.build_filename (
@@ -53,6 +62,10 @@ namespace Dc {
             if (sb < 0 || sb > 2) sb = (int) SidebarMode.FULL;
             sidebar_mode = (SidebarMode) sb;
             default_account_addr = kf_str (kf, "default_account_addr", "");
+            int ms = kf_int (kf, "message_style", (int) MessageStyle.BUBBLES);
+            if (ms < 0 || ms > 1) ms = (int) MessageStyle.BUBBLES;
+            message_style = (MessageStyle) ms;
+            accent_color = kf_str (kf, "accent_color", "");
         }
 
         private static int kf_int (KeyFile kf, string k, int d) {
@@ -111,6 +124,22 @@ namespace Dc {
             save_to_file ((kf) => {
                 kf.set_string ("General", "default_account_addr", v);
             });
+        }
+
+        public void save_message_style (MessageStyle v) {
+            message_style = v;
+            save_to_file ((kf) => {
+                kf.set_integer ("General", "message_style", (int) v);
+            });
+            appearance_changed ();
+        }
+
+        public void save_accent_color (string v) {
+            accent_color = v;
+            save_to_file ((kf) => {
+                kf.set_string ("General", "accent_color", v);
+            });
+            appearance_changed ();
         }
 
         public void save_to_file (SettingWriter writer) {
@@ -239,6 +268,62 @@ namespace Dc {
 
             behavior_list.append (notif_row);
             content.append (behavior_list);
+
+            /* Appearance section */
+            var appearance_label = new Gtk.Label ("Appearance");
+            appearance_label.add_css_class ("title-3");
+            appearance_label.halign = Gtk.Align.START;
+            content.append (appearance_label);
+
+            var appearance_list = new Gtk.ListBox ();
+            appearance_list.selection_mode = Gtk.SelectionMode.NONE;
+            appearance_list.add_css_class ("boxed-list");
+
+            var style_row = new Adw.ActionRow ();
+            style_row.title = "Message style";
+            style_row.subtitle = "Use chat bubbles or compact IRC-style lines";
+
+            string[] style_labels = { "Bubbles", "IRC" };
+            var style_combo = new Gtk.DropDown.from_strings (style_labels);
+            style_combo.selected = (uint) app_window.settings.message_style;
+            style_combo.valign = Gtk.Align.CENTER;
+            style_combo.notify["selected"].connect (() => {
+                app_window.settings.save_message_style (
+                    (MessageStyle) style_combo.selected);
+            });
+            style_row.add_suffix (style_combo);
+            style_row.activatable_widget = style_combo;
+            appearance_list.append (style_row);
+
+            var accent_row = new Adw.ActionRow ();
+            accent_row.title = "Accent color";
+            accent_row.subtitle = "Override the system accent color";
+
+            var accent_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
+            accent_btn.valign = Gtk.Align.CENTER;
+            apply_accent_to_button (accent_btn, app_window.settings.accent_color);
+            accent_btn.notify["rgba"].connect (() => {
+                Gdk.RGBA c = accent_btn.get_rgba ();
+                string hex = "#%02x%02x%02x".printf (
+                    (uint) (c.red * 255), (uint) (c.green * 255),
+                    (uint) (c.blue * 255));
+                app_window.settings.save_accent_color (hex);
+            });
+
+            var accent_reset_btn = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
+            accent_reset_btn.valign = Gtk.Align.CENTER;
+            accent_reset_btn.add_css_class ("flat");
+            accent_reset_btn.tooltip_text = "Use system accent color";
+            accent_reset_btn.clicked.connect (() => {
+                app_window.settings.save_accent_color ("");
+                apply_accent_to_button (accent_btn, "");
+            });
+
+            accent_row.add_suffix (accent_btn);
+            accent_row.add_suffix (accent_reset_btn);
+            appearance_list.append (accent_row);
+
+            content.append (appearance_list);
 
             /* Advanced section */
             var advanced_label = new Gtk.Label ("Advanced");
@@ -630,6 +715,15 @@ namespace Dc {
                     delete_parla_config ();
                     app_window.application.quit ();
                 });
+        }
+
+        private static void apply_accent_to_button (Gtk.ColorDialogButton btn,
+                                                     string hex) {
+            var rgba = Gdk.RGBA ();
+            if (hex.length == 0 || !rgba.parse (hex)) {
+                rgba.parse ("#3584e4");
+            }
+            btn.set_rgba (rgba);
         }
 
         private static void delete_parla_config () {

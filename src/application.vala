@@ -11,6 +11,8 @@ namespace Dc {
 
         public RpcClient rpc { get; private set; }
 
+        private Gtk.CssProvider? accent_provider = null;
+
         public Application () {
             Object (
                 application_id: "io.github.trufae.Parla",
@@ -20,6 +22,38 @@ namespace Dc {
 
         construct {
             rpc = new RpcClient ();
+        }
+
+        public void apply_accent_color (string hex) {
+            var display = Gdk.Display.get_default ();
+            if (display == null) return;
+
+            if (accent_provider != null) {
+                Gtk.StyleContext.remove_provider_for_display (
+                    display, accent_provider);
+                accent_provider = null;
+            }
+            if (hex.length == 0) return;
+
+            var rgba = Gdk.RGBA ();
+            if (!rgba.parse (hex)) return;
+
+            /* Pick a readable foreground based on luminance */
+            double y = 0.299 * rgba.red + 0.587 * rgba.green + 0.114 * rgba.blue;
+            string fg = y > 0.6 ? "rgb(0,0,0)" : "rgb(255,255,255)";
+
+            string css =
+                "@define-color accent_bg_color " + hex + ";\n" +
+                "@define-color accent_color " + hex + ";\n" +
+                "@define-color accent_fg_color " + fg + ";\n";
+
+            accent_provider = new Gtk.CssProvider ();
+            accent_provider.load_from_string (css);
+            add_provider_for_display (
+                display,
+                accent_provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            );
         }
 
         protected override void activate () {
@@ -90,6 +124,30 @@ namespace Dc {
                 font-size: x-small;
                 opacity: 0.55;
                 margin-top: 2px;
+            }
+            .message-irc {
+                padding: 1px 0;
+            }
+            .message-irc .message-sender {
+                font-weight: bold;
+                font-size: inherit;
+            }
+            .message-irc .message-sender-other {
+                color: @accent_color;
+            }
+            .message-irc .message-sender-self {
+                color: @view_fg_color;
+            }
+            .message-irc .irc-time {
+                font-size: x-small;
+                opacity: 0.55;
+                margin-top: 0;
+                min-width: 40px;
+            }
+            .message-image-irc {
+                border-radius: 8px;
+                margin-top: 2px;
+                margin-bottom: 2px;
             }
             .message-attachment { padding: 4px 0; }
             .message-image { border-radius: 12px; margin-top: 4px; }

@@ -167,6 +167,22 @@ namespace Dc {
             popover.child = vbox;
             popover.set_parent (parent);
             popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+
+            var view = window.current_view ();
+            double saved_scroll = view != null ? view.get_scroll_value () : 0;
+            if (view != null) view.freeze_scroll_handler (1500);
+
+            popover.closed.connect (() => {
+                if (view != null) {
+                    view.freeze_scroll_handler (300);
+                    view.restore_scroll_value (saved_scroll);
+                }
+                Idle.add (() => {
+                    popover.unparent ();
+                    return Source.REMOVE;
+                });
+            });
+
             popover.popup ();
         }
 
@@ -198,7 +214,16 @@ namespace Dc {
             });
             chooser.set_parent (parent);
             chooser.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+
+            var view = window.current_view ();
+            double saved_scroll = view != null ? view.get_scroll_value () : 0;
+            if (view != null) view.freeze_scroll_handler (1500);
+
             chooser.closed.connect (() => {
+                if (view != null) {
+                    view.freeze_scroll_handler (300);
+                    view.restore_scroll_value (saved_scroll);
+                }
                 chooser.unparent ();
             });
             chooser.popup ();

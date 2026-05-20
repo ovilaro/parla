@@ -30,6 +30,7 @@ namespace Dc {
         private bool loading_more = false;
         private bool loading_chat = false;
         private bool messages_loaded = false;
+        private int64 scroll_freeze_until_us = 0;
 
         public PinnedMessagesManager pinned { get; private set; }
         public MessageActions msg_actions { get; private set; }
@@ -73,6 +74,7 @@ namespace Dc {
             });
             message_scroll.vadjustment.notify["value"].connect (() => {
                 if (loading_chat) return;
+                if (GLib.get_monotonic_time () < scroll_freeze_until_us) return;
                 stick_to_bottom = is_near_bottom ();
                 scroll_down_btn.visible = !stick_to_bottom;
                 if (is_near_top () && !loading_more && loaded_start_index > 0) {
@@ -93,7 +95,35 @@ namespace Dc {
             factory.bind.connect ((obj) => {
                 var li = (Gtk.ListItem) obj;
                 var msg = (Message) li.item;
-                var row = new MessageRow (msg);
+                Message? prev = null;
+                uint pos = li.position;
+                if (pos > 0) {
+                    prev = (Message) filtered_message_store.get_item (pos - 1);
+                }
+
+                GLib.GenericArray<Message>? trailing = null;
+                bool is_img_continuation = false;
+                if (settings.message_style == MessageStyle.IRC
+                    && MessageRow.is_image_only_message (msg)) {
+                    if (prev != null
+                        && MessageRow.is_image_only_message (prev)
+                        && MessageRow.same_irc_sender (prev, msg)) {
+                        is_img_continuation = true;
+                    } else {
+                        trailing = new GLib.GenericArray<Message> ();
+                        uint i = pos + 1;
+                        uint n = filtered_message_store.get_n_items ();
+                        while (i < n && trailing.length < 5) {
+                            var next = (Message) filtered_message_store.get_item (i);
+                            if (!MessageRow.is_image_only_message (next)) break;
+                            if (!MessageRow.same_irc_sender (msg, next)) break;
+                            trailing.add (next);
+                            i++;
+                        }
+                    }
+                }
+
+                var row = new MessageRow (msg, prev, trailing, is_img_continuation);
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
                 if (msg.highlighted) {
                     msg.highlighted = false;
@@ -253,20 +283,48 @@ namespace Dc {
 
             var adj = message_scroll.vadjustment;
             double saved_value = adj.value;
+            bool was_at_bottom = is_near_bottom ();
             bool was_loading = loading_chat;
             loading_chat = true;
+            freeze_scroll_handler (700);
 
             Object[] replacements = { new_msg };
             message_store.splice (idx, 1, replacements);
 
             Idle.add (() => {
-                double max_value = adj.upper - adj.page_size;
+                var a = message_scroll.vadjustment;
+                double max_value = a.upper - a.page_size;
                 if (max_value < 0) max_value = 0;
-                adj.value = saved_value > max_value ? max_value : saved_value;
+                double target = was_at_bottom ? max_value : saved_value;
+                a.value = target > max_value ? max_value : target;
                 loading_chat = was_loading;
+                stick_to_bottom = was_at_bottom;
                 scroll_down_btn.visible = !is_near_bottom ();
                 return Source.REMOVE;
             });
+        }
+
+        /**
+         * Suppress the value-notify handler's "near top / near bottom"
+         * recalculation for `ms` milliseconds. Used to silence spurious
+         * scroll movements triggered by popovers, focus shifts, or row
+         * resizes after a reaction / edit.
+         */
+        public void freeze_scroll_handler (uint ms) {
+            int64 until = GLib.get_monotonic_time () + (int64) ms * 1000;
+            if (until > scroll_freeze_until_us) scroll_freeze_until_us = until;
+        }
+
+        public double get_scroll_value () {
+            return message_scroll.vadjustment.value;
+        }
+
+        public void restore_scroll_value (double v) {
+            var a = message_scroll.vadjustment;
+            double max_value = a.upper - a.page_size;
+            if (max_value < 0) max_value = 0;
+            if (v > max_value) v = max_value;
+            if (Math.fabs (a.value - v) > 0.5) a.value = v;
         }
 
         public bool close_search_if_active () {

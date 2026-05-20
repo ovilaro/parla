@@ -6,6 +6,9 @@ namespace Dc {
      */
     public class MessageRow : Gtk.Box {
 
+        public static MessageStyle style = MessageStyle.BUBBLES;
+        public static string? self_display_name = null;
+
         public int message_id { get; private set; }
         public int64 timestamp { get; private set; }
         public bool is_outgoing { get; private set; }
@@ -25,7 +28,9 @@ namespace Dc {
             });
         }
 
-        public MessageRow (Message msg) {
+        public MessageRow (Message msg, Message? prev = null,
+                           GLib.GenericArray<Message>? trailing_images = null,
+                           bool is_image_continuation = false) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.timestamp = msg.timestamp;
@@ -38,6 +43,11 @@ namespace Dc {
             /* Info messages (system notifications) get centered styling */
             if (msg.is_info) {
                 build_info_row (msg);
+                return;
+            }
+
+            if (style == MessageStyle.IRC) {
+                build_irc_row (msg, prev, trailing_images, is_image_continuation);
                 return;
             }
 
@@ -214,6 +224,215 @@ namespace Dc {
                 spacer.hexpand = true;
                 this.append (spacer);
             }
+        }
+
+        private void build_irc_row (Message msg, Message? prev,
+                                      GLib.GenericArray<Message>? trailing_images,
+                                      bool is_image_continuation) {
+            /* Continuation rows in an image strip render as zero-height
+               so the leading row of the strip owns all the vertical space. */
+            if (is_image_continuation) {
+                this.add_css_class ("message-irc");
+                this.add_css_class ("message-irc-continuation");
+                this.height_request = 0;
+                this.visible = false;
+                return;
+            }
+
+            this.margin_start = 8;
+            this.margin_end = 8;
+            this.margin_top = 0;
+            this.margin_bottom = 0;
+            this.spacing = 6;
+            this.add_css_class ("message-irc");
+
+            string time_str = format_timestamp (msg.timestamp);
+            var time_lbl = new Gtk.Label (time_str);
+            time_lbl.add_css_class ("message-time");
+            time_lbl.add_css_class ("irc-time");
+            time_lbl.valign = Gtk.Align.START;
+            time_lbl.xalign = 1;
+            time_lbl.visible = time_str.length > 0;
+            this.append (time_lbl);
+
+            string sender = effective_sender_name (msg);
+            var sender_lbl = new Gtk.Label ("<" + sender + ">");
+            sender_lbl.add_css_class ("message-sender");
+            sender_lbl.add_css_class (msg.is_outgoing
+                ? "message-sender-self" : "message-sender-other");
+            sender_lbl.valign = Gtk.Align.START;
+            sender_lbl.xalign = 0;
+            this.append (sender_lbl);
+
+            var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
+            body.hexpand = true;
+
+            /* Quoted / reply block (kept compact) */
+            if (msg.quote_text != null && msg.quote_text.length > 0) {
+                var qbtn = new Gtk.Button ();
+                qbtn.add_css_class ("flat");
+                qbtn.add_css_class ("quote-block");
+                var q = new Gtk.Label (
+                    (msg.quote_sender_name != null && msg.quote_sender_name.length > 0
+                        ? msg.quote_sender_name + ": " : "") + msg.quote_text);
+                q.add_css_class ("quote-text");
+                q.halign = Gtk.Align.START;
+                q.xalign = 0;
+                q.ellipsize = Pango.EllipsizeMode.END;
+                q.max_width_chars = 60;
+                q.lines = 1;
+                qbtn.child = q;
+                if (msg.quote_msg_id > 0) {
+                    int qid = msg.quote_msg_id;
+                    qbtn.clicked.connect (() => { quote_clicked (qid); });
+                }
+                body.append (qbtn);
+            }
+
+            /* File attachment / image */
+            bool has_file = (msg.file_name != null && msg.file_name.length > 0)
+                         || (msg.file_path != null && msg.file_path.length > 0);
+            bool image_shown = false;
+            bool is_img = has_file && msg.file_path != null
+                          && FileUtils.test (msg.file_path, FileTest.EXISTS)
+                          && is_image_file (msg);
+
+            if (is_img && trailing_images != null && trailing_images.length > 0) {
+                /* Multi-image strip: pack this image and the trailing
+                   consecutive same-sender image messages side by side. */
+                this.is_image = true;
+                var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
+                strip.halign = Gtk.Align.START;
+                append_irc_image (strip, msg);
+                for (uint i = 0; i < trailing_images.length; i++) {
+                    append_irc_image (strip, trailing_images[i]);
+                }
+                body.append (strip);
+                image_shown = true;
+            } else if (is_img) {
+                this.is_image = true;
+                var single = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+                single.halign = Gtk.Align.START;
+                append_irc_image (single, msg);
+                body.append (single);
+                image_shown = true;
+            }
+            if (has_file && !image_shown) {
+                var fi = build_file_indicator (msg);
+                fi.halign = Gtk.Align.START;
+                body.append (fi);
+            }
+
+            if (msg.text != null && msg.text.length > 0) {
+                var text = new Gtk.Label (msg.text);
+                try {
+                    string markup = Markdown.format (msg.text);
+                    var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
+                    Pango.AttrList attrs;
+                    string parsed;
+                    unichar accel;
+                    Pango.parse_markup (probe, -1, 0, out attrs, out parsed, out accel);
+                    text.set_markup (markup);
+                } catch {
+                    /* plain text */
+                }
+                text.wrap = true;
+                text.wrap_mode = Pango.WrapMode.WORD_CHAR;
+                text.halign = Gtk.Align.START;
+                text.xalign = 0;
+                text.selectable = true;
+                body.append (text);
+            }
+
+            /* Reactions */
+            if (msg.reactions != null && msg.reactions.length > 0) {
+                var reactions_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
+                reactions_box.add_css_class ("reaction-bar");
+                reactions_box.halign = Gtk.Align.START;
+                var parts = msg.reactions.split (",");
+                foreach (string part in parts) {
+                    var kv = part.split (":", 2);
+                    if (kv.length >= 2) {
+                        string label_text = kv[1] == "1"
+                            ? kv[0]
+                            : "%s %s".printf (kv[0], kv[1]);
+                        var badge = new Gtk.Label (label_text);
+                        badge.add_css_class ("reaction-badge");
+                        reactions_box.append (badge);
+                    }
+                }
+                body.append (reactions_box);
+            }
+
+            this.append (body);
+
+            /* Outgoing tick indicator at the end */
+            if (msg.is_outgoing) {
+                var tick = build_tick_indicator (msg);
+                if (tick != null) {
+                    tick.valign = Gtk.Align.START;
+                    this.append (tick);
+                }
+            }
+            if (msg.is_pinned) {
+                var pin_icon = new Gtk.Label ("📌");
+                pin_icon.add_css_class ("message-time");
+                pin_icon.valign = Gtk.Align.START;
+                this.append (pin_icon);
+            }
+        }
+
+        private static void append_irc_image (Gtk.Box strip, Message m) {
+            try {
+                var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
+                    m.file_path, 260, 200, true);
+                int dw = pixbuf.width;
+                int dh = pixbuf.height;
+                if (dh < 180) {
+                    dw = (int) ((double) dw * 180.0 / (double) dh);
+                    dh = 180;
+                }
+                var texture = Gdk.Texture.for_pixbuf (pixbuf);
+                var picture = new Gtk.Picture.for_paintable (texture);
+                picture.content_fit = Gtk.ContentFit.CONTAIN;
+                picture.can_shrink = false;
+                picture.add_css_class ("message-image");
+                picture.add_css_class ("message-image-irc");
+                picture.set_size_request (dw, dh);
+                picture.halign = Gtk.Align.START;
+                picture.valign = Gtk.Align.START;
+                strip.append (picture);
+            } catch (Error e) {
+                var fi = new Gtk.Label (m.file_name ?? "image");
+                fi.add_css_class ("dim-label");
+                strip.append (fi);
+            }
+        }
+
+        public static bool is_image_only_message (Message m) {
+            if (m == null || m.is_info) return false;
+            if (m.text != null && m.text.strip ().length > 0) return false;
+            if (m.file_path == null || m.file_path.length == 0) return false;
+            return is_image_file (m);
+        }
+
+        public static bool same_irc_sender (Message a, Message b) {
+            if (a.is_info || b.is_info) return false;
+            if (a.is_outgoing != b.is_outgoing) return false;
+            if (a.is_outgoing) return true;
+            string an = a.sender_name ?? "";
+            string bn = b.sender_name ?? "";
+            return an == bn;
+        }
+
+        private static string effective_sender_name (Message msg) {
+            if (msg.is_outgoing) {
+                if (self_display_name != null && self_display_name.length > 0)
+                    return self_display_name;
+                return "me";
+            }
+            return (msg.sender_name != null && msg.sender_name.length > 0)
+                ? msg.sender_name : "?";
         }
 
         private void build_info_row (Message msg) {

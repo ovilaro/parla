@@ -13,6 +13,7 @@ namespace Dc {
         public bool is_connected { get { return transport.is_connected; } }
         public int account_id { get; set; default = 0; }
         public string? self_email { get; set; default = null; }
+        public string? self_display_name { get; set; default = null; }
 
         construct {
             transport = new RpcTransport ();

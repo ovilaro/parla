@@ -69,10 +69,25 @@ namespace Dc {
             chat_store = new GLib.ListStore (typeof (ChatEntry));
             views = new HashTable<int, ConversationView> (direct_hash, direct_equal);
             settings = new SettingsManager ();
+            settings.load ();
             image_viewer = new ImageViewer ();
             image_viewer.set_window (this);
             build_ui ();
-            settings.load ();
+            MessageRow.style = settings.message_style;
+            ((Dc.Application) this.application).apply_accent_color (
+                settings.accent_color);
+
+            settings.appearance_changed.connect (() => {
+                MessageRow.style = settings.message_style;
+                ((Dc.Application) this.application).apply_accent_color (
+                    settings.accent_color);
+                int chat_id = current_chat_id;
+                discard_all_views ();
+                if (chat_id > 0) {
+                    current_chat_id = 0;
+                    select_chat_by_id (chat_id);
+                }
+            });
 
             /* Defer connection until main loop — application property
                may not be available during construct. */
@@ -359,6 +374,12 @@ namespace Dc {
                 } catch (Error ce) {
                     rpc.self_email = null;
                 }
+                try {
+                    rpc.self_display_name = yield rpc.get_config ("displayname");
+                } catch (Error ce) {
+                    rpc.self_display_name = null;
+                }
+                MessageRow.self_display_name = rpc.self_display_name;
                 yield load_chats ();
                 yield load_profile_avatar ();
                 events.start.begin ();
@@ -1333,6 +1354,7 @@ namespace Dc {
 
             if (rpc.account_id <= 0) {
                 rpc.self_email = null;
+                rpc.self_display_name = null;
                 profile_avatar.text = "";
                 profile_avatar.custom_image = null;
                 empty_status.icon_name = "avatar-default-symbolic";
@@ -1352,6 +1374,12 @@ namespace Dc {
             } catch (Error e) {
                 rpc.self_email = null;
             }
+            try {
+                rpc.self_display_name = yield rpc.get_config ("displayname");
+            } catch (Error e) {
+                rpc.self_display_name = null;
+            }
+            MessageRow.self_display_name = rpc.self_display_name;
             current_chat_id = 0;
             content_stack.visible_child_name = "empty";
             yield load_chats ();
