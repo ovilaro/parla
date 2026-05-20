@@ -70,6 +70,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 | Search in conversation | `Ctrl+F` |
 | Focus compose entry | `Ctrl+L` |
 | Refresh | `Ctrl+R` |
+| Cycle sidebar mode | `Ctrl+S` |
 | Settings | `Ctrl+,` |
 | Close window | `Ctrl+W` |
 | Quit | `Ctrl+Q` |

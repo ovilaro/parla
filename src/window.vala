@@ -1400,7 +1400,7 @@ namespace Dc {
                 if (search_entry != null) search_entry.visible = true;
                 if (sidebar_title != null) sidebar_title.title = "Parla";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (F9)";
+                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (Ctrl+S)";
                 break;
             case SidebarMode.COMPACT:
                 split_view.show_sidebar = true;
@@ -1411,13 +1411,13 @@ namespace Dc {
                 if (search_entry != null) search_entry.visible = false;
                 if (sidebar_title != null) sidebar_title.title = "";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (F9)";
+                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (Ctrl+S)";
                 break;
             case SidebarMode.HIDDEN:
                 split_view.show_sidebar = false;
                 if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Show Sidebar (F9)";
+                sidebar_toggle_btn.tooltip_text = "Show Sidebar (Ctrl+S)";
                 break;
             }
             apply_compact_to_rows (mode == SidebarMode.COMPACT);
@@ -1443,12 +1443,6 @@ namespace Dc {
              * other key closes). */
             if (image_viewer.visible) {
                 return image_viewer.handle_key (keyval);
-            }
-
-            /* F9: cycle the sidebar between Full → Compact → Hidden */
-            if (keyval == Gdk.Key.F9) {
-                cycle_sidebar_mode ();
-                return true;
             }
 
             /* Escape: close any open dialog, then focus input entry */
@@ -1494,6 +1488,10 @@ namespace Dc {
             case Gdk.Key.r:
             case Gdk.Key.R:
                 refresh_current_chat ();
+                return true;
+            case Gdk.Key.s:
+            case Gdk.Key.S:
+                cycle_sidebar_mode ();
                 return true;
             case Gdk.Key.w:
             case Gdk.Key.W:
@@ -1556,7 +1554,7 @@ namespace Dc {
             "Search in conversation","<Control>f",
             "Quick switch chat",     "<Control>k",
             "Refresh messages",      "<Control>r",
-            "Cycle sidebar mode",    "F9",
+            "Cycle sidebar mode",    "<Control>s",
             "Focus message entry",   "Escape",
             "Close window",          "<Control>w",
             "Quit application",      "<Control>q",
