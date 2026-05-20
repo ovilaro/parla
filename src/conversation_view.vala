@@ -242,6 +242,33 @@ namespace Dc {
             }
         }
 
+        /**
+         * Replace a single message in the store while keeping the visible
+         * scroll position unchanged. Used by reaction/edit updates that
+         * resize a row but should not jump the viewport.
+         */
+        public void replace_message (int msg_id, Message new_msg) {
+            int idx = find_message_index (message_store, msg_id);
+            if (idx < 0) return;
+
+            var adj = message_scroll.vadjustment;
+            double saved_value = adj.value;
+            bool was_loading = loading_chat;
+            loading_chat = true;
+
+            Object[] replacements = { new_msg };
+            message_store.splice (idx, 1, replacements);
+
+            Idle.add (() => {
+                double max_value = adj.upper - adj.page_size;
+                if (max_value < 0) max_value = 0;
+                adj.value = saved_value > max_value ? max_value : saved_value;
+                loading_chat = was_loading;
+                scroll_down_btn.visible = !is_near_bottom ();
+                return Source.REMOVE;
+            });
+        }
+
         public bool close_search_if_active () {
             if (!message_search_revealer.reveal_child) return false;
             message_search_revealer.reveal_child = false;

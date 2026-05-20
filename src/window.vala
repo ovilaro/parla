@@ -401,7 +401,7 @@ namespace Dc {
             content_stack.visible_child_name = "empty";
         }
 
-        private ConversationView? current_view () {
+        public ConversationView? current_view () {
             if (current_chat_id <= 0) return null;
             return views.lookup (current_chat_id);
         }

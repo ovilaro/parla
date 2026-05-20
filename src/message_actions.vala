@@ -37,18 +37,38 @@ namespace Dc {
             /* Reactions — first so they are most easily reachable */
             string[] emojis = { "\xf0\x9f\x91\x8d", "\xe2\x9d\xa4\xef\xb8\x8f",
                                  "\xf0\x9f\x98\x82", "\xf0\x9f\x98\xae",
-                                 "\xf0\x9f\x98\xa2", "\xf0\x9f\x91\x8e" };
+                                 "\xf0\x9f\x98\xa2", "\xf0\x9f\x91\x8e",
+                                 "\xf0\x9f\x94\xa5", "…" };
+            var msg = find_message (message_store, msg_id);
+            string[] my_emojis = {};
+            if (msg != null && msg.my_reactions != null) {
+                my_emojis = msg.my_reactions.split (",");
+            }
             var emoji_row1 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             var emoji_row2 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             for (int i = 0; i < emojis.length; i++) {
                 string emoji = emojis[i];
                 var btn = new Gtk.Button.with_label (emoji);
                 btn.add_css_class ("flat");
-                btn.clicked.connect (() => {
-                    popover.popdown ();
-                    send_reaction.begin (msg_id, emoji);
-                });
-                if (i < 3) emoji_row1.append (btn);
+                bool is_more = (i == emojis.length - 1);
+                if (is_more) {
+                    btn.tooltip_text = "More emojis…";
+                    btn.clicked.connect (() => {
+                        popover.popdown ();
+                        show_emoji_picker (msg_id, parent, x, y);
+                    });
+                } else {
+                    bool already_used = false;
+                    foreach (string me in my_emojis) {
+                        if (me == emoji) { already_used = true; break; }
+                    }
+                    if (already_used) btn.add_css_class ("suggested-action");
+                    btn.clicked.connect (() => {
+                        popover.popdown ();
+                        send_reaction.begin (msg_id, emoji);
+                    });
+                }
+                if (i < 4) emoji_row1.append (btn);
                 else emoji_row2.append (btn);
             }
             vbox.append (emoji_row1);
@@ -56,36 +76,41 @@ namespace Dc {
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            /* Reply button (for all messages) */
+            /* Reply + Forward on the same row */
+            var reply_forward_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            reply_forward_row.homogeneous = true;
+
             var reply_btn = new Gtk.Button.with_label ("Reply");
             reply_btn.add_css_class ("flat");
+            reply_btn.hexpand = true;
             reply_btn.clicked.connect (() => {
                 popover.popdown ();
                 start_replying (msg_id);
             });
-            vbox.append (reply_btn);
+            reply_forward_row.append (reply_btn);
 
-            /* Forward… */
             var forward_btn = new Gtk.Button.with_label ("Forward\u2026");
             forward_btn.add_css_class ("flat");
+            forward_btn.hexpand = true;
             forward_btn.clicked.connect (() => {
                 popover.popdown ();
                 start_forwarding (msg_id);
             });
-            vbox.append (forward_btn);
+            reply_forward_row.append (forward_btn);
+
+            vbox.append (reply_forward_row);
 
             /* Pin / Unpin */
             bool msg_is_pinned = pinned.is_pinned (msg_id);
             var pin_btn = new Gtk.Button.with_label (
-                msg_is_pinned ? "Unpin" : "Pin");
+                msg_is_pinned ? "Unpin from conversation"
+                              : "Pin in conversation");
             pin_btn.add_css_class ("flat");
             pin_btn.clicked.connect (() => {
                 popover.popdown ();
                 pinned.toggle_pin (msg_id);
             });
             vbox.append (pin_btn);
-
-            var msg = find_message (message_store, msg_id);
 
             /* Save file (for messages with attachments) */
             if (msg != null && msg.file_path != null &&
@@ -147,11 +172,36 @@ namespace Dc {
 
         public async void send_reaction (int msg_id, string emoji) {
             try {
-                yield rpc.send_reaction (msg_id, new string[] { emoji });
+                var current = find_message (message_store, msg_id);
+                bool already_used = false;
+                if (current != null && current.my_reactions != null) {
+                    foreach (string me in current.my_reactions.split (",")) {
+                        if (me == emoji) { already_used = true; break; }
+                    }
+                }
+                if (already_used) {
+                    yield rpc.send_reaction (msg_id, new string[] {});
+                } else {
+                    yield rpc.send_reaction (msg_id, new string[] { emoji });
+                }
                 yield update_row (msg_id);
             } catch (Error e) {
                 window.show_toast ("Reaction failed: " + e.message);
             }
+        }
+
+        private void show_emoji_picker (int msg_id, Gtk.Widget parent,
+                                         double x, double y) {
+            var chooser = new Gtk.EmojiChooser ();
+            chooser.emoji_picked.connect ((emoji) => {
+                send_reaction.begin (msg_id, emoji);
+            });
+            chooser.set_parent (parent);
+            chooser.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+            chooser.closed.connect (() => {
+                chooser.unparent ();
+            });
+            chooser.popup ();
         }
 
         public async void delete_message (int msg_id, bool for_all) {
@@ -235,10 +285,15 @@ namespace Dc {
             try {
                 var msg = yield rpc.fetch_message (msg_id);
                 if (msg == null) return;
-                int idx = find_message_index (message_store, msg_id);
-                if (idx >= 0) {
-                    Object[] replacements = { msg };
-                    message_store.splice (idx, 1, replacements);
+                var view = window.current_view ();
+                if (view != null) {
+                    view.replace_message (msg_id, msg);
+                } else {
+                    int idx = find_message_index (message_store, msg_id);
+                    if (idx >= 0) {
+                        Object[] replacements = { msg };
+                        message_store.splice (idx, 1, replacements);
+                    }
                 }
             } catch (Error e) {
                 /* Reaction will appear on next message reload */

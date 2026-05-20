@@ -85,14 +85,17 @@ namespace Dc {
             var by_contact = reactions_obj.get_object_member ("reactionsByContact");
             string[] r_emojis = {};
             int[] r_counts = {};
+            string[] my_emojis = {};
 
             var members = by_contact.get_members ();
             foreach (unowned string cid in members) {
                 var node = by_contact.get_member (cid);
                 if (node.get_node_type () != Json.NodeType.ARRAY) continue;
                 var arr = node.get_array ();
+                bool is_self = (cid == "1");
                 for (uint j = 0; j < arr.get_length (); j++) {
                     string emoji = arr.get_string_element (j);
+                    if (is_self) my_emojis += emoji;
                     int found = -1;
                     for (int k = 0; k < r_emojis.length; k++) {
                         if (r_emojis[k] == emoji) {
@@ -107,6 +110,10 @@ namespace Dc {
                         r_counts += 1;
                     }
                 }
+            }
+
+            if (my_emojis.length > 0) {
+                msg.my_reactions = string.joinv (",", my_emojis);
             }
 
             if (r_emojis.length == 0) return;
