@@ -5,6 +5,8 @@ namespace Dc {
         public signal void group_created (int chat_id);
 
         private RpcClient rpc;
+        private bool is_channel;
+        private string kind_label;
         private Gtk.Entry name_entry;
         /* member_entry removed — contact picker is used instead */
         private Gtk.ListBox member_listbox;
@@ -12,9 +14,11 @@ namespace Dc {
         private string? avatar_path = null;
         private Adw.Avatar avatar_widget;
 
-        public NewGroupDialog (RpcClient rpc) {
+        public NewGroupDialog (RpcClient rpc, bool is_channel = false) {
             this.rpc = rpc;
-            this.title = "New Group";
+            this.is_channel = is_channel;
+            this.kind_label = is_channel ? "Channel" : "Group";
+            this.title = is_channel ? "New Channel" : "New Group";
             this.content_width = 360;
             this.content_height = 480;
 
@@ -36,7 +40,7 @@ namespace Dc {
             content.margin_bottom = 16;
 
             /* Avatar */
-            avatar_widget = new Adw.Avatar (72, "Group", true);
+            avatar_widget = new Adw.Avatar (72, kind_label, true);
             avatar_widget.halign = Gtk.Align.CENTER;
             content.append (avatar_widget);
 
@@ -48,19 +52,29 @@ namespace Dc {
             });
             content.append (avatar_btn);
 
-            /* Group name */
-            var name_lbl = new Gtk.Label ("Group Name");
+            /* Name */
+            var name_lbl = new Gtk.Label (kind_label + " Name");
             name_lbl.add_css_class ("heading");
             name_lbl.halign = Gtk.Align.START;
             content.append (name_lbl);
 
             name_entry = new Gtk.Entry ();
-            name_entry.placeholder_text = "My Group";
+            name_entry.placeholder_text = "My " + kind_label;
             name_entry.changed.connect (() => {
                 avatar_widget.text = name_entry.text.length > 0
-                    ? name_entry.text : "Group";
+                    ? name_entry.text : kind_label;
             });
             content.append (name_entry);
+
+            if (is_channel) {
+                var hint = new Gtk.Label (
+                    "Only you can write in a channel. Members read messages without seeing each other.");
+                hint.wrap = true;
+                hint.xalign = 0;
+                hint.add_css_class ("dim-label");
+                hint.add_css_class ("caption");
+                content.append (hint);
+            }
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
@@ -145,7 +159,9 @@ namespace Dc {
             name_entry.remove_css_class ("error");
 
             try {
-                int new_chat_id = yield rpc.create_group (name, true);
+                int new_chat_id = is_channel
+                    ? yield rpc.create_broadcast (name)
+                    : yield rpc.create_group (name, true);
 
                 /* Set avatar if picked */
                 if (avatar_path != null) {
@@ -176,7 +192,7 @@ namespace Dc {
 
         private async void pick_avatar () {
             string? path = yield pick_image_file (
-                (Gtk.Window) this.get_root (), "Select Group Avatar");
+                (Gtk.Window) this.get_root (), "Select " + kind_label + " Avatar");
             if (path != null) {
                 avatar_path = path;
                 avatar_widget.custom_image = load_avatar (path);

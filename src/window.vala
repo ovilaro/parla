@@ -1045,15 +1045,28 @@ namespace Dc {
             active_modal = dialog;
             dialog.closed.connect (() => { active_modal = null; });
             dialog.group_created.connect ((chat_id) => {
-                after_group_created.begin (chat_id);
+                after_group_created.begin (chat_id, false);
             });
             dialog.present (this);
         }
 
-        private async void after_group_created (int chat_id) {
+        private void on_new_channel () {
+            if (rpc.account_id <= 0) return;
+            if (active_modal != null) return;
+
+            var dialog = new NewGroupDialog (rpc, true);
+            active_modal = dialog;
+            dialog.closed.connect (() => { active_modal = null; });
+            dialog.group_created.connect ((chat_id) => {
+                after_group_created.begin (chat_id, true);
+            });
+            dialog.present (this);
+        }
+
+        private async void after_group_created (int chat_id, bool is_channel) {
             yield load_chats ();
             select_chat_by_id (chat_id);
-            show_toast ("Group created");
+            show_toast (is_channel ? "Channel created" : "Group created");
         }
 
         public void scroll_to_message (int msg_id) {
@@ -1071,6 +1084,8 @@ namespace Dc {
             a.activate.connect (() => { on_new_chat (); }); add_action (a);
             a = new SimpleAction ("new-group", null);
             a.activate.connect (() => { on_new_group (); }); add_action (a);
+            a = new SimpleAction ("new-channel", null);
+            a.activate.connect (() => { on_new_channel (); }); add_action (a);
             a = new SimpleAction ("use-invite-link", null);
             a.activate.connect (() => { show_use_invite_link_dialog (); }); add_action (a);
             a = new SimpleAction ("refresh", null);
@@ -1085,6 +1100,7 @@ namespace Dc {
             var s1 = new GLib.Menu ();
             s1.append ("New Chat", "win.new-chat");
             s1.append ("New Group", "win.new-group");
+            s1.append ("New Channel", "win.new-channel");
             s1.append ("Use Invite Link", "win.use-invite-link");
             var s2 = new GLib.Menu ();
             s2.append ("Settings", "win.settings");
@@ -1361,7 +1377,11 @@ namespace Dc {
                 return true;
             case Gdk.Key.g:
             case Gdk.Key.G:
-                on_new_group ();
+                if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
+                    on_new_channel ();
+                } else {
+                    on_new_group ();
+                }
                 return true;
             case Gdk.Key.comma:
                 show_settings_dialog ();
@@ -1434,6 +1454,7 @@ namespace Dc {
         private const string[] SHORTCUTS = {
             "New chat",              "<Control>n",
             "New group",             "<Control>g",
+            "New channel",           "<Control><Shift>g",
             "Open settings",         "<Control>comma",
             "Search in conversation","<Control>f",
             "Quick switch chat",     "<Control>k",

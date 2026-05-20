@@ -434,6 +434,15 @@ namespace Dc {
             return (int) result.get_int ();
         }
 
+        public async int create_broadcast (string name) throws Error {
+            var result = yield call ("create_broadcast",
+                Params.begin ()
+                    .add_int (account_id)
+                    .add_string (name)
+                    .build ());
+            return (int) result.get_int ();
+        }
+
         public async void leave_group (int chat_id) throws Error {
             yield call ("leave_group",
                 Params.begin ().add_int (account_id).add_int (chat_id).build ());
