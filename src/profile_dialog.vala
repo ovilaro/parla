@@ -3,11 +3,15 @@ namespace Dc {
     public class ProfileDialog : Adw.Dialog {
 
         private RpcClient rpc;
+        private SettingsManager settings;
         private int account_id;
         private Adw.Avatar avatar_widget;
         private Gtk.Entry name_entry;
         private Gtk.Entry status_entry;
         private Gtk.Label email_label;
+        private Gtk.Switch default_switch;
+        private bool syncing_default_switch = false;
+        private string? account_addr = null;
         private Gtk.Label connectivity_status_label;
         private Gtk.Label storage_summary_label;
         private Gtk.ProgressBar storage_progress;
@@ -17,8 +21,10 @@ namespace Dc {
         public signal void profile_updated ();
         public signal void account_deleted (int acct_id);
 
-        public ProfileDialog (RpcClient rpc, int acct_id = 0) {
+        public ProfileDialog (RpcClient rpc, SettingsManager settings,
+                              int acct_id = 0) {
             this.rpc = rpc;
+            this.settings = settings;
             this.account_id = acct_id > 0 ? acct_id : rpc.account_id;
             this.title = "My Profile";
             this.content_width = 420;
@@ -91,6 +97,8 @@ namespace Dc {
             email_label.add_css_class ("dim-label");
             email_label.selectable = true;
             content.append (email_label);
+
+            content.append (build_default_account_row ());
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
@@ -183,6 +191,48 @@ namespace Dc {
             load_connectivity_summary.begin ();
         }
 
+        private Gtk.Widget build_default_account_row () {
+            var list = new Gtk.ListBox ();
+            list.selection_mode = Gtk.SelectionMode.NONE;
+            list.add_css_class ("boxed-list");
+            list.margin_top = 8;
+
+            var row = new Adw.ActionRow ();
+            row.title = "Default Account";
+            row.subtitle = "Open this account when Parla starts";
+
+            default_switch = new Gtk.Switch ();
+            default_switch.valign = Gtk.Align.CENTER;
+            default_switch.notify["active"].connect (on_default_switch_toggled);
+            row.add_suffix (default_switch);
+            row.activatable_widget = default_switch;
+
+            list.append (row);
+            return list;
+        }
+
+        private void on_default_switch_toggled () {
+            if (syncing_default_switch) return;
+            if (account_addr == null || account_addr.length == 0) {
+                /* Email not loaded yet — revert the toggle silently. */
+                sync_default_switch ();
+            }
+            /* The new value is staged on the switch; it is committed in
+               do_save() so closing the dialog without saving discards it. */
+        }
+
+        private void sync_default_switch () {
+            syncing_default_switch = true;
+            bool is_default = account_addr != null
+                && account_addr.length > 0
+                && settings.default_account_addr.down ().strip ()
+                    == account_addr.down ().strip ();
+            default_switch.active = is_default;
+            default_switch.sensitive = account_addr != null
+                && account_addr.length > 0;
+            syncing_default_switch = false;
+        }
+
         private Gtk.Widget build_connectivity_storage_section () {
             var section = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
 
@@ -252,7 +302,11 @@ namespace Dc {
                     avatar_widget.text = name;
                 }
                 if (status != null) status_entry.text = status;
-                if (email != null) email_label.label = email;
+                if (email != null) {
+                    email_label.label = email;
+                    account_addr = email;
+                    sync_default_switch ();
+                }
                 if (avatar != null && avatar.length > 0 &&
                     FileUtils.test (avatar, FileTest.EXISTS)) {
                     avatar_path = avatar;
@@ -324,10 +378,24 @@ namespace Dc {
                 if (avatar_changed && avatar_path != null) {
                     yield rpc.batch_set_config ("selfavatar", avatar_path, account_id);
                 }
+                commit_default_account_pref ();
                 profile_updated ();
                 this.close ();
             } catch (Error e) {
                 show_error (this, e.message);
+            }
+        }
+
+        private void commit_default_account_pref () {
+            if (account_addr == null || account_addr.length == 0) return;
+            string mine = account_addr.down ().strip ();
+            string stored = settings.default_account_addr.down ().strip ();
+            if (default_switch.active) {
+                if (stored != mine) {
+                    settings.save_default_account_addr (account_addr);
+                }
+            } else if (stored == mine) {
+                settings.save_default_account_addr ("");
             }
         }
 

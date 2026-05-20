@@ -25,6 +25,7 @@ namespace Dc {
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
+        public string default_account_addr { get; set; default = ""; }
 
         public static string get_config_path () {
             return Path.build_filename (
@@ -51,6 +52,7 @@ namespace Dc {
             int sb = kf_int (kf, "sidebar_mode", (int) SidebarMode.FULL);
             if (sb < 0 || sb > 2) sb = (int) SidebarMode.FULL;
             sidebar_mode = (SidebarMode) sb;
+            default_account_addr = kf_str (kf, "default_account_addr", "");
         }
 
         private static int kf_int (KeyFile kf, string k, int d) {
@@ -101,6 +103,13 @@ namespace Dc {
             sidebar_mode = v;
             save_to_file ((kf) => {
                 kf.set_integer ("General", "sidebar_mode", (int) v);
+            });
+        }
+
+        public void save_default_account_addr (string v) {
+            default_account_addr = v;
+            save_to_file ((kf) => {
+                kf.set_string ("General", "default_account_addr", v);
             });
         }
 

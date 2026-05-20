@@ -334,7 +334,9 @@ namespace Dc {
 
             /* Ensure we have an account */
             string? acct_desc, acct_toast;
-            yield AccountFinder.ensure_configured (rpc, out acct_desc, out acct_toast);
+            yield AccountFinder.ensure_configured (rpc,
+                                                    settings.default_account_addr,
+                                                    out acct_desc, out acct_toast);
             if (acct_toast != null) show_toast (acct_toast);
             if (acct_desc != null) empty_status.description = acct_desc;
 
@@ -962,7 +964,7 @@ namespace Dc {
             if (acct_id <= 0) return;
 
             bool edits_current_account = acct_id == rpc.account_id;
-            var dialog = new ProfileDialog (rpc, acct_id);
+            var dialog = new ProfileDialog (rpc, settings, acct_id);
             dialog.profile_updated.connect (() => {
                 if (edits_current_account) {
                     load_profile_avatar.begin ();

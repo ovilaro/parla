@@ -162,10 +162,14 @@ namespace Dc {
         }
 
         /**
-         * Activate the first configured account. Returns its id (>0) on
-         * success, or 0 with a human-readable status in `description`.
+         * Activate a configured account on startup. If `preferred_addr` is
+         * non-empty and matches a configured account, that one is chosen;
+         * otherwise the first configured account is used. Returns its id
+         * (>0) on success, or 0 with a human-readable status in
+         * `description`.
          */
         public static async int ensure_configured (RpcClient rpc,
+                string preferred_addr,
                 out string? description, out string? toast_msg) {
             description = null;
             toast_msg = null;
@@ -173,15 +177,27 @@ namespace Dc {
                 var accounts_node = yield rpc.get_all_accounts ();
                 if (accounts_node != null) {
                     var accounts = accounts_node.get_array ();
+                    int first_id = 0;
+                    int preferred_id = 0;
+                    string want = preferred_addr.down ().strip ();
                     for (uint i = 0; i < accounts.get_length (); i++) {
                         var acct = accounts.get_object_element (i);
                         int id = (int) acct.get_int_member ("id");
-                        if (yield rpc.is_configured (id)) {
-                            rpc.account_id = id;
-                            yield rpc.select_account (id);
-                            yield rpc.start_io (id);
-                            return id;
+                        if (!(yield rpc.is_configured (id))) continue;
+                        if (first_id == 0) first_id = id;
+                        if (want.length > 0 && preferred_id == 0) {
+                            string? addr = yield rpc.get_config ("addr", id);
+                            if (addr != null && addr.down ().strip () == want) {
+                                preferred_id = id;
+                            }
                         }
+                    }
+                    int chosen = preferred_id > 0 ? preferred_id : first_id;
+                    if (chosen > 0) {
+                        rpc.account_id = chosen;
+                        yield rpc.select_account (chosen);
+                        yield rpc.start_io (chosen);
+                        return chosen;
                     }
                 }
                 description =
