@@ -37,6 +37,7 @@ namespace Dc {
         private int new_account_id = 0;
         private bool create_running = false;
         private bool create_finished = false;
+        private bool cancelled = false;
         private ulong progress_handler_id = 0;
 
         public CreateProfileDialog (RpcClient rpc, EventHandler events) {
@@ -178,8 +179,16 @@ namespace Dc {
             } catch (Error e) {
                 cleanup_signal ();
                 create_running = false;
-                show_error (this, "Failed to create account: " + e.message);
-                this.close ();
+                if (!cancelled) {
+                    show_error (this, "Failed to create account: " + e.message);
+                    this.close ();
+                }
+                return;
+            }
+
+            if (cancelled) {
+                cleanup_signal ();
+                create_running = false;
                 return;
             }
 
@@ -192,11 +201,18 @@ namespace Dc {
                 }
             }
 
+            if (cancelled) {
+                cleanup_signal ();
+                create_running = false;
+                return;
+            }
+
             try {
                 yield rpc.add_transport_from_qr (new_account_id, qr_link);
             } catch (Error e) {
                 cleanup_signal ();
                 create_running = false;
+                if (cancelled) return;
                 int aid = new_account_id;
                 new_account_id = 0;
                 if (aid > 0) {
@@ -209,8 +225,9 @@ namespace Dc {
             }
 
             cleanup_signal ();
-            create_finished = true;
             create_running = false;
+            if (cancelled) return;
+            create_finished = true;
             int created = new_account_id;
             new_account_id = 0;
             account_created (created);
@@ -247,12 +264,11 @@ namespace Dc {
                 this.close ();
                 return;
             }
-            if (new_account_id > 0) {
-                rpc.stop_ongoing_process.begin (new_account_id, (obj, res) => {
-                    try { rpc.stop_ongoing_process.end (res); }
-                    catch (Error e) { /* ignore */ }
-                });
-            }
+            cancelled = true;
+            /* Close the dialog immediately so the user gets feedback.
+               The in-flight RPC may be inside a network retry loop and take
+               many seconds to return — on_dialog_closed handles cleanup. */
+            this.close ();
         }
 
         private void on_dialog_closed () {
