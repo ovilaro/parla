@@ -69,7 +69,20 @@ namespace Dc {
                 if (is_executable (candidate)) return candidate;
             }
 
+            /* Last resort: a server Parla downloaded into its own data dir.
+               Anything packaged or system-provided above wins over this. */
+            string managed = get_managed_rpc_path ();
+            if (is_executable (managed)) return managed;
+
             return null;
+        }
+
+        /**
+         * Path to the Parla-managed (self-downloaded) server binary. Kept here
+         * so discovery and RpcInstaller agree on a single location.
+         */
+        public static string get_managed_rpc_path () {
+            return Path.build_filename (get_parla_data_dir (), "bin", RPC_BIN);
         }
 
         public static string? find_desktop_rpc_server () {

@@ -347,6 +347,13 @@ namespace Dc {
                 set_connection_status (false, "Disconnected — " + reason);
             });
 
+            /* If we're running Parla's own downloaded server, optionally check
+               for a newer release in the background and offer to update. */
+            if (settings.rpc_check_updates_on_startup &&
+                rpc_path == AccountFinder.get_managed_rpc_path ()) {
+                check_managed_update.begin ();
+            }
+
             /* Ensure we have an account */
             string? acct_desc, acct_toast;
             yield AccountFinder.ensure_configured (rpc,
@@ -387,32 +394,154 @@ namespace Dc {
         }
 
         private void show_rpc_not_found () {
+            /* Whenever a prebuilt binary exists for this architecture we offer a
+               one-click download — regardless of the configured source — and the
+               install switches the source to Auto so the downloaded binary is
+               picked up. Custom/Desktop choices still get their specific error
+               text, but the download is the primary action. */
+            bool can_download = RpcInstaller.detect_asset_name () != null;
+
             empty_status.icon_name = "dialog-error-symbolic";
             empty_status.title = "RPC server not found";
+
             if (settings.rpc_server_source == RpcServerSource.CUSTOM &&
                 settings.rpc_server_path.length > 0) {
                 empty_status.description =
                     "Configured path is missing or not executable:\n" +
-                    Markup.escape_text (settings.rpc_server_path);
+                    Markup.escape_text (settings.rpc_server_path) +
+                    (can_download ? "\n\nDownload the engine to use it instead." : "");
             } else if (settings.rpc_server_source == RpcServerSource.DESKTOP) {
+                empty_status.description = can_download
+                    ? "Delta Chat Desktop's bundled server was not found.\n" +
+                      "Download Parla's own engine to get started."
+                    : "Delta Chat Desktop's bundled server was not found.\n" +
+                      "Open Settings to choose a standalone server.";
+            } else if (can_download) {
+                empty_status.icon_name = "mail-send-receive-symbolic";
+                empty_status.title = "Welcome to Parla";
                 empty_status.description =
-                    "Delta Chat Desktop's bundled server was not found.\n" +
-                    "Open Settings to choose a standalone server.";
+                    "Parla needs the Delta Chat engine to connect.\n" +
+                    "Download it once to get started.";
             } else {
+                empty_status.title = "Delta Chat engine required";
                 empty_status.description =
-                    "Standalone deltachat-rpc-server was not found.\n" +
-                    "Open Settings to choose a server source, or install it.";
+                    "No prebuilt deltachat-rpc-server is available for this\n" +
+                    "architecture. Install it manually (see docs/rpc-server.md)\n" +
+                    "or choose a binary in Settings.";
             }
 
-            var btn = new Gtk.Button.with_label ("Open Settings…");
-            btn.add_css_class ("suggested-action");
-            btn.add_css_class ("pill");
-            btn.halign = Gtk.Align.CENTER;
-            btn.clicked.connect (show_settings_dialog);
-            empty_status.child = btn;
+            if (can_download) {
+                var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+                box.halign = Gtk.Align.CENTER;
+
+                var dl = new Gtk.Button.with_label ("Download & start");
+                dl.add_css_class ("suggested-action");
+                dl.add_css_class ("pill");
+                dl.halign = Gtk.Align.CENTER;
+                dl.clicked.connect (() => { install_and_connect.begin (); });
+                box.append (dl);
+
+                var settings_link = new Gtk.Button.with_label ("Open Settings…");
+                settings_link.add_css_class ("flat");
+                settings_link.halign = Gtk.Align.CENTER;
+                settings_link.clicked.connect (show_settings_dialog);
+                box.append (settings_link);
+
+                empty_status.child = box;
+            } else {
+                var btn = new Gtk.Button.with_label ("Open Settings…");
+                btn.add_css_class ("suggested-action");
+                btn.add_css_class ("pill");
+                btn.halign = Gtk.Align.CENTER;
+                btn.clicked.connect (show_settings_dialog);
+                empty_status.child = btn;
+                show_toast ("deltachat-rpc-server not found");
+            }
 
             content_stack.visible_child_name = "empty";
-            show_toast ("deltachat-rpc-server not found");
+        }
+
+        /* One-click onboarding: download the managed server, then reconnect. */
+        private async void install_and_connect () {
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+            box.halign = Gtk.Align.CENTER;
+            var spinner = new Gtk.Spinner ();
+            spinner.spinning = true;
+            spinner.set_size_request (32, 32);
+            box.append (spinner);
+            var label = new Gtk.Label ("Downloading Delta Chat engine…");
+            label.add_css_class ("dim-label");
+            box.append (label);
+
+            empty_status.icon_name = "folder-download-symbolic";
+            empty_status.title = "Setting up Parla";
+            empty_status.description = "";
+            empty_status.child = box;
+            content_stack.visible_child_name = "empty";
+
+            var installer = new RpcInstaller ();
+            installer.progress.connect ((received, total) => {
+                if (total > 0) {
+                    double pct = (double) received / (double) total * 100.0;
+                    label.label =
+                        "Downloading Delta Chat engine… %.0f%% (%.1f MB)".printf (
+                            pct, total / 1048576.0);
+                } else {
+                    label.label = "Downloading Delta Chat engine… %.1f MB".printf (
+                        received / 1048576.0);
+                }
+            });
+
+            try {
+                yield installer.download_latest ();
+            } catch (Error e) {
+                show_toast ("Download failed: " + e.message);
+                show_rpc_not_found ();
+                return;
+            }
+
+            /* The downloaded binary lives in the Auto search path, so make sure
+               we resolve it on reconnect even if the source was Custom/Desktop. */
+            if (settings.rpc_server_source != RpcServerSource.AUTO) {
+                settings.save_rpc_server_source (RpcServerSource.AUTO);
+            }
+
+            show_toast ("Delta Chat engine installed");
+            yield try_connect ();
+        }
+
+        /* Quietly check GitHub for a newer managed server and offer to update. */
+        private async void check_managed_update () {
+            try {
+                string? installed = yield RpcInstaller.installed_version ();
+                if (installed == null) return;
+                string tag = yield RpcInstaller.fetch_latest_tag ();
+                string? latest = RpcInstaller.extract_version (tag);
+                string? current = RpcInstaller.extract_version (installed);
+                if (latest == null || current == null || latest == current) return;
+
+                var toast = new Adw.Toast (
+                    "Delta Chat engine update available: %s".printf (latest));
+                toast.timeout = 8;
+                toast.button_label = "Update";
+                toast.button_clicked.connect (() => {
+                    update_managed_server.begin ();
+                });
+                toast_overlay.add_toast (toast);
+            } catch (Error e) {
+                /* Update checks are best-effort; stay quiet on failure. */
+            }
+        }
+
+        private async void update_managed_server () {
+            show_toast ("Updating Delta Chat engine…");
+            var installer = new RpcInstaller ();
+            try {
+                yield installer.download_latest ();
+                show_toast ("Update installed — restart Parla to apply");
+            } catch (Error e) {
+                show_toast ("Update failed: " + e.message);
+            }
         }
 
         /* ================================================================

@@ -31,6 +31,7 @@ namespace Dc {
         public bool notifications_enabled { get; set; default = true; }
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
+        public bool rpc_check_updates_on_startup { get; set; default = true; }
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
         public string default_account_addr { get; set; default = ""; }
         public MessageStyle message_style { get; set; default = MessageStyle.BUBBLES; }
@@ -52,12 +53,14 @@ namespace Dc {
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
-            int default_source = rpc_server_path.length > 0
-                ? (int) RpcServerSource.CUSTOM
-                : (int) RpcServerSource.AUTO;
-            int source = kf_int (kf, "rpc_server_source", default_source);
-            if (source < 0 || source > 2) source = default_source;
+            /* Auto is always the default: a fresh install self-onboards the
+               engine, and the source is only Custom/Desktop when explicitly
+               chosen (those writes always persist the rpc_server_source key). */
+            int source = kf_int (kf, "rpc_server_source", (int) RpcServerSource.AUTO);
+            if (source < 0 || source > 2) source = (int) RpcServerSource.AUTO;
             rpc_server_source = (RpcServerSource) source;
+            rpc_check_updates_on_startup =
+                kf_bool (kf, "rpc_check_updates_on_startup", true);
             int sb = kf_int (kf, "sidebar_mode", (int) SidebarMode.FULL);
             if (sb < 0 || sb > 2) sb = (int) SidebarMode.FULL;
             sidebar_mode = (SidebarMode) sb;
@@ -109,6 +112,13 @@ namespace Dc {
             rpc_server_source = v;
             save_to_file ((kf) => {
                 kf.set_integer ("General", "rpc_server_source", (int) v);
+            });
+        }
+
+        public void save_rpc_check_updates_on_startup (bool v) {
+            rpc_check_updates_on_startup = v;
+            save_to_file ((kf) => {
+                kf.set_boolean ("General", "rpc_check_updates_on_startup", v);
             });
         }
 
@@ -166,6 +176,7 @@ namespace Dc {
         private Adw.ActionRow rpc_version_row;
         private Gtk.DropDown rpc_source_dropdown;
         private Gtk.Button rpc_choose_btn;
+        private Gtk.Button rpc_download_btn;
         private Gtk.Button rpc_update_btn;
         private bool syncing_rpc_source = false;
         private uint rpc_version_request = 0;
@@ -357,11 +368,12 @@ namespace Dc {
             rpc_choose_btn.clicked.connect (() => { on_browse_rpc_server.begin (); });
             rpc_row.add_suffix (rpc_choose_btn);
 
-            var rpc_download_btn = new Gtk.Button.with_label ("Get");
+            rpc_download_btn = new Gtk.Button.with_label ("Get");
             rpc_download_btn.valign = Gtk.Align.CENTER;
             rpc_download_btn.add_css_class ("flat");
-            rpc_download_btn.tooltip_text = "Open standalone deltachat-rpc-server releases";
-            rpc_download_btn.clicked.connect (() => { open_rpc_download_page.begin (); });
+            rpc_download_btn.tooltip_text =
+                "Download the latest deltachat-rpc-server into Parla's data dir";
+            rpc_download_btn.clicked.connect (() => { install_managed_server.begin (); });
             rpc_row.add_suffix (rpc_download_btn);
 
             advanced_list.append (rpc_row);
@@ -376,6 +388,22 @@ namespace Dc {
             rpc_update_btn.clicked.connect (() => { check_rpc_updates.begin (); });
             rpc_version_row.add_suffix (rpc_update_btn);
             advanced_list.append (rpc_version_row);
+
+            var rpc_autocheck_row = new Adw.ActionRow ();
+            rpc_autocheck_row.title = "Check for engine updates on startup";
+            rpc_autocheck_row.subtitle =
+                "Notify when a newer deltachat-rpc-server is available";
+            var autocheck_switch = new Gtk.Switch ();
+            autocheck_switch.active =
+                app_window.settings.rpc_check_updates_on_startup;
+            autocheck_switch.valign = Gtk.Align.CENTER;
+            autocheck_switch.notify["active"].connect (() => {
+                app_window.settings.save_rpc_check_updates_on_startup (
+                    autocheck_switch.active);
+            });
+            rpc_autocheck_row.add_suffix (autocheck_switch);
+            rpc_autocheck_row.activatable_widget = autocheck_switch;
+            advanced_list.append (rpc_autocheck_row);
 
             content.append (advanced_list);
             update_rpc_row ();
@@ -486,7 +514,7 @@ namespace Dc {
                     : (stderr_buf ?? "").strip ();
                 if (process.get_successful () && version.length > 0) {
                     rpc_version_row.subtitle = version;
-                    rpc_current_version = extract_version (version);
+                    rpc_current_version = RpcInstaller.extract_version (version);
                     rpc_update_check_available = true;
                     rpc_update_btn.sensitive = true;
                 } else {
@@ -513,13 +541,19 @@ namespace Dc {
             rpc_version_row.subtitle = "Checking for updates...";
 
             try {
-                string latest_tag = yield fetch_latest_rpc_release_tag ();
-                string? latest_version = extract_version (latest_tag);
+                string latest_tag = yield RpcInstaller.fetch_latest_tag ();
+                string? latest_version = RpcInstaller.extract_version (latest_tag);
                 if (latest_version == null) {
                     rpc_version_row.subtitle = previous_subtitle;
                     app_window.show_toast ("Could not parse latest RPC server version");
                     return;
                 }
+
+                bool managed_active =
+                    AccountFinder.find_rpc_server (
+                        app_window.settings.rpc_server_path,
+                        app_window.settings.rpc_server_source)
+                    == AccountFinder.get_managed_rpc_path ();
 
                 if (rpc_current_version == null) {
                     rpc_version_row.subtitle =
@@ -528,7 +562,14 @@ namespace Dc {
                 } else if (rpc_current_version != latest_version) {
                     rpc_version_row.subtitle = "Latest: %s (installed %s)".printf (
                         latest_version, rpc_current_version);
-                    app_window.show_toast ("RPC server version differs: " + latest_version);
+                    if (managed_active) {
+                        app_window.show_toast (
+                            "Update available: %s — press Get to install".printf (
+                                latest_version));
+                    } else {
+                        app_window.show_toast (
+                            "RPC server version differs: " + latest_version);
+                    }
                 } else {
                     rpc_version_row.subtitle = "Up to date: %s".printf (rpc_current_version);
                     app_window.show_toast ("RPC server is up to date");
@@ -542,109 +583,6 @@ namespace Dc {
             } finally {
                 rpc_update_btn.sensitive = rpc_update_check_available;
             }
-        }
-
-        private async string fetch_latest_rpc_release_tag () throws Error {
-            var client = new SocketClient ();
-            client.timeout = 15;
-            var tcp = yield client.connect_to_host_async ("github.com", 443, null);
-            var identity = new NetworkAddress ("github.com", 443);
-            var tls = TlsClientConnection.new (tcp, identity);
-            if (tls == null) {
-                throw new IOError.FAILED ("Unable to create TLS connection");
-            }
-            yield tls.handshake_async (Priority.DEFAULT, null);
-
-            string request =
-                "HEAD /chatmail/core/releases/latest HTTP/1.1\r\n" +
-                "Host: github.com\r\n" +
-                "User-Agent: Parla\r\n" +
-                "Accept: */*\r\n" +
-                "Connection: close\r\n\r\n";
-
-            size_t written;
-            yield tls.output_stream.write_all_async (
-                request.data, Priority.DEFAULT, null, out written);
-
-            var reader = new DataInputStream (tls.input_stream);
-            reader.set_newline_type (DataStreamNewlineType.LF);
-
-            size_t len;
-            string? status_line = yield reader.read_line_utf8_async (
-                Priority.DEFAULT, null, out len);
-            int status = parse_http_status (status_line ?? "");
-            string? location = null;
-
-            string? line;
-            while ((line = yield reader.read_line_utf8_async (
-                        Priority.DEFAULT, null, out len)) != null) {
-                string stripped = line.strip ();
-                if (stripped.length == 0) break;
-                if (stripped.down ().has_prefix ("location:")) {
-                    location = stripped.substring ("location:".length).strip ();
-                }
-            }
-
-            try {
-                yield tls.close_async (Priority.DEFAULT, null);
-            } catch (Error e) {
-                /* The response has already been read. */
-            }
-
-            if (status < 300 || status >= 400 || location == null) {
-                throw new IOError.FAILED (
-                    "GitHub returned HTTP status %d".printf (status));
-            }
-
-            string? tag = extract_release_tag (location);
-            if (tag == null) {
-                throw new IOError.FAILED ("GitHub response did not include a release tag");
-            }
-            return tag;
-        }
-
-        private static int parse_http_status (string status_line) {
-            string[] parts = status_line.split (" ");
-            if (parts.length < 2) return 0;
-            return int.parse (parts[1]);
-        }
-
-        private static string? extract_release_tag (string location) {
-            int idx = location.last_index_of ("/tag/");
-            if (idx < 0) return null;
-
-            string tag = location.substring (idx + "/tag/".length);
-            int q = tag.index_of ("?");
-            if (q >= 0) tag = tag.substring (0, q);
-            int hash = tag.index_of ("#");
-            if (hash >= 0) tag = tag.substring (0, hash);
-            tag = tag.strip ();
-            return tag.length > 0 ? tag : null;
-        }
-
-        private static string? extract_version (string text) {
-            int start = -1;
-            int end = -1;
-            for (int i = 0; i < text.length; i++) {
-                char c = text[i];
-                if (start < 0) {
-                    if (c >= '0' && c <= '9') {
-                        start = i;
-                        end = i + 1;
-                    }
-                } else if ((c >= '0' && c <= '9') || c == '.') {
-                    end = i + 1;
-                } else {
-                    break;
-                }
-            }
-            if (start < 0 || end <= start) return null;
-
-            string version = text.substring (start, end - start);
-            while (version.has_suffix (".")) {
-                version = version.substring (0, version.length - 1);
-            }
-            return version.length > 0 ? version : null;
         }
 
         private void sync_rpc_source_dropdown () {
@@ -693,6 +631,45 @@ namespace Dc {
             } catch (Error e) {
                 if (!(e is Gtk.DialogError) && !(e is IOError.CANCELLED))
                     show_error (app_window, e.message);
+            }
+            update_rpc_row ();
+        }
+
+        /* One-click: download the latest server into Parla's data dir. */
+        private async void install_managed_server () {
+            if (RpcInstaller.detect_asset_name () == null) {
+                /* No prebuilt binary for this arch — fall back to the browser. */
+                yield open_rpc_download_page ();
+                return;
+            }
+
+            rpc_download_btn.sensitive = false;
+            string prev_subtitle = rpc_row.subtitle;
+            var installer = new RpcInstaller ();
+            installer.progress.connect ((received, total) => {
+                if (total > 0) {
+                    rpc_row.subtitle = "Downloading… %.0f%%".printf (
+                        (double) received / (double) total * 100.0);
+                } else {
+                    rpc_row.subtitle = "Downloading… %.1f MB".printf (
+                        received / 1048576.0);
+                }
+            });
+
+            try {
+                yield installer.download_latest ();
+                /* Make sure the freshly installed managed binary is the one
+                   Parla resolves on next start. */
+                if (app_window.settings.rpc_server_source != RpcServerSource.AUTO) {
+                    app_window.settings.save_rpc_server_source (RpcServerSource.AUTO);
+                    sync_rpc_source_dropdown ();
+                }
+                app_window.show_toast ("RPC server installed. Restart to apply.");
+            } catch (Error e) {
+                rpc_row.subtitle = prev_subtitle;
+                app_window.show_toast ("Download failed: " + e.message);
+            } finally {
+                rpc_download_btn.sensitive = true;
             }
             update_rpc_row ();
         }
