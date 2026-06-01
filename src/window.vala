@@ -203,9 +203,9 @@ namespace Dc {
             content_stack.vexpand = true;
 
             empty_status = new Adw.StatusPage ();
-            empty_status.icon_name = "mail-send-receive-symbolic";
-            empty_status.title = "Parla";
-            empty_status.description = "Select a chat to start messaging,\nor wait for the connection…";
+            empty_status.icon_name = "parla-welcome";
+            empty_status.title = "Welcome to Parla";
+            empty_status.description = "Select a chat to start messaging";
             content_stack.add_named (empty_status, "empty");
             content_stack.visible_child_name = "empty";
             content_box.append (content_stack);
@@ -289,9 +289,9 @@ namespace Dc {
 
             /* Reset any error widget left from a previous failed attempt. */
             empty_status.child = null;
-            empty_status.icon_name = "mail-send-receive-symbolic";
-            empty_status.title = "Parla";
-            empty_status.description = "Select a chat to start messaging,\nor wait for the connection…";
+            empty_status.icon_name = "parla-welcome";
+            empty_status.title = "Welcome to Parla";
+            empty_status.description = "Select a chat to start messaging";
 
             /* Find the RPC server binary. Auto mode uses Parla/distro-owned
                standalone servers; Desktop is an explicit compatibility mode. */
@@ -417,7 +417,7 @@ namespace Dc {
                     : "Delta Chat Desktop's bundled server was not found.\n" +
                       "Open Settings to choose a standalone server.";
             } else if (can_download) {
-                empty_status.icon_name = "mail-send-receive-symbolic";
+                empty_status.icon_name = "parla-welcome";
                 empty_status.title = "Welcome to Parla";
                 empty_status.description =
                     "Parla needs the Delta Chat engine to connect.\n" +
@@ -1504,7 +1504,7 @@ namespace Dc {
                 return;
             }
 
-            empty_status.icon_name = "mail-send-receive-symbolic";
+            empty_status.icon_name = "parla-welcome";
             empty_status.title = "Parla";
             empty_status.description = "Select a chat to start messaging.";
             try {

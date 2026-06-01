@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/github/trufae/Parla/icons">
+    <file>scalable/apps/parla-welcome.svg</file>
+  </gresource>
+</gresources>

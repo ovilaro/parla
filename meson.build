@@ -19,6 +19,13 @@ config_file = configure_file(
   configuration: config,
 )
 
+gnome = import('gnome')
+resources = gnome.compile_resources(
+  'parla-resources',
+  'data/parla.gresource.xml',
+  source_dir: 'data/icons/hicolor',
+)
+
 sources = files(
   'src/main.vala',
   'src/application.vala',
@@ -51,7 +58,7 @@ sources = files(
 )
 
 executable('parla',
-  sources, config_file,
+  sources, config_file, resources,
   dependencies: deps,
   install: true,
 )
@@ -63,6 +70,7 @@ install_data(
 
 install_data(
   'data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg',
+  'data/icons/hicolor/scalable/apps/parla-welcome.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
 

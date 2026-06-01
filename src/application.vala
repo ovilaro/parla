@@ -7,6 +7,12 @@ namespace Dc {
         uint priority
     );
 
+    [CCode (cname = "gtk_style_context_remove_provider_for_display")]
+    private extern void remove_provider_for_display (
+        Gdk.Display display,
+        Gtk.StyleProvider provider
+    );
+
     public class Application : Adw.Application {
 
         public RpcClient rpc { get; private set; }
@@ -29,8 +35,7 @@ namespace Dc {
             if (display == null) return;
 
             if (accent_provider != null) {
-                Gtk.StyleContext.remove_provider_for_display (
-                    display, accent_provider);
+                remove_provider_for_display (display, accent_provider);
                 accent_provider = null;
             }
             if (hex.length == 0) return;
@@ -89,6 +94,10 @@ namespace Dc {
 
         private void register_icons () {
             var theme = Gtk.IconTheme.get_for_display (Gdk.Display.get_default ());
+            /* App-bundled icons (e.g. "parla-welcome") are embedded in the
+               binary as a GResource so they resolve regardless of install
+               prefix, XDG_DATA_DIRS, or a stale hicolor icon cache. */
+            theme.add_resource_path ("/io/github/trufae/Parla/icons");
             /* Support running uninstalled: add the project data/icons dir */
             try {
                 var exe_path = FileUtils.read_link ("/proc/self/exe");

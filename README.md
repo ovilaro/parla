@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="delta-gnome.png" width="96" alt="Parla logo"/>
+  <img src="parla.png" width="96" alt="Parla logo"/>
 </p>
 
 <h1 align="center">Parla</h1>
