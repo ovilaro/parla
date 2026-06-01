@@ -1308,6 +1308,12 @@ namespace Dc {
             about.release_notes_version = Parla.VERSION;
             about.release_notes =
                 "<ul>" +
+                "<li>New icon and welcome screen</li>" +
+                "<li>Better jsonrpc download onboarding</li>" +
+                "<li>Allow to interrupt account creation before timeout</li>" +
+                "</ul>" +
+                "<p>Version 0.2.8</p>" +
+                "<ul>" +
                 "<li>Custom accent color</li>" +
                 "<li>Bubble chat/irc view</li>" +
                 "<li>Improved message reactions</li>" +
