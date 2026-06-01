@@ -45,7 +45,12 @@ namespace Dc {
             string css =
                 "@define-color accent_bg_color " + hex + ";\n" +
                 "@define-color accent_color " + hex + ";\n" +
-                "@define-color accent_fg_color " + fg + ";\n";
+                "@define-color accent_fg_color " + fg + ";\n" +
+                /* Legacy GTK names — used by plain (non-libadwaita) widgets
+                   such as selections and some controls that would otherwise
+                   keep the default blue. */
+                "@define-color theme_selected_bg_color " + hex + ";\n" +
+                "@define-color theme_selected_fg_color " + fg + ";\n";
 
             accent_provider = new Gtk.CssProvider ();
             accent_provider.load_from_string (css);
@@ -67,6 +72,13 @@ namespace Dc {
         protected override void startup () {
             base.startup ();
             load_css ();
+            /* Apply the saved accent override before any window/widget is
+               built, so named colors resolve to it from the first style
+               computation. Applying it later (in Window.construct, after
+               build_ui) leaves already-styled widgets blue until a re-apply. */
+            var settings = new SettingsManager ();
+            settings.load ();
+            apply_accent_color (settings.accent_color);
             register_icons ();
             Gtk.Window.set_default_icon_name ("io.github.trufae.Parla");
 
