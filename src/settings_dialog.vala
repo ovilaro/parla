@@ -29,6 +29,7 @@ namespace Dc {
         public bool markdown_rendering { get; set; default = false; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
+        public bool minimize_to_tray { get; set; default = false; }
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public bool rpc_check_updates_on_startup { get; set; default = true; }
@@ -52,6 +53,7 @@ namespace Dc {
             Markdown.enabled = markdown_rendering;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
+            minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
             /* Auto is always the default: a fresh install self-onboards the
                engine, and the source is only Custom/Desktop when explicitly
@@ -101,6 +103,11 @@ namespace Dc {
         public void save_notifications_enabled (bool v) {
             notifications_enabled = v;
             save_to_file ((kf) => { kf.set_boolean ("General", "notifications_enabled", v); });
+        }
+
+        public void save_minimize_to_tray (bool v) {
+            minimize_to_tray = v;
+            save_to_file ((kf) => { kf.set_boolean ("General", "minimize_to_tray", v); });
         }
 
         public void save_rpc_server_path (string v) {
@@ -278,6 +285,23 @@ namespace Dc {
             notif_row.activatable_widget = notif_switch;
 
             behavior_list.append (notif_row);
+
+            var tray_row = new Adw.ActionRow ();
+            tray_row.title = "Minimize to status bar";
+            tray_row.subtitle =
+                "Closing the window keeps Parla running in the status bar; "
+                + "notifications still appear";
+
+            var tray_switch = new Gtk.Switch ();
+            tray_switch.active = app_window.settings.minimize_to_tray;
+            tray_switch.valign = Gtk.Align.CENTER;
+            tray_switch.notify["active"].connect (() => {
+                app_window.settings.save_minimize_to_tray (tray_switch.active);
+            });
+            tray_row.add_suffix (tray_switch);
+            tray_row.activatable_widget = tray_switch;
+
+            behavior_list.append (tray_row);
             content.append (behavior_list);
 
             /* Appearance section */

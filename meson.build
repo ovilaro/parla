@@ -3,6 +3,9 @@ project('parla', ['vala', 'c'],
   meson_version: '>= 0.59.0',
 )
 
+# posix vapi provides Posix.getpid () for the StatusNotifierItem bus name
+add_project_arguments(['--pkg', 'posix'], language: 'vala')
+
 deps = [
   dependency('glib-2.0'),
   dependency('gio-2.0'),
@@ -47,6 +50,7 @@ sources = files(
   'src/contact_picker_dialog.vala',
   'src/new_group_dialog.vala',
   'src/settings_dialog.vala',
+  'src/tray_icon.vala',
   'src/storage_quota.vala',
   'src/profile_dialog.vala',
   'src/pinned_messages_manager.vala',
@@ -71,6 +75,7 @@ install_data(
 install_data(
   'data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg',
   'data/icons/hicolor/scalable/apps/parla-welcome.svg',
+  'data/icons/hicolor/scalable/apps/parla-tray.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
 

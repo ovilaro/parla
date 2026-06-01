@@ -67,11 +67,17 @@ namespace Dc {
         }
 
         protected override void activate () {
-            var window = active_window;
+            Dc.Window? window = null;
+            foreach (var win in get_windows ()) {
+                if (win is Dc.Window) {
+                    window = (Dc.Window) win;
+                    break;
+                }
+            }
             if (window == null) {
                 window = new Dc.Window (this);
             }
-            window.present ();
+            window.restore_from_tray ();
         }
 
         protected override void startup () {
@@ -90,6 +96,7 @@ namespace Dc {
             set_accels_for_action ("win.new-chat", {"<Control>n"});
             set_accels_for_action ("win.refresh", {"<Control>r"});
             set_accels_for_action ("win.settings", {"<Control>comma"});
+            set_accels_for_action ("win.quit", {"<Control>q"});
         }
 
         private void register_icons () {

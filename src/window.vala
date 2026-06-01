@@ -54,6 +54,9 @@ namespace Dc {
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
 
+        private TrayIcon? tray = null;
+        private bool minimized_to_tray = false;
+
         public Window (Dc.Application app) {
             Object (
                 application: app,
@@ -89,12 +92,51 @@ namespace Dc {
                 }
             });
 
+            close_request.connect (on_close_request);
+
             /* Defer connection until main loop — application property
                may not be available during construct. */
             Idle.add (() => {
                 try_connect.begin ();
                 return Source.REMOVE;
             });
+        }
+
+        private bool on_close_request () {
+            return settings.minimize_to_tray && minimize_to_tray ();
+        }
+
+        private bool minimize_to_tray () {
+            if (minimized_to_tray) return true;
+            if (tray == null) {
+                var conn = this.application.get_dbus_connection ();
+                if (conn == null) return false;
+                tray = new TrayIcon (conn);
+                tray.show_requested.connect (() => { restore_from_tray (); });
+                tray.quit_requested.connect (() => {
+                    minimized_to_tray = false;
+                    this.application.quit ();
+                });
+                tray.notifications_toggle_requested.connect ((enabled) => {
+                    settings.save_notifications_enabled (enabled);
+                    tray.set_notifications_enabled (enabled);
+                });
+            }
+            tray.set_notifications_enabled (settings.notifications_enabled);
+            if (!tray.show ()) return false;
+            this.set_visible (false);
+            this.application.hold ();
+            minimized_to_tray = true;
+            return true;
+        }
+
+        public void restore_from_tray () {
+            if (minimized_to_tray) {
+                minimized_to_tray = false;
+                if (tray != null) tray.hide ();
+                this.application.release ();
+            }
+            this.present ();
         }
 
         /* ================================================================
@@ -1275,6 +1317,8 @@ namespace Dc {
             a.activate.connect (() => { show_keyboard_shortcuts_dialog (); }); add_action (a);
             a = new SimpleAction ("about", null);
             a.activate.connect (() => { show_about_dialog (); }); add_action (a);
+            a = new SimpleAction ("quit", null);
+            a.activate.connect (() => { this.application.quit (); }); add_action (a);
 
             var s1 = new GLib.Menu ();
             s1.append ("New Chat", "win.new-chat");
@@ -1286,11 +1330,14 @@ namespace Dc {
             var s3 = new GLib.Menu ();
             s3.append ("Shortcuts", "win.shortcuts");
             s3.append ("About", "win.about");
+            var s4 = new GLib.Menu ();
+            s4.append ("Quit", "win.quit");
 
             var menu = new GLib.Menu ();
             menu.append_section (null, s1);
             menu.append_section (null, s2);
             menu.append_section (null, s3);
+            menu.append_section (null, s4);
             return menu;
         }
 
