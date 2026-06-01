@@ -177,7 +177,17 @@
        y1="12.553518"
        x2="32.315479"
        y2="12.553518"
-       gradientUnits="userSpaceOnUse" /></defs><g
+       gradientUnits="userSpaceOnUse" /></defs><rect
+     id="bgtile"
+     x="1"
+     y="1"
+     width="46"
+     height="46"
+     rx="11"
+     ry="11"
+     style="fill:#ffffff;stroke:#d9d9d9;stroke-width:0.75;stroke-opacity:1" /><g
+     id="iconscale"
+     transform="matrix(1.28,0,0,1.28,-5.44,-5.44)"><g
      id="g17"
      transform="matrix(2.0463198,0,0,2.0463198,-31.332324,1.6340099)"><path
        fill="#ffffff"
@@ -210,4 +220,4 @@
        style="fill:url(#linearGradient12);fill-opacity:1;stroke:#a1a1a1;stroke-width:0.163121;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
        d="M 22.361452,8.1896312 C 22.676804,8.109826 22.660803,7.5632228 22.600696,7.2435305 22.511854,6.771007 22.243816,6.0868403 21.763342,6.0690601 21.428939,6.0566847 21.11336,6.5066382 21.121734,6.8411658 c 0.01528,0.6103878 0.647799,1.4982603 1.239718,1.3484654 z"
        id="path1-7-3-6-8"
-       sodipodi:nodetypes="aaaaa" /></g></svg>
+       sodipodi:nodetypes="aaaaa" /></g></g></svg>
