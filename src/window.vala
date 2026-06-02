@@ -1677,6 +1677,21 @@ namespace Dc {
                 return true;
             }
 
+            /* Type-ahead: a printable key pressed while focus is not in a
+               text field (or with nothing focused) is redirected to the
+               message entry, so you can start typing without the mouse —
+               e.g. click a message, type 'a', and 'a' lands in the entry. */
+            if (is_typeahead_key (keyval, state) && !focus_consumes_key (keyval)) {
+                var v = current_view ();
+                if (v != null) {
+                    unichar uc = (unichar) Gdk.keyval_to_unicode (keyval);
+                    if (uc != 0) {
+                        v.type_into_entry (uc.to_string ());
+                        return true;
+                    }
+                }
+            }
+
             /* All other shortcuts require Ctrl */
             if ((state & Gdk.ModifierType.CONTROL_MASK) == 0) return false;
 
@@ -1721,6 +1736,35 @@ namespace Dc {
                 this.application.quit ();
                 return true;
             }
+            return false;
+        }
+
+        /* A printable character with no Ctrl/Alt/Super/Meta held. Shift and
+           CapsLock are allowed (capitals, shifted symbols). Navigation and
+           control keys (arrows, Enter, Tab, Backspace, F-keys…) map to 0 or
+           a control char via keyval_to_unicode, so they're excluded. */
+        private static bool is_typeahead_key (uint keyval, Gdk.ModifierType state) {
+            var mods = state & (Gdk.ModifierType.CONTROL_MASK
+                              | Gdk.ModifierType.ALT_MASK
+                              | Gdk.ModifierType.SUPER_MASK
+                              | Gdk.ModifierType.META_MASK);
+            if (mods != 0) return false;
+            uint uc = Gdk.keyval_to_unicode (keyval);
+            return uc >= 0x20 && uc != 0x7f;
+        }
+
+        /* Whether the focused widget should keep the key rather than have it
+           redirected to the compose entry: any text field, anything inside an
+           open dialog/popover, or a button that Space would activate. */
+        private bool focus_consumes_key (uint keyval) {
+            for (var w = this.focus_widget; w != null; w = w.get_parent ()) {
+                if (w is Gtk.Editable || w is Gtk.TextView) return true;
+                if (w is Gtk.Popover || w is Adw.Dialog) return true;
+            }
+            if ((keyval == Gdk.Key.space || keyval == Gdk.Key.KP_Space)
+                && (this.focus_widget is Gtk.Button
+                    || this.focus_widget is Gtk.MenuButton))
+                return true;
             return false;
         }
 

@@ -52,10 +52,27 @@
     border-radius: 18px;
     padding: 0;
     min-height: 0;
+    /* Transparent 1px border reserves space so the entry doesn't shift
+       by a pixel when the focus border appears. */
+    border: 1px solid transparent;
 }
 
 .compose-entry, .compose-entry text {
     background-color: alpha(@view_fg_color, 0.06);
+}
+
+/* Tinted border + subtle wash so the focused message entry is obviously
+   active when reached by keyboard (Esc or type-ahead), not just by mouse. */
+.compose-entry:focus-within {
+    border-color: @accent_color;
+}
+
+.compose-entry:focus-within, .compose-entry:focus-within text {
+    background-color: alpha(@accent_color, 0.08);
+}
+
+.compose-entry text {
+    caret-color: @accent_color;
 }
 
 .compose-placeholder {

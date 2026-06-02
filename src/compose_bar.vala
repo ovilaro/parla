@@ -176,6 +176,13 @@ namespace Dc {
             });
         }
 
+        /* Insert text at the cursor and take focus. Used by the window's
+           type-ahead so pressing a key anywhere starts a message. */
+        public void type_text (string text) {
+            text_view.buffer.insert_at_cursor (text, text.length);
+            text_view.grab_focus ();
+        }
+
         public void clear () {
             text_view.buffer.text = "";
             clear_attachment ();

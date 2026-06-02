@@ -232,6 +232,10 @@ namespace Dc {
             compose_bar.grab_entry_focus ();
         }
 
+        public void type_into_entry (string text) {
+            compose_bar.type_text (text);
+        }
+
         public async void reload_messages () {
             yield load_messages (true);
         }
