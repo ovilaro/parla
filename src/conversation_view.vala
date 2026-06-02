@@ -157,11 +157,29 @@ namespace Dc {
 
             var dc = new Gtk.GestureClick ();
             dc.button = 1;
+            /* Run in the capture phase: the listview's own click handling
+               claims double-click presses before they bubble up, so a
+               bubble-phase gesture never sees the second press of a real
+               double click. Capturing lets us observe every press first.
+               We still detect the double click by timing consecutive
+               presses on the same row rather than trusting n_press. */
+            dc.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+            int dc_last_id = -1;
+            int64 dc_last_time = 0;
             dc.pressed.connect ((n, x, y) => {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
-                if (n == 2) msg_actions.handle_double_click (row.message_id);
-                else {
+                int64 now = get_monotonic_time () / 1000;
+                int dct = 400;
+                var gs = Gtk.Settings.get_default ();
+                if (gs != null) dct = gs.gtk_double_click_time;
+                if (row.message_id == dc_last_id && now - dc_last_time <= dct) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    msg_actions.handle_double_click (row.message_id);
+                } else {
+                    dc_last_id = row.message_id;
+                    dc_last_time = now;
                     var msg = find_message (message_store, row.message_id);
                     if (msg != null) on_message_activated (msg);
                 }
