@@ -119,7 +119,7 @@ namespace Dc {
             bool has_file = (msg.file_name != null && msg.file_name.length > 0)
                          || (msg.file_path != null && msg.file_path.length > 0);
             if (has_file) {
-                bool image_shown = false;
+                bool media_shown = false;
 
                 /* Try to show inline image preview */
                 if (msg.file_path != null &&
@@ -142,14 +142,20 @@ namespace Dc {
                         picture.set_size_request (dw, dh);
                         picture.add_css_class ("message-image");
                         bubble.append (picture);
-                        image_shown = true;
+                        media_shown = true;
                     } catch (Error e) {
                         stderr.printf ("  -> Image load failed: %s\n", e.message);
                     }
+                } else if (is_video_file (msg)) {
+                    bubble.append (build_video_preview (msg));
+                    media_shown = true;
+                } else if (is_audio_file (msg)) {
+                    bubble.append (build_audio_player (msg));
+                    media_shown = true;
                 }
 
-                /* Show attachment indicator if image wasn't shown */
-                if (!image_shown) {
+                /* Show attachment indicator if no media preview was shown */
+                if (!media_shown) {
                     bubble.append (build_file_indicator (msg));
                 }
             }
@@ -336,6 +342,12 @@ namespace Dc {
                 append_irc_image (single, msg);
                 body.append (single);
                 image_shown = true;
+            } else if (has_file && is_video_file (msg)) {
+                body.append (build_video_preview (msg));
+                image_shown = true;
+            } else if (has_file && is_audio_file (msg)) {
+                body.append (build_audio_player (msg));
+                image_shown = true;
             }
             if (has_file && !image_shown) {
                 var fi = build_file_indicator (msg);
@@ -521,6 +533,98 @@ namespace Dc {
                     return true;
             }
             return false;
+        }
+
+        public static bool is_video_file (Message msg) {
+            if (msg.file_mime != null && msg.file_mime.has_prefix ("video/"))
+                return true;
+            if (msg.view_type != null && msg.view_type.down () == "video")
+                return true;
+            if (msg.file_path != null) {
+                var lower = msg.file_path.down ();
+                if (lower.has_suffix (".mp4") || lower.has_suffix (".m4v") ||
+                    lower.has_suffix (".webm") || lower.has_suffix (".mkv") ||
+                    lower.has_suffix (".mov") || lower.has_suffix (".avi") ||
+                    lower.has_suffix (".ogv") || lower.has_suffix (".3gp") ||
+                    lower.has_suffix (".wmv") || lower.has_suffix (".flv"))
+                    return true;
+            }
+            return false;
+        }
+
+        public static bool is_audio_file (Message msg) {
+            if (msg.file_mime != null && msg.file_mime.has_prefix ("audio/"))
+                return true;
+            if (msg.view_type != null) {
+                var vt = msg.view_type.down ();
+                if (vt == "audio" || vt == "voice")
+                    return true;
+            }
+            if (msg.file_path != null) {
+                var lower = msg.file_path.down ();
+                if (lower.has_suffix (".mp3") || lower.has_suffix (".ogg") ||
+                    lower.has_suffix (".oga") || lower.has_suffix (".opus") ||
+                    lower.has_suffix (".wav") || lower.has_suffix (".m4a") ||
+                    lower.has_suffix (".aac") || lower.has_suffix (".flac") ||
+                    lower.has_suffix (".weba") || lower.has_suffix (".amr"))
+                    return true;
+            }
+            return false;
+        }
+
+        /**
+         * Inline preview for a video attachment: a dark thumbnail-sized card
+         * with a centered play glyph and the file name. Purely visual — the
+         * click is handled by the conversation view, which opens the
+         * fullscreen player (mirrors how images open the image viewer).
+         */
+        private static Gtk.Widget build_video_preview (Message msg) {
+            var overlay = new Gtk.Overlay ();
+            overlay.halign = Gtk.Align.START;
+
+            var bg = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            bg.add_css_class ("message-video-bg");
+            bg.set_size_request (260, 150);
+            overlay.child = bg;
+
+            var play = new Gtk.Image.from_icon_name ("media-playback-start-symbolic");
+            play.add_css_class ("message-video-play");
+            play.pixel_size = 48;
+            play.halign = Gtk.Align.CENTER;
+            play.valign = Gtk.Align.CENTER;
+            overlay.add_overlay (play);
+
+            if (msg.file_name != null && msg.file_name.length > 0) {
+                var name = new Gtk.Label (msg.file_name);
+                name.add_css_class ("message-video-name");
+                name.ellipsize = Pango.EllipsizeMode.MIDDLE;
+                name.max_width_chars = 30;
+                name.halign = Gtk.Align.START;
+                name.valign = Gtk.Align.END;
+                name.xalign = 0;
+                name.margin_start = 8;
+                name.margin_end = 8;
+                name.margin_bottom = 6;
+                overlay.add_overlay (name);
+            }
+            return overlay;
+        }
+
+        /**
+         * Inline player for an audio attachment: a play/pause button and the
+         * file name. Playback is self-contained — the captured media stream is
+         * created lazily on first press and lives as long as the row.
+         */
+        /**
+         * Inline player for an audio attachment: a compact play/stop button
+         * (see AudioPlayer). Falls back to a plain attachment row when the
+         * file hasn't been downloaded yet.
+         */
+        private static Gtk.Widget build_audio_player (Message msg) {
+            if (msg.file_path == null
+                || !FileUtils.test (msg.file_path, FileTest.EXISTS))
+                return build_file_indicator (msg);
+            return new AudioPlayer (msg.file_path, msg.file_name);
         }
 
         private static Gtk.Box build_file_indicator (Message msg) {

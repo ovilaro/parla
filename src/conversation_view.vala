@@ -184,7 +184,7 @@ namespace Dc {
                 /* Let clicks on the selectable message text fall through to
                    the label so it can position the cursor and select words,
                    instead of triggering the reply/react action. */
-                if (pointer_on_selectable_text (x, y)) {
+                if (pointer_on_selectable_text (x, y) || pointer_on_media (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -736,6 +736,18 @@ namespace Dc {
             return false;
         }
 
+        /* True when the pointer sits over the inline audio player. Its own
+           play/stop button drives playback, so the press must reach it rather
+           than triggering the row action or arming a double-click reaction. */
+        private bool pointer_on_media (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                if (w is AudioPlayer) return true;
+                w = w.get_parent ();
+            }
+            return false;
+        }
+
         private void on_message_activated (Message msg) {
             if (msg.file_path == null || msg.file_path.length == 0) return;
             if (!FileUtils.test (msg.file_path, FileTest.EXISTS)) {
@@ -747,6 +759,10 @@ namespace Dc {
                 int start;
                 collect_image_paths (msg.file_path, out paths, out start);
                 window.show_image_list (paths, start);
+            } else if (MessageRow.is_video_file (msg)) {
+                window.show_video (msg.file_path, msg.file_name);
+            } else if (MessageRow.is_audio_file (msg)) {
+                /* Audio plays inline via its own play/pause button. */
             } else {
                 window.save_attachment.begin (msg.file_path, msg.file_name);
             }

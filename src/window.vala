@@ -49,6 +49,7 @@ namespace Dc {
         /* Extracted managers */
         public SettingsManager settings;
         private ImageViewer image_viewer;
+        private VideoPlayer video_player;
         private EventHandler events;
         private ChatContextMenu chat_menu;
 
@@ -81,6 +82,8 @@ namespace Dc {
             settings.load ();
             image_viewer = new ImageViewer ();
             image_viewer.set_window (this);
+            video_player = new VideoPlayer ();
+            video_player.set_window (this);
             /* Scope for the custom background CSS rule (see
                Application.apply_background). */
             this.add_css_class ("parla-custom-bg");
@@ -310,6 +313,7 @@ namespace Dc {
             var image_overlay = new Gtk.Overlay ();
             image_overlay.child = toast_overlay;
             image_overlay.add_overlay (image_viewer.widget);
+            image_overlay.add_overlay (video_player.widget);
             image_overlay.add_overlay (build_connection_banner ());
 
             this.content = image_overlay;
@@ -756,6 +760,10 @@ namespace Dc {
 
         public void show_image_list (string[] paths, int start_index) {
             image_viewer.show_list (paths, start_index);
+        }
+
+        public void show_video (string path, string? name) {
+            video_player.show (path, name);
         }
 
         public async void save_attachment (string src_path, string? name) {
@@ -1767,6 +1775,9 @@ namespace Dc {
              * other key closes). */
             if (image_viewer.visible) {
                 return image_viewer.handle_key (keyval);
+            }
+            if (video_player.visible) {
+                return video_player.handle_key (keyval);
             }
 
             /* Any non-Escape key (modifiers excepted) breaks a pending
