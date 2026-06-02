@@ -58,6 +58,11 @@ namespace Dc {
         private TrayIcon? tray = null;
         private bool minimized_to_tray = false;
 
+        /* Set after an Escape that had nothing transient to dismiss while a
+           compose mode is active; a second consecutive Escape then drops the
+           reply/edit/attachment. Any other key clears it. */
+        private bool escape_armed = false;
+
         public Window (Dc.Application app) {
             Object (
                 application: app,
@@ -1764,16 +1769,42 @@ namespace Dc {
                 return image_viewer.handle_key (keyval);
             }
 
-            /* Escape: close any open dialog, then focus input entry */
+            /* Any non-Escape key (modifiers excepted) breaks a pending
+               double-Escape. */
+            if (keyval != Gdk.Key.Escape && !is_modifier_keyval (keyval)) {
+                escape_armed = false;
+            }
+
+            /* Escape: first dismiss any transient UI (open dialog, then the
+               in-conversation search). With nothing transient open, a single
+               Escape just focuses the entry; a second consecutive Escape
+               drops the active reply/edit/attachment mode. */
             if (keyval == Gdk.Key.Escape) {
-                for (var w = this.focus_widget; w != null; w = w.get_parent ()) {
-                    if (w is Adw.Dialog) { ((Adw.Dialog) w).close (); break; }
-                }
                 var v = current_view ();
-                if (v != null) {
-                    v.close_search_if_active ();
-                    v.focus_entry ();
+                bool dismissed = false;
+                for (var w = this.focus_widget; w != null; w = w.get_parent ()) {
+                    if (w is Adw.Dialog) {
+                        ((Adw.Dialog) w).close ();
+                        dismissed = true;
+                        break;
+                    }
                 }
+                if (!dismissed && v != null && v.close_search_if_active ()) {
+                    dismissed = true;
+                }
+                if (dismissed) {
+                    escape_armed = false;
+                } else if (v != null && v.has_active_compose_mode ()) {
+                    if (escape_armed) {
+                        v.cancel_active_compose_mode ();
+                        escape_armed = false;
+                    } else {
+                        escape_armed = true;
+                    }
+                } else {
+                    escape_armed = false;
+                }
+                if (v != null) v.focus_entry ();
                 return true;
             }
 
@@ -1858,6 +1889,25 @@ namespace Dc {
         /* Whether the focused widget should keep the key rather than have it
            redirected to the compose entry: any text field, or anything inside
            an open dialog or popover. */
+        private static bool is_modifier_keyval (uint keyval) {
+            switch (keyval) {
+            case Gdk.Key.Shift_L:
+            case Gdk.Key.Shift_R:
+            case Gdk.Key.Control_L:
+            case Gdk.Key.Control_R:
+            case Gdk.Key.Alt_L:
+            case Gdk.Key.Alt_R:
+            case Gdk.Key.Meta_L:
+            case Gdk.Key.Meta_R:
+            case Gdk.Key.Super_L:
+            case Gdk.Key.Super_R:
+            case Gdk.Key.Caps_Lock:
+                return true;
+            default:
+                return false;
+            }
+        }
+
         private bool focus_in_text_or_overlay () {
             for (var w = this.focus_widget; w != null; w = w.get_parent ()) {
                 if (w is Gtk.Editable || w is Gtk.TextView) return true;

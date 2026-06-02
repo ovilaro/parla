@@ -256,6 +256,14 @@ namespace Dc {
             compose_bar.grab_entry_focus ();
         }
 
+        public bool has_active_compose_mode () {
+            return compose_bar.has_active_mode ();
+        }
+
+        public void cancel_active_compose_mode () {
+            compose_bar.cancel_active_mode ();
+        }
+
         public void type_into_entry (string text) {
             compose_bar.type_text (text);
         }

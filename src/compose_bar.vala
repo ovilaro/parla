@@ -307,6 +307,21 @@ namespace Dc {
             attach_button.sensitive = true;
         }
 
+        /* True while a reply, edit or pending attachment is staged. */
+        public bool has_active_mode () {
+            return editing_msg_id != 0 || replying_msg_id != 0
+                || pending_file != null;
+        }
+
+        /* Drop whichever of reply/edit/attachment is active and return to
+           the plain input prompt. Each helper guards itself, so calling
+           all three only clears what is actually set. */
+        public void cancel_active_mode () {
+            cancel_edit ();
+            cancel_reply ();
+            clear_attachment ();
+        }
+
         private void on_emoji_picked (string emoji) {
             text_view.buffer.insert_at_cursor (emoji, emoji.length);
             text_view.grab_focus ();
@@ -331,10 +346,9 @@ namespace Dc {
 
         private bool on_entry_key_pressed (uint keyval, uint keycode,
                                            Gdk.ModifierType state) {
-            if (keyval == Gdk.Key.Escape && replying_msg_id != 0) {
-                cancel_reply ();
-                return true;
-            }
+            /* Escape (and dropping the active reply/edit/attachment mode) is
+               handled centrally in the window key handler so the two-press
+               behavior is consistent. */
             bool shift = (state & Gdk.ModifierType.SHIFT_MASK) != 0;
             if (keyval == Gdk.Key.Return
                 || keyval == Gdk.Key.KP_Enter
