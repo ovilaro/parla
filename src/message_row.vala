@@ -84,104 +84,32 @@ namespace Dc {
 
             /* Quoted / reply block */
             if (msg.quote_text != null && msg.quote_text.length > 0) {
-                var quote_btn = new Gtk.Button ();
-                quote_btn.add_css_class ("flat");
-                quote_btn.add_css_class ("quote-block");
-
-                var quote_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
-                if (msg.quote_sender_name != null && msg.quote_sender_name.length > 0) {
-                    var q_sender = new Gtk.Label (msg.quote_sender_name);
-                    q_sender.add_css_class ("quote-sender");
-                    q_sender.halign = Gtk.Align.START;
-                    q_sender.xalign = 0;
-                    quote_box.append (q_sender);
-                }
-                var q_text = new Gtk.Label (msg.quote_text);
-                q_text.add_css_class ("quote-text");
-                q_text.halign = Gtk.Align.START;
-                q_text.xalign = 0;
-                q_text.ellipsize = Pango.EllipsizeMode.END;
-                q_text.max_width_chars = 40;
-                q_text.lines = 2;
-                quote_box.append (q_text);
-
-                quote_btn.child = quote_box;
-                if (msg.quote_msg_id > 0) {
-                    int qid = msg.quote_msg_id;
-                    quote_btn.clicked.connect (() => {
-                        quote_clicked (qid);
-                    });
-                }
-                bubble.append (quote_btn);
+                bubble.append (build_quote_block (msg, 40, 2));
             }
 
             /* File attachment */
             bool has_file = (msg.file_name != null && msg.file_name.length > 0)
                          || (msg.file_path != null && msg.file_path.length > 0);
             if (has_file) {
-                bool media_shown = false;
-
-                /* Try to show inline image preview */
-                if (msg.file_path != null &&
-                    FileUtils.test (msg.file_path, FileTest.EXISTS) &&
-                    is_image_file (msg)) {
+                if (msg.file_path != null
+                    && FileUtils.test (msg.file_path, FileTest.EXISTS)
+                    && is_image_file (msg)) {
                     this.is_image = true;
-                    try {
-                        var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
-                            msg.file_path, 400, 400, true);
-                        int dw = pixbuf.width;
-                        int dh = pixbuf.height;
-                        if (dw > 260) {
-                            dh = (int) ((double) dh * 260.0 / (double) dw);
-                            dw = 260;
-                        }
-                        var texture = Gdk.Texture.for_pixbuf (pixbuf);
-                        var picture = new Gtk.Picture.for_paintable (texture);
-                        picture.content_fit = Gtk.ContentFit.CONTAIN;
-                        picture.can_shrink = false;
-                        picture.set_size_request (dw, dh);
-                        picture.add_css_class ("message-image");
-                        bubble.append (picture);
-                        media_shown = true;
-                    } catch (Error e) {
-                        stderr.printf ("  -> Image load failed: %s\n", e.message);
-                    }
+                    var image = load_picture (msg.file_path, 400, 400, 260, 0);
+                    if (image == null) bubble.append (build_file_indicator (msg));
+                    else bubble.append (image);
                 } else if (is_video_file (msg)) {
                     bubble.append (build_video_preview (msg));
-                    media_shown = true;
                 } else if (is_audio_file (msg)) {
                     bubble.append (build_audio_player (msg));
-                    media_shown = true;
-                }
-
-                /* Show attachment indicator if no media preview was shown */
-                if (!media_shown) {
+                } else {
                     bubble.append (build_file_indicator (msg));
                 }
             }
 
             /* Message text */
             if (msg.text != null && msg.text.length > 0) {
-                var text = new Gtk.Label (msg.text);
-                try {
-                    string markup = Markdown.format (msg.text);
-                    // parse http links inside the html-ized pango text
-                    var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
-                    Pango.AttrList attrs;
-                    string parsed;
-                    unichar accel;
-                    Pango.parse_markup (probe, -1, 0, out attrs, out parsed, out accel);
-                    text.set_markup (markup);
-                } catch {
-                    /* invalid markup — plain text fallback already set */
-                }
-                text.wrap = true;
-                text.wrap_mode = Pango.WrapMode.WORD_CHAR;
-                text.halign = Gtk.Align.START;
-                text.xalign = 0;
-                text.selectable = true;
-                text.max_width_chars = 50;
-                bubble.append (text);
+                bubble.append (build_text_label (msg, 50));
             }
 
             /* Timestamp + pin indicator + delivery/read tick */
@@ -204,26 +132,8 @@ namespace Dc {
             bubble.append (footer);
 
             /* Reactions */
-            if (msg.reactions != null && msg.reactions.length > 0) {
-                var reactions_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-                reactions_box.add_css_class ("reaction-bar");
-                reactions_box.halign = Gtk.Align.START;
-
-                var parts = msg.reactions.split (",");
-                foreach (string part in parts) {
-                    var kv = part.split (":", 2);
-                    if (kv.length >= 2) {
-                        string emoji_str = kv[0];
-                        string count_str = kv[1];
-                        string label_text = count_str == "1"
-                            ? emoji_str
-                            : "%s %s".printf (emoji_str, count_str);
-                        var badge = new Gtk.Label (label_text);
-                        badge.add_css_class ("reaction-badge");
-                        reactions_box.append (badge);
-                    }
-                }
-
+            var reactions_box = build_reactions_box (msg);
+            if (reactions_box != null) {
                 bubble.append (reactions_box);
             }
 
@@ -295,24 +205,7 @@ namespace Dc {
 
             /* Quoted / reply block (kept compact) */
             if (msg.quote_text != null && msg.quote_text.length > 0) {
-                var qbtn = new Gtk.Button ();
-                qbtn.add_css_class ("flat");
-                qbtn.add_css_class ("quote-block");
-                var q = new Gtk.Label (
-                    (msg.quote_sender_name != null && msg.quote_sender_name.length > 0
-                        ? msg.quote_sender_name + ": " : "") + msg.quote_text);
-                q.add_css_class ("quote-text");
-                q.halign = Gtk.Align.START;
-                q.xalign = 0;
-                q.ellipsize = Pango.EllipsizeMode.END;
-                q.max_width_chars = 60;
-                q.lines = 1;
-                qbtn.child = q;
-                if (msg.quote_msg_id > 0) {
-                    int qid = msg.quote_msg_id;
-                    qbtn.clicked.connect (() => { quote_clicked (qid); });
-                }
-                body.append (qbtn);
+                body.append (build_quote_block (msg, 60, 1));
             }
 
             /* File attachment / image */
@@ -356,43 +249,12 @@ namespace Dc {
             }
 
             if (msg.text != null && msg.text.length > 0) {
-                var text = new Gtk.Label (msg.text);
-                try {
-                    string markup = Markdown.format (msg.text);
-                    var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
-                    Pango.AttrList attrs;
-                    string parsed;
-                    unichar accel;
-                    Pango.parse_markup (probe, -1, 0, out attrs, out parsed, out accel);
-                    text.set_markup (markup);
-                } catch {
-                    /* plain text */
-                }
-                text.wrap = true;
-                text.wrap_mode = Pango.WrapMode.WORD_CHAR;
-                text.halign = Gtk.Align.START;
-                text.xalign = 0;
-                text.selectable = true;
-                body.append (text);
+                body.append (build_text_label (msg, -1));
             }
 
             /* Reactions */
-            if (msg.reactions != null && msg.reactions.length > 0) {
-                var reactions_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-                reactions_box.add_css_class ("reaction-bar");
-                reactions_box.halign = Gtk.Align.START;
-                var parts = msg.reactions.split (",");
-                foreach (string part in parts) {
-                    var kv = part.split (":", 2);
-                    if (kv.length >= 2) {
-                        string label_text = kv[1] == "1"
-                            ? kv[0]
-                            : "%s %s".printf (kv[0], kv[1]);
-                        var badge = new Gtk.Label (label_text);
-                        badge.add_css_class ("reaction-badge");
-                        reactions_box.append (badge);
-                    }
-                }
+            var reactions_box = build_reactions_box (msg);
+            if (reactions_box != null) {
                 body.append (reactions_box);
             }
 
@@ -415,29 +277,48 @@ namespace Dc {
         }
 
         private static void append_irc_image (Gtk.Box strip, Message m) {
+            var picture = load_picture (m.file_path, 260, 200, 0, 180);
+            if (picture != null) {
+                picture.add_css_class ("message-image-irc");
+                picture.halign = Gtk.Align.START;
+                picture.valign = Gtk.Align.START;
+                strip.append (picture);
+            } else {
+                var fi = new Gtk.Label (m.file_name ?? "image");
+                fi.add_css_class ("dim-label");
+                strip.append (fi);
+            }
+        }
+
+        /**
+         * Load a file into a Gtk.Picture sized to fit within (max_w, max_h)
+         * preserving aspect, then optionally upscaled to (min_w, min_h).
+         * Returns null on read failure (and logs to stderr).
+         */
+        private static Gtk.Picture? load_picture (string path,
+                                                  int max_w, int max_h,
+                                                  int min_w, int min_h) {
             try {
-                var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
-                    m.file_path, 260, 200, true);
-                int dw = pixbuf.width;
-                int dh = pixbuf.height;
-                if (dh < 180) {
-                    dw = (int) ((double) dw * 180.0 / (double) dh);
-                    dh = 180;
+                var pixbuf = new Gdk.Pixbuf.from_file_at_scale (path, max_w, max_h, true);
+                int dw = pixbuf.width, dh = pixbuf.height;
+                if (min_w > 0 && dw < min_w) {
+                    dh = (int) ((double) dh * min_w / dw); dw = min_w;
+                } else if (max_w > 0 && dw > max_w) {
+                    dh = (int) ((double) dh * max_w / dw); dw = max_w;
+                }
+                if (min_h > 0 && dh < min_h) {
+                    dw = (int) ((double) dw * min_h / dh); dh = min_h;
                 }
                 var texture = Gdk.Texture.for_pixbuf (pixbuf);
                 var picture = new Gtk.Picture.for_paintable (texture);
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
                 picture.can_shrink = false;
                 picture.add_css_class ("message-image");
-                picture.add_css_class ("message-image-irc");
                 picture.set_size_request (dw, dh);
-                picture.halign = Gtk.Align.START;
-                picture.valign = Gtk.Align.START;
-                strip.append (picture);
+                return picture;
             } catch (Error e) {
-                var fi = new Gtk.Label (m.file_name ?? "image");
-                fi.add_css_class ("dim-label");
-                strip.append (fi);
+                stderr.printf ("  -> Image load failed: %s\n", e.message);
+                return null;
             }
         }
 
@@ -674,6 +555,80 @@ namespace Dc {
             lbl.add_css_class (extra_class);
             if (tooltip != null) lbl.tooltip_text = tooltip;
             return lbl;
+        }
+
+        private Gtk.Button build_quote_block (Message msg,
+                                               int max_width_chars, int lines) {
+            var btn = new Gtk.Button ();
+            btn.add_css_class ("flat");
+            btn.add_css_class ("quote-block");
+            if (msg.quote_msg_id > 0) {
+                int qid = msg.quote_msg_id;
+                btn.clicked.connect (() => { quote_clicked (qid); });
+            }
+            bool stacked = lines > 1
+                && msg.quote_sender_name != null && msg.quote_sender_name.length > 0;
+            if (stacked) {
+                var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
+                var s = new Gtk.Label (msg.quote_sender_name);
+                s.add_css_class ("quote-sender");
+                s.halign = Gtk.Align.START; s.xalign = 0;
+                box.append (s);
+                var t = new Gtk.Label (msg.quote_text);
+                t.add_css_class ("quote-text");
+                t.halign = Gtk.Align.START; t.xalign = 0;
+                t.ellipsize = Pango.EllipsizeMode.END;
+                t.max_width_chars = max_width_chars; t.lines = lines;
+                box.append (t);
+                btn.child = box;
+            } else {
+                string prefix = msg.quote_sender_name != null
+                    && msg.quote_sender_name.length > 0
+                    ? msg.quote_sender_name + ": " : "";
+                var t = new Gtk.Label (prefix + msg.quote_text);
+                t.add_css_class ("quote-text");
+                t.halign = Gtk.Align.START; t.xalign = 0;
+                t.ellipsize = Pango.EllipsizeMode.END;
+                t.max_width_chars = max_width_chars; t.lines = lines;
+                btn.child = t;
+            }
+            return btn;
+        }
+
+        /** Message body label with markdown + link markup. Shared by both row styles. */
+        private static Gtk.Label build_text_label (Message msg, int max_width_chars) {
+            var text = new Gtk.Label (msg.text);
+            try {
+                string markup = Markdown.format (msg.text);
+                var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
+                Pango.AttrList attrs;
+                string parsed;
+                unichar accel;
+                Pango.parse_markup (probe, -1, 0, out attrs, out parsed, out accel);
+                text.set_markup (markup);
+            } catch { /* fallback: plain text already in label */ }
+            text.wrap = true;
+            text.wrap_mode = Pango.WrapMode.WORD_CHAR;
+            text.halign = Gtk.Align.START; text.xalign = 0;
+            text.selectable = true;
+            if (max_width_chars > 0) text.max_width_chars = max_width_chars;
+            return text;
+        }
+
+        /** Reaction badge bar, or null when the message has no reactions. */
+        private static Gtk.Box? build_reactions_box (Message msg) {
+            if (msg.reactions == null || msg.reactions.length == 0) return null;
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
+            box.add_css_class ("reaction-bar");
+            box.halign = Gtk.Align.START;
+            foreach (string part in msg.reactions.split (",")) {
+                var kv = part.split (":", 2);
+                if (kv.length < 2) continue;
+                var badge = new Gtk.Label (kv[1] == "1" ? kv[0] : "%s %s".printf (kv[0], kv[1]));
+                badge.add_css_class ("reaction-badge");
+                box.append (badge);
+            }
+            return box;
         }
 
         private static string format_timestamp (int64 ts) {
