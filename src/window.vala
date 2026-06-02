@@ -75,15 +75,22 @@ namespace Dc {
             settings.load ();
             image_viewer = new ImageViewer ();
             image_viewer.set_window (this);
+            /* Scope for the custom background CSS rule (see
+               Application.apply_background). */
+            this.add_css_class ("parla-custom-bg");
             build_ui ();
             MessageRow.style = settings.message_style;
             ((Dc.Application) this.application).apply_accent_color (
                 settings.accent_color);
+            ((Dc.Application) this.application).apply_background (
+                settings.background_mode, settings.background_color);
 
             settings.appearance_changed.connect (() => {
                 MessageRow.style = settings.message_style;
                 ((Dc.Application) this.application).apply_accent_color (
                     settings.accent_color);
+                ((Dc.Application) this.application).apply_background (
+                    settings.background_mode, settings.background_color);
                 int chat_id = current_chat_id;
                 discard_all_views ();
                 if (chat_id > 0) {

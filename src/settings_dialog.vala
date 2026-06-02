@@ -21,6 +21,12 @@ namespace Dc {
         IRC = 1;
     }
 
+    public enum BackgroundMode {
+        SYSTEM = 0,
+        SOLID = 1,
+        GRADIENT = 2;
+    }
+
     public class SettingsManager : Object {
 
         public signal void appearance_changed ();
@@ -37,6 +43,8 @@ namespace Dc {
         public string default_account_addr { get; set; default = ""; }
         public MessageStyle message_style { get; set; default = MessageStyle.BUBBLES; }
         public string accent_color { get; set; default = ""; }
+        public BackgroundMode background_mode { get; set; default = BackgroundMode.SYSTEM; }
+        public string background_color { get; set; default = ""; }
 
         public static string get_config_path () {
             return Path.build_filename (
@@ -71,6 +79,10 @@ namespace Dc {
             if (ms < 0 || ms > 1) ms = (int) MessageStyle.BUBBLES;
             message_style = (MessageStyle) ms;
             accent_color = kf_str (kf, "accent_color", "");
+            int bm = kf_int (kf, "background_mode", (int) BackgroundMode.SYSTEM);
+            if (bm < 0 || bm > 2) bm = (int) BackgroundMode.SYSTEM;
+            background_mode = (BackgroundMode) bm;
+            background_color = kf_str (kf, "background_color", "");
         }
 
         private static int kf_int (KeyFile kf, string k, int d) {
@@ -157,6 +169,24 @@ namespace Dc {
                 kf.set_string ("General", "accent_color", v);
             });
             appearance_changed ();
+        }
+
+        /* The background is pure window CSS — it does not affect message
+           widgets, so (unlike accent/message-style) these do NOT emit
+           appearance_changed; the dialog applies the change directly,
+           avoiding a needless rebuild of every conversation view. */
+        public void save_background_mode (BackgroundMode v) {
+            background_mode = v;
+            save_to_file ((kf) => {
+                kf.set_integer ("General", "background_mode", (int) v);
+            });
+        }
+
+        public void save_background_color (string v) {
+            background_color = v;
+            save_to_file ((kf) => {
+                kf.set_string ("General", "background_color", v);
+            });
         }
 
         public void save_to_file (SettingWriter writer) {
@@ -336,7 +366,7 @@ namespace Dc {
 
             var accent_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
             accent_btn.valign = Gtk.Align.CENTER;
-            apply_accent_to_button (accent_btn, app_window.settings.accent_color);
+            apply_hex_to_button (accent_btn, app_window.settings.accent_color);
             accent_btn.notify["rgba"].connect (() => {
                 Gdk.RGBA c = accent_btn.get_rgba ();
                 string hex = "#%02x%02x%02x".printf (
@@ -351,12 +381,48 @@ namespace Dc {
             accent_reset_btn.tooltip_text = "Use system accent color";
             accent_reset_btn.clicked.connect (() => {
                 app_window.settings.save_accent_color ("");
-                apply_accent_to_button (accent_btn, "");
+                apply_hex_to_button (accent_btn, "");
             });
 
             accent_row.add_suffix (accent_btn);
             accent_row.add_suffix (accent_reset_btn);
             appearance_list.append (accent_row);
+
+            var bg_row = new Adw.ActionRow ();
+            bg_row.title = "Background color";
+            bg_row.subtitle =
+                "Tint the window background with a solid color or a gradient";
+
+            string[] bg_mode_labels = { "System", "Solid", "Gradient" };
+            var bg_mode_combo = new Gtk.DropDown.from_strings (bg_mode_labels);
+            bg_mode_combo.selected = (uint) app_window.settings.background_mode;
+            bg_mode_combo.valign = Gtk.Align.CENTER;
+
+            var bg_color_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
+            bg_color_btn.valign = Gtk.Align.CENTER;
+            apply_hex_to_button (bg_color_btn, app_window.settings.background_color);
+            /* The picker only matters for Solid/Gradient; dim it for System. */
+            bg_color_btn.sensitive =
+                app_window.settings.background_mode != BackgroundMode.SYSTEM;
+
+            bg_mode_combo.notify["selected"].connect (() => {
+                var mode = (BackgroundMode) bg_mode_combo.selected;
+                bg_color_btn.sensitive = mode != BackgroundMode.SYSTEM;
+                app_window.settings.save_background_mode (mode);
+                apply_background ();
+            });
+            bg_color_btn.notify["rgba"].connect (() => {
+                Gdk.RGBA c = bg_color_btn.get_rgba ();
+                string hex = "#%02x%02x%02x".printf (
+                    (uint) (c.red * 255), (uint) (c.green * 255),
+                    (uint) (c.blue * 255));
+                app_window.settings.save_background_color (hex);
+                apply_background ();
+            });
+
+            bg_row.add_suffix (bg_mode_combo);
+            bg_row.add_suffix (bg_color_btn);
+            appearance_list.append (bg_row);
 
             content.append (appearance_list);
 
@@ -718,8 +784,14 @@ namespace Dc {
                 });
         }
 
-        private static void apply_accent_to_button (Gtk.ColorDialogButton btn,
-                                                     string hex) {
+        private void apply_background () {
+            ((Dc.Application) app_window.application).apply_background (
+                app_window.settings.background_mode,
+                app_window.settings.background_color);
+        }
+
+        private static void apply_hex_to_button (Gtk.ColorDialogButton btn,
+                                                  string hex) {
             var rgba = Gdk.RGBA ();
             if (hex.length == 0 || !rgba.parse (hex)) {
                 rgba.parse ("#3584e4");

@@ -46,6 +46,12 @@ namespace Dc {
             this.rpc = rpc;
             this.settings = settings;
 
+            /* Marker for the custom-background rules (see
+               Application.apply_background): when a custom window background
+               is active, the message area is made transparent so the chosen
+               color/gradient shows behind the messages in every chat. */
+            add_css_class ("conversation-view");
+
             message_store = new GLib.ListStore (typeof (Message));
             pinned = new PinnedMessagesManager (message_store, settings);
             pinned.set_rpc (rpc);

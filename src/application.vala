@@ -18,6 +18,7 @@ namespace Dc {
         public RpcClient rpc { get; private set; }
 
         private Gtk.CssProvider? accent_provider = null;
+        private Gtk.CssProvider? background_provider = null;
 
         public Application () {
             Object (
@@ -66,6 +67,62 @@ namespace Dc {
             );
         }
 
+        /* Recolor the main window background. The rule is scoped to the
+           ".parla-custom-bg" class (added to the window) so dialogs and
+           popovers keep the theme background. The color shows through the
+           window's transparent surfaces — the conversation backdrop (behind
+           the message cards and around them) and the welcome status page.
+           Opaque chrome (the header bars and the navigation sidebar) keeps
+           its own theme shade and is unaffected. */
+        public void apply_background (BackgroundMode mode, string hex) {
+            var display = Gdk.Display.get_default ();
+            if (display == null) return;
+
+            if (background_provider != null) {
+                remove_provider_for_display (display, background_provider);
+                background_provider = null;
+            }
+            if (mode == BackgroundMode.SYSTEM) return;
+
+            /* Fall back to the same default the picker shows when no color
+               has been chosen yet, so the window matches the button. */
+            string color = hex.length > 0 ? hex : "#3584e4";
+            var rgba = Gdk.RGBA ();
+            if (!rgba.parse (color)) return;
+
+            string rule;
+            if (mode == BackgroundMode.GRADIENT) {
+                /* Fade from the chosen color at the top into the theme's
+                   default window background, so the bottom always matches
+                   the system color. */
+                rule = "background-image: linear-gradient(to bottom, "
+                    + color + ", @window_bg_color);";
+            } else {
+                rule = "background-color: " + color + ";"
+                    + " background-image: none;";
+            }
+
+            /* The conversation list paints an opaque view background that
+               would otherwise hide the custom color in every open chat.
+               Make it transparent here — scoped to ".conversation-view" so
+               the sidebar, settings lists and dialogs keep their theme
+               background — so the chosen color shows behind the messages.
+               These rules live in this provider (not the static sheet) so
+               they vanish together with the override in System mode. */
+            string css = "window.parla-custom-bg { " + rule + " }\n"
+                + "window.parla-custom-bg .conversation-view scrolledwindow,\n"
+                + "window.parla-custom-bg .conversation-view listview {"
+                + " background-color: transparent; background-image: none; }\n";
+
+            background_provider = new Gtk.CssProvider ();
+            background_provider.load_from_string (css);
+            add_provider_for_display (
+                display,
+                background_provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            );
+        }
+
         protected override void activate () {
             Dc.Window? window = null;
             foreach (var win in get_windows ()) {
@@ -90,6 +147,7 @@ namespace Dc {
             var settings = new SettingsManager ();
             settings.load ();
             apply_accent_color (settings.accent_color);
+            apply_background (settings.background_mode, settings.background_color);
             register_icons ();
             Gtk.Window.set_default_icon_name ("io.github.trufae.Parla");
 
