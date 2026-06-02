@@ -181,6 +181,14 @@ namespace Dc {
             dc.pressed.connect ((n, x, y) => {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
+                /* Let clicks on the selectable message text fall through to
+                   the label so it can position the cursor and select words,
+                   instead of triggering the reply/react action. */
+                if (pointer_on_selectable_text (x, y)) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
                 hold_scroll_on_focus_shift ();
                 int64 now = get_monotonic_time () / 1000;
                 int dct = 400;
@@ -712,6 +720,20 @@ namespace Dc {
                 w = w.get_parent ();
             }
             return w as MessageRow;
+        }
+
+        /* True when the pointer sits over a selectable text label (the
+           message body). There the I-beam cursor invites text selection,
+           so a double click should select a word rather than fire the
+           reply/react action. */
+        private bool pointer_on_selectable_text (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                var lbl = w as Gtk.Label;
+                if (lbl != null && lbl.selectable) return true;
+                w = w.get_parent ();
+            }
+            return false;
         }
 
         private void on_message_activated (Message msg) {
