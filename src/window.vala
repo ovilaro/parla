@@ -110,25 +110,35 @@ namespace Dc {
 
             close_request.connect (on_close_request);
 
-            /* Defer connection until main loop — application property
-               may not be available during construct. */
+            /* The tray icon stays up the whole time "minimize to status bar"
+               is on (like Discord/Telegram), not just while minimized. */
+            settings.notify["minimize-to-tray"].connect (sync_tray);
+
+            /* Defer until the main loop — the tray's D-Bus connection and the
+               application property aren't ready during construct. */
             Idle.add (() => {
                 try_connect.begin ();
+                sync_tray ();
                 return Source.REMOVE;
             });
         }
 
         private bool on_close_request () {
-            return settings.minimize_to_tray && minimize_to_tray ();
+            if (!settings.minimize_to_tray) return false;
+            this.set_visible (false);
+            this.application.hold ();
+            minimized_to_tray = true;
+            return true;
         }
 
-        private bool minimize_to_tray () {
-            if (minimized_to_tray) return true;
-            if (tray == null) {
+        /* Single source of truth for the tray icon: create it on first need,
+           then show/hide it to track the setting. */
+        private void sync_tray () {
+            if (tray == null && settings.minimize_to_tray) {
                 var conn = this.application.get_dbus_connection ();
-                if (conn == null) return false;
+                if (conn == null) return;
                 tray = new TrayIcon (conn);
-                tray.show_requested.connect (() => { restore_from_tray (); });
+                tray.show_requested.connect (restore_from_tray);
                 tray.quit_requested.connect (() => {
                     minimized_to_tray = false;
                     this.application.quit ();
@@ -138,18 +148,15 @@ namespace Dc {
                     tray.set_notifications_enabled (enabled);
                 });
             }
+            if (tray == null) return;
             tray.set_notifications_enabled (settings.notifications_enabled);
-            if (!tray.show ()) return false;
-            this.set_visible (false);
-            this.application.hold ();
-            minimized_to_tray = true;
-            return true;
+            if (settings.minimize_to_tray) tray.show ();
+            else { tray.hide (); restore_from_tray (); }
         }
 
         public void restore_from_tray () {
             if (minimized_to_tray) {
                 minimized_to_tray = false;
-                if (tray != null) tray.hide ();
                 this.application.release ();
             }
             this.present ();
