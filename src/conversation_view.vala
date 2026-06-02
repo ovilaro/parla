@@ -20,6 +20,8 @@ namespace Dc {
         private Gtk.CustomFilter message_filter;
         private ComposeBar compose_bar;
         private Gtk.Button scroll_down_btn;
+        private Gtk.Revealer loading_more_revealer;
+        private Gtk.Spinner loading_more_spinner;
         private Gtk.Revealer message_search_revealer;
         private Gtk.SearchEntry message_search_entry;
         private bool search_toggling;
@@ -217,10 +219,31 @@ namespace Dc {
             scroll_down_btn.visible = false;
             scroll_down_btn.clicked.connect (() => { scroll_to_bottom (); });
 
+            /* "Loading…" pill shown at the top while older messages are
+               pulled from the JSON-RPC server (see load_earlier_messages). */
+            var loading_pill = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            loading_pill.add_css_class ("osd");
+            loading_pill.add_css_class ("loading-pill");
+            loading_more_spinner = new Gtk.Spinner ();
+            loading_pill.append (loading_more_spinner);
+            loading_pill.append (new Gtk.Label ("Loading…"));
+
+            loading_more_revealer = new Gtk.Revealer ();
+            loading_more_revealer.child = loading_pill;
+            loading_more_revealer.reveal_child = false;
+            loading_more_revealer.transition_type = Gtk.RevealerTransitionType.CROSSFADE;
+            loading_more_revealer.halign = Gtk.Align.CENTER;
+            loading_more_revealer.valign = Gtk.Align.START;
+            loading_more_revealer.margin_top = 12;
+            /* Non-interactive so it never intercepts scroll/clicks on the
+               messages underneath it. */
+            loading_more_revealer.can_target = false;
+
             var scroll_overlay = new Gtk.Overlay ();
             scroll_overlay.child = message_scroll;
             scroll_overlay.vexpand = true;
             scroll_overlay.add_overlay (scroll_down_btn);
+            scroll_overlay.add_overlay (loading_more_revealer);
             append (scroll_overlay);
 
             compose_bar = new ComposeBar ();
@@ -466,6 +489,7 @@ namespace Dc {
         private async void load_earlier_messages () {
             if (loading_more || all_msg_ids == null || loaded_start_index == 0) return;
             loading_more = true;
+            set_loading_more_visible (true);
 
             uint new_start = loaded_start_index > 100
                 ? loaded_start_index - 100 : 0;
@@ -477,11 +501,19 @@ namespace Dc {
                 double old_upper = adj.upper;
                 double old_value = adj.value;
 
+                /* Prepend the whole page in ONE splice rather than N inserts.
+                   A per-item insert loop emits items-changed once per message,
+                   forcing the filter model to re-filter and the ListView to
+                   re-bind/relayout on every iteration — an O(N) signal storm
+                   on the main thread that visibly stalls the UI. A single
+                   splice collapses that into one filter pass and one relayout,
+                   matching how load_messages() builds its initial batch. */
+                var batch = new GLib.Object[messages.length];
                 for (uint i = 0; i < messages.length; i++) {
-                    var msg = messages[i];
-                    msg.is_pinned = pinned.is_pinned (msg.id);
-                    message_store.insert ((int) i, msg);
+                    messages[i].is_pinned = pinned.is_pinned (messages[i].id);
+                    batch[i] = messages[i];
                 }
+                message_store.splice (0, 0, batch);
 
                 loaded_start_index = new_start;
 
@@ -489,12 +521,21 @@ namespace Dc {
                     var a = message_scroll.vadjustment;
                     a.value = old_value + (a.upper - old_upper);
                     loading_more = false;
+                    set_loading_more_visible (false);
                     return Source.REMOVE;
                 });
             } catch (Error e) {
                 loading_more = false;
+                set_loading_more_visible (false);
                 window.show_toast ("Failed to load earlier messages: " + e.message);
             }
+        }
+
+        /* Toggle the top "Loading…" pill while older messages are fetched.
+           Spinning is tied to visibility so the animation only runs when shown. */
+        private void set_loading_more_visible (bool visible) {
+            loading_more_spinner.spinning = visible;
+            loading_more_revealer.reveal_child = visible;
         }
 
         /* ================================================================

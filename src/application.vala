@@ -436,6 +436,13 @@ namespace Dc {
             .connection-banner-label {
                 font-size: small;
             }
+            /* Floating "Loading…" pill shown while older messages are
+               fetched from the JSON-RPC server. */
+            .loading-pill {
+                padding: 5px 14px;
+                border-radius: 16px;
+                opacity: 0.95;
+            }
         """;
     }
 }
