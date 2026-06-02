@@ -30,6 +30,7 @@ namespace Dc {
 
         /* Profile avatar */
         private Adw.Avatar profile_avatar;
+        private Gtk.Box profile_unread_badge;
         private Gtk.Popover account_popover;
         private Gtk.ListBox account_menu_list;
 
@@ -165,8 +166,21 @@ namespace Dc {
                 load_account_menu.begin ();
             });
 
+            /* Small red dot stuck on the bottom-right of the avatar, shown when
+               the current account has pending (notification-worthy) messages.
+               The numeric counter lives only in the account list menu. */
+            profile_unread_badge = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+            profile_unread_badge.add_css_class ("account-unread-dot");
+            profile_unread_badge.halign = Gtk.Align.END;
+            profile_unread_badge.valign = Gtk.Align.END;
+            profile_unread_badge.visible = false;
+
+            var avatar_overlay = new Gtk.Overlay ();
+            avatar_overlay.child = profile_avatar;
+            avatar_overlay.add_overlay (profile_unread_badge);
+
             var avatar_button = new Gtk.MenuButton ();
-            avatar_button.child = profile_avatar;
+            avatar_button.child = avatar_overlay;
             avatar_button.add_css_class ("flat");
             avatar_button.add_css_class ("circular");
             avatar_button.tooltip_text = "Account Menu";
@@ -414,13 +428,20 @@ namespace Dc {
             /* Create event handler and message actions now that rpc is ready */
             events = new EventHandler (rpc);
             events.set_app (this.application);
-            events.chats_reload_fired.connect (() => { load_chats.begin (); });
+            events.chats_reload_fired.connect (() => {
+                load_chats.begin ();
+                update_profile_unread_badge.begin ();
+            });
             events.messages_reload_fired.connect (() => {
                 var v = current_view ();
                 if (v != null) v.reload_messages.begin ();
             });
-            events.incoming_msg_received.connect ((chat_id, msg_id) => {
-                on_incoming_msg.begin (chat_id, msg_id);
+            events.incoming_msg_received.connect ((acct_id, chat_id, msg_id) => {
+                on_incoming_msg.begin (acct_id, chat_id, msg_id);
+            });
+            events.account_unread_changed.connect ((acct_id) => {
+                update_profile_unread_badge.begin ();
+                refresh_account_menu_if_open ();
             });
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
@@ -757,15 +778,33 @@ namespace Dc {
         }
 
 
-        private async void on_incoming_msg (int chat_id, int msg_id) {
+        private async void on_incoming_msg (int acct_id, int chat_id, int msg_id) {
+            if (acct_id != rpc.account_id) {
+                /* Message for a background account: its chats aren't on screen,
+                   so always notify (subject to the global toggle) and refresh
+                   the account list badge if the menu happens to be open. */
+                if (settings.notifications_enabled) {
+                    yield events.send_notification (acct_id, chat_id, msg_id);
+                }
+                update_profile_unread_badge.begin ();
+                refresh_account_menu_if_open ();
+                return;
+            }
+
             var view = views.lookup (chat_id);
             if (view != null) {
                 yield view.handle_incoming_msg (msg_id);
             }
             if (settings.notifications_enabled && !this.is_active) {
-                yield events.send_notification (chat_id, msg_id);
+                yield events.send_notification (acct_id, chat_id, msg_id);
             }
             request_reload_chats ();
+        }
+
+        private void refresh_account_menu_if_open () {
+            if (account_popover != null && account_popover.get_visible ()) {
+                load_account_menu.begin ();
+            }
         }
 
         /* ================================================================
@@ -834,23 +873,26 @@ namespace Dc {
             string? email = null;
             string? display_name = null;
             string? avatar = null;
+            int unread = 0;
             if (configured) {
                 try {
                     email = yield rpc.get_config ("addr", id);
                     display_name = yield rpc.get_config ("displayname", id);
                     avatar = yield rpc.get_config ("selfavatar", id);
+                    unread = yield rpc.get_fresh_msg_count (id);
                 } catch (Error ce) { /* ignore */ }
             }
 
             return build_account_menu_row (id, configured, current,
-                email, display_name, avatar);
+                email, display_name, avatar, unread);
         }
 
         private Adw.ActionRow build_account_menu_row (int id, bool configured,
                                                        bool current,
                                                        string? email,
                                                        string? display_name,
-                                                       string? avatar) {
+                                                       string? avatar,
+                                                       int unread) {
             string title;
             if (display_name != null && display_name.length > 0) {
                 title = display_name;
@@ -870,7 +912,23 @@ namespace Dc {
 
             var avatar_widget = new Adw.Avatar (32, title, true);
             avatar_widget.custom_image = load_avatar (avatar);
-            row.add_prefix (avatar_widget);
+
+            if (unread > 0) {
+                /* Red counter badge in the bottom-right corner of the avatar
+                   for accounts with pending unread notifications. */
+                var badge = new Gtk.Label (unread > 99 ? "99+" : unread.to_string ());
+                badge.add_css_class ("account-unread-badge");
+                badge.halign = Gtk.Align.END;
+                badge.valign = Gtk.Align.END;
+
+                var overlay = new Gtk.Overlay ();
+                overlay.child = avatar_widget;
+                overlay.add_overlay (badge);
+                overlay.valign = Gtk.Align.CENTER;
+                row.add_prefix (overlay);
+            } else {
+                row.add_prefix (avatar_widget);
+            }
 
             var edit_btn = new Gtk.Button.from_icon_name ("preferences-system-symbolic");
             edit_btn.valign = Gtk.Align.CENTER;
@@ -1123,11 +1181,10 @@ namespace Dc {
             try {
                 int acct_id = yield rpc.add_account ();
                 yield rpc.add_or_update_transport (acct_id, email, password);
-                if (rpc.account_id > 0) {
-                    yield rpc.stop_io ();
-                }
                 yield rpc.select_account (acct_id);
-                yield rpc.start_io (acct_id);
+                /* Pick up IO for the freshly added account (and keep the rest
+                   running too). */
+                yield rpc.start_io_for_all_accounts ();
                 rpc.account_id = acct_id;
                 yield reload_active_account ();
                 yield load_account_menu ();
@@ -1145,11 +1202,12 @@ namespace Dc {
             if (acct_id <= 0 || acct_id == rpc.account_id) return false;
 
             try {
-                if (rpc.account_id > 0) {
-                    yield rpc.stop_io ();
-                }
+                /* IO stays running for every account, so switching only changes
+                   which account is shown — the others keep fetching mail in the
+                   background. Re-asserting all-accounts IO here is idempotent and
+                   also covers accounts created during this session. */
+                yield rpc.start_io_for_all_accounts ();
                 yield rpc.select_account (acct_id);
-                yield rpc.start_io (acct_id);
                 rpc.account_id = acct_id;
                 yield reload_active_account ();
                 return true;
@@ -1223,7 +1281,10 @@ namespace Dc {
         }
 
         private async void load_profile_avatar () {
-            if (rpc.account_id <= 0) return;
+            if (rpc.account_id <= 0) {
+                if (profile_unread_badge != null) profile_unread_badge.visible = false;
+                return;
+            }
 
             try {
                 string? name = yield rpc.get_config ("displayname");
@@ -1234,6 +1295,37 @@ namespace Dc {
             } catch (Error e) {
                 /* ignore */
             }
+            yield update_profile_unread_badge ();
+        }
+
+        /* Toggle the red circle on the header avatar. It flags that *another*
+           account has notification-worthy unread messages, so the user knows to
+           open the account menu and switch — it stays put regardless of window
+           focus and isn't cleared by reading the current account (whose own
+           unread is already shown in the chat list). */
+        private async void update_profile_unread_badge () {
+            if (profile_unread_badge == null) return;
+            bool other_unread = false;
+            if (rpc != null && rpc.is_connected && rpc.account_id > 0) {
+                try {
+                    var accounts_node = yield rpc.get_all_accounts ();
+                    if (accounts_node != null) {
+                        var accounts = accounts_node.get_array ();
+                        for (uint i = 0; i < accounts.get_length (); i++) {
+                            var acct = accounts.get_object_element (i);
+                            int id = (int) acct.get_int_member ("id");
+                            if (id <= 0 || id == rpc.account_id) continue;
+                            if ((yield rpc.get_fresh_msg_count (id)) > 0) {
+                                other_unread = true;
+                                break;
+                            }
+                        }
+                    }
+                } catch (Error e) {
+                    return;
+                }
+            }
+            profile_unread_badge.visible = other_unread;
         }
 
         private void on_new_chat () {
@@ -1555,6 +1647,7 @@ namespace Dc {
                 rpc.self_display_name = null;
                 profile_avatar.text = "";
                 profile_avatar.custom_image = null;
+                if (profile_unread_badge != null) profile_unread_badge.visible = false;
                 empty_status.icon_name = "avatar-default-symbolic";
                 empty_status.title = "No Profile Loaded";
                 empty_status.description =

@@ -313,6 +313,28 @@ namespace Dc {
                 background-color: alpha(@accent_bg_color, 0.10);
                 border-radius: 8px;
             }
+            .account-unread-dot {
+                background-color: @error_bg_color;
+                border-radius: 9999px;
+                min-width: 14px;
+                min-height: 14px;
+                margin-bottom: -2px;
+                margin-right: -2px;
+                box-shadow: 0 0 0 2px @headerbar_bg_color;
+            }
+            .account-unread-badge {
+                background-color: @error_bg_color;
+                color: @error_fg_color;
+                border-radius: 9px;
+                padding: 0 4px;
+                min-width: 16px;
+                min-height: 16px;
+                font-size: 8pt;
+                font-weight: bold;
+                margin-bottom: -3px;
+                margin-right: -3px;
+                box-shadow: 0 0 0 2px @view_bg_color;
+            }
             .unread-dot {
                 color: @accent_bg_color;
                 font-size: 12px;

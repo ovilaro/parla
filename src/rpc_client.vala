@@ -68,6 +68,16 @@ namespace Dc {
             yield call ("stop_io", Params.begin ().add_int (account_id).build ());
         }
 
+        /* Start/stop IO for every account so background accounts keep receiving
+           messages (and emitting notifications) while another one is active. */
+        public async void start_io_for_all_accounts () throws Error {
+            yield call ("start_io_for_all_accounts", Params.begin ().build ());
+        }
+
+        public async void stop_io_for_all_accounts () throws Error {
+            yield call ("stop_io_for_all_accounts", Params.begin ().build ());
+        }
+
         public async int get_connectivity (int acct_id = 0) throws Error {
             int id = acct_id > 0 ? acct_id : account_id;
             var result = yield call ("get_connectivity",
@@ -253,9 +263,30 @@ namespace Dc {
             return result.get_object ();
         }
 
+        /**
+         * Number of fresh (notification-worthy) messages for an account.
+         * Mirrors the Delta Chat core semantics for badge counters: messages in
+         * muted chats and contact requests are excluded. Pass 0 (or omit) for
+         * the current account.
+         */
+        public async int get_fresh_msg_count (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            if (id <= 0) return 0;
+            var result = yield call ("get_fresh_msgs",
+                Params.begin ().add_int (id).build ());
+            if (result == null || result.get_node_type () != Json.NodeType.ARRAY)
+                return 0;
+            return (int) result.get_array ().get_length ();
+        }
+
         public async Json.Object? get_full_chat_by_id (int chat_id) throws Error {
+            return yield get_full_chat_by_id_for (account_id, chat_id);
+        }
+
+        public async Json.Object? get_full_chat_by_id_for (int acct_id,
+                                                            int chat_id) throws Error {
             var result = yield call ("get_full_chat_by_id",
-                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+                Params.begin ().add_int (acct_id).add_int (chat_id).build ());
             if (result == null) return null;
             return result.get_object ();
         }
@@ -280,16 +311,25 @@ namespace Dc {
         }
 
         public async Json.Object? get_message (int msg_id) throws Error {
+            return yield get_message_for (account_id, msg_id);
+        }
+
+        public async Json.Object? get_message_for (int acct_id, int msg_id) throws Error {
             var result = yield call ("get_message",
-                Params.begin ().add_int (account_id).add_int (msg_id).build ());
+                Params.begin ().add_int (acct_id).add_int (msg_id).build ());
             if (result == null) return null;
             return result.get_object ();
         }
 
         public async Message? fetch_message (int msg_id) throws Error {
-            var obj = yield get_message (msg_id);
+            return yield fetch_message_for (account_id, msg_id, self_email);
+        }
+
+        public async Message? fetch_message_for (int acct_id, int msg_id,
+                                                  string? self_addr = null) throws Error {
+            var obj = yield get_message_for (acct_id, msg_id);
             if (obj == null) return null;
-            return RpcParsers.parse_message (obj, self_email);
+            return RpcParsers.parse_message (obj, self_addr);
         }
 
         public async Json.Object? get_messages (int[] msg_ids) throws Error {

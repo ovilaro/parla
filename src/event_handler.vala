@@ -12,7 +12,8 @@ namespace Dc {
 
         public signal void chats_reload_fired ();
         public signal void messages_reload_fired ();
-        public signal void incoming_msg_received (int chat_id, int msg_id);
+        public signal void incoming_msg_received (int acct_id, int chat_id, int msg_id);
+        public signal void account_unread_changed (int acct_id);
         public signal void imex_progress (int context_id, int progress);
         public signal void configure_progress (int context_id, int progress,
                                                 string? comment);
@@ -59,7 +60,10 @@ namespace Dc {
                         continue;
                     }
 
-                    if (ctx != rpc.account_id) continue;
+                    if (ctx != rpc.account_id) {
+                        dispatch_background (ctx, kind, event);
+                        continue;
+                    }
                     dispatch (kind, event);
                 } catch (Error e) {
                     if (rpc.is_connected) {
@@ -95,7 +99,7 @@ namespace Dc {
             case "IncomingMsg":
                 int chat_id = (int) event.get_int_member ("chatId");
                 int msg_id = (int) event.get_int_member ("msgId");
-                incoming_msg_received (chat_id, msg_id);
+                incoming_msg_received (rpc.account_id, chat_id, msg_id);
                 break;
 
             case "MsgsChanged":
@@ -129,16 +133,40 @@ namespace Dc {
             }
         }
 
-        public async void send_notification (int chat_id, int msg_id) {
+        /* Events arriving from an account other than the active one. We can't
+           touch the visible chat/message lists (they belong to the current
+           account), but we still want to notify and keep unread badges fresh. */
+        private void dispatch_background (int acct_id, string kind,
+                                          Json.Object event) {
+            switch (kind) {
+            case "IncomingMsg":
+                int chat_id = (int) event.get_int_member ("chatId");
+                int msg_id = (int) event.get_int_member ("msgId");
+                incoming_msg_received (acct_id, chat_id, msg_id);
+                break;
+
+            case "ChatlistChanged":
+            case "ChatlistItemChanged":
+            case "MsgsNoticed":
+            case "ChatModified":
+                account_unread_changed (acct_id);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        public async void send_notification (int acct_id, int chat_id, int msg_id) {
             if (app == null) return;
             try {
-                var msg = yield rpc.fetch_message (msg_id);
+                var msg = yield rpc.fetch_message_for (acct_id, msg_id);
                 if (msg == null) return;
                 if (msg.is_outgoing || msg.is_info) return;
 
                 string title = msg.sender_name ?? msg.sender_address ?? "New message";
                 try {
-                    var chat_obj = yield rpc.get_full_chat_by_id (chat_id);
+                    var chat_obj = yield rpc.get_full_chat_by_id_for (acct_id, chat_id);
                     if (chat_obj != null && chat_obj.has_member ("name")) {
                         string chat_name = chat_obj.get_string_member ("name");
                         if (chat_name != null && chat_name.length > 0
@@ -148,6 +176,20 @@ namespace Dc {
                     }
                 } catch (Error e) { /* fall back to sender */ }
 
+                /* Tag notifications from background accounts so the user can
+                   tell which profile they belong to. */
+                if (acct_id != rpc.account_id) {
+                    try {
+                        string? acct_name = yield rpc.get_config ("displayname", acct_id);
+                        if (acct_name == null || acct_name.length == 0) {
+                            acct_name = yield rpc.get_config ("addr", acct_id);
+                        }
+                        if (acct_name != null && acct_name.length > 0) {
+                            title = "[%s] %s".printf (acct_name, title);
+                        }
+                    } catch (Error e) { /* fall back to plain title */ }
+                }
+
                 string body = (msg.text != null && msg.text.length > 0) ? msg.text
                     : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
                     : "New message";
@@ -155,7 +197,7 @@ namespace Dc {
                 var n = new GLib.Notification (title);
                 n.set_body (body);
                 n.set_priority (GLib.NotificationPriority.NORMAL);
-                app.send_notification ("dc-msg-%d".printf (msg_id), n);
+                app.send_notification ("dc-msg-%d-%d".printf (acct_id, msg_id), n);
             } catch (Error e) {
                 warning ("Failed to send notification: %s", e.message);
             }
