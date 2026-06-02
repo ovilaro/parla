@@ -2000,6 +2000,12 @@ namespace Dc {
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             box.append (new Adw.HeaderBar ());
 
+            var scroller = new Gtk.ScrolledWindow ();
+            scroller.hscrollbar_policy = Gtk.PolicyType.NEVER;
+            scroller.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
+            scroller.vexpand = true;
+            scroller.hexpand = true;
+
             var list = new Gtk.ListBox ();
             list.selection_mode = Gtk.SelectionMode.NONE;
             list.add_css_class ("boxed-list");
@@ -2014,7 +2020,8 @@ namespace Dc {
                 list.append (row);
             }
 
-            box.append (list);
+            scroller.child = list;
+            box.append (scroller);
             dialog.child = box;
             active_modal = dialog;
             dialog.closed.connect (() => { active_modal = null; });
