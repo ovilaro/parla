@@ -174,8 +174,12 @@ namespace Dc {
 
             popover.closed.connect (() => {
                 if (view != null) {
-                    view.freeze_scroll_handler (300);
+                    /* popdown() emits "closed" and only then grabs focus back
+                       into the listview, which scrolls the focused row into
+                       view. A synchronous restore here runs too early and is
+                       overwritten, so re-assert on the next frame as well. */
                     view.restore_scroll_value (saved_scroll);
+                    view.restore_scroll_value_deferred (saved_scroll);
                 }
                 Idle.add (() => {
                     popover.unparent ();
@@ -221,8 +225,8 @@ namespace Dc {
 
             chooser.closed.connect (() => {
                 if (view != null) {
-                    view.freeze_scroll_handler (300);
                     view.restore_scroll_value (saved_scroll);
+                    view.restore_scroll_value_deferred (saved_scroll);
                 }
                 chooser.unparent ();
             });

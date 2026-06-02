@@ -138,6 +138,16 @@ namespace Dc {
                     row.highlight ();
                 }
                 li.child = row;
+                /* Keep the list row from grabbing focus on click. A focused
+                   list item makes GtkListView scroll it into view (an
+                   immediate re-anchor), which yanks the viewport whenever the
+                   clicked row is partially clipped at a viewport edge — the
+                   main source of the random scroll jumps on interaction.
+                   Under the NoSelection model these two flags have no other
+                   visible effect; the click handler bails out before its
+                   grab_focus when both are false. */
+                li.selectable = false;
+                li.activatable = false;
             });
 
             var selection = new Gtk.NoSelection (filtered_message_store);
@@ -171,6 +181,7 @@ namespace Dc {
             dc.pressed.connect ((n, x, y) => {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
+                hold_scroll_on_focus_shift ();
                 int64 now = get_monotonic_time () / 1000;
                 int dct = 400;
                 var gs = Gtk.Settings.get_default ();
@@ -350,7 +361,12 @@ namespace Dc {
             Object[] replacements = { new_msg };
             message_store.splice (idx, 1, replacements);
 
-            Idle.add (() => {
+            /* Restore on the frame clock, not a bare Idle: the replaced row
+               changes height (e.g. a reaction badge appears), and the new
+               adj.upper is only valid after the size-allocate pass. A
+               default-priority Idle can run before that relayout and clamp
+               against a stale upper; a tick callback runs after layout. */
+            message_listview.add_tick_callback ((w, clock) => {
                 var a = message_scroll.vadjustment;
                 double max_value = a.upper - a.page_size;
                 if (max_value < 0) max_value = 0;
@@ -384,6 +400,35 @@ namespace Dc {
             if (max_value < 0) max_value = 0;
             if (v > max_value) v = max_value;
             if (Math.fabs (a.value - v) > 0.5) a.value = v;
+        }
+
+        /**
+         * Re-assert a scroll position on the next frame, after any
+         * focus-driven scroll-to-item has been applied. GtkListView scrolls a
+         * newly focused row into view immediately (a synchronous re-anchor),
+         * so a synchronous restore loses the race; a tick callback runs in the
+         * frame-clock update phase — after the focus scroll, before paint —
+         * and re-pins the viewport with no visible flicker. The freeze keeps
+         * the value-notify handler from mistaking these moves for the user
+         * scrolling away from the bottom.
+         */
+        public void restore_scroll_value_deferred (double v) {
+            freeze_scroll_handler (250);
+            message_listview.add_tick_callback ((w, clock) => {
+                restore_scroll_value (v);
+                return Source.REMOVE;
+            });
+        }
+
+        /* Clicking a message grabs focus to its selectable text label, and
+           GtkListView reacts by scrolling that row fully into view — jolting
+           the viewport when the user has scrolled up to read history. Snapshot
+           the position before the focus lands and re-assert it next frame.
+           When pinned to the bottom the focused row is already fully visible,
+           so there is nothing to hold. */
+        private void hold_scroll_on_focus_shift () {
+            if (stick_to_bottom) return;
+            restore_scroll_value_deferred (message_scroll.vadjustment.value);
         }
 
         public bool close_search_if_active () {
