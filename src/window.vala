@@ -1985,6 +1985,7 @@ namespace Dc {
             "Refresh messages",      "<Control>r",
             "Cycle sidebar mode",    "<Control>s",
             "Focus message entry",   "Escape",
+            "Cancel reply/edit/image", "Escape+Escape",
             "Close window",          "<Control>w",
             "Quit application",      "<Control>q",
         };
