@@ -153,6 +153,11 @@ namespace Dc {
                 opacity: 0.55;
                 margin-top: 2px;
             }
+            .message-forwarded {
+                font-size: small;
+                font-style: italic;
+                opacity: 0.7;
+            }
             .message-irc {
                 padding: 1px 0;
             }

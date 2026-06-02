@@ -64,13 +64,22 @@ namespace Dc {
             bubble.add_css_class ("message-bubble");
             bubble.add_css_class (outgoing ? "outgoing" : "incoming");
 
-            /* Sender name (incoming only) */
-            if (!outgoing && msg.sender_name != null && msg.sender_name.length > 0) {
-                var sender = new Gtk.Label (msg.sender_name);
-                sender.add_css_class ("message-sender");
-                sender.halign = Gtk.Align.START;
-                sender.xalign = 0;
-                bubble.append (sender);
+            /* Forwarded indicator replaces the plain sender line: it already
+               names the forwarder (incoming) or just reads "Forwarded"
+               (outgoing / unknown sender). */
+            if (msg.is_forwarded) {
+                bubble.append (build_forwarded_indicator (msg));
+            } else if (!outgoing) {
+                string? author = effective_author_name (msg);
+                if (author != null) {
+                    var sender = new Gtk.Label (author);
+                    sender.add_css_class ("message-sender");
+                    sender.halign = Gtk.Align.START;
+                    sender.xalign = 0;
+                    if (msg.sender_address != null && msg.sender_address.length > 0)
+                        sender.tooltip_text = msg.sender_address;
+                    bubble.append (sender);
+                }
             }
 
             /* Quoted / reply block */
@@ -267,6 +276,17 @@ namespace Dc {
             var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
             body.hexpand = true;
 
+            /* Forwarded marker */
+            if (msg.is_forwarded) {
+                var fwd = new Gtk.Label ("↪ forwarded");
+                fwd.add_css_class ("message-forwarded");
+                fwd.halign = Gtk.Align.START;
+                fwd.xalign = 0;
+                if (msg.sender_address != null && msg.sender_address.length > 0)
+                    fwd.tooltip_text = msg.sender_address;
+                body.append (fwd);
+            }
+
             /* Quoted / reply block (kept compact) */
             if (msg.quote_text != null && msg.quote_text.length > 0) {
                 var qbtn = new Gtk.Button ();
@@ -431,8 +451,46 @@ namespace Dc {
                     return self_display_name;
                 return "me";
             }
-            return (msg.sender_name != null && msg.sender_name.length > 0)
-                ? msg.sender_name : "?";
+            string? author = effective_author_name (msg);
+            return author ?? "?";
+        }
+
+        /**
+         * Display name for an incoming message's author. Prefers the overridden
+         * sender name (mailing lists, bots, senders not in the group), shown
+         * with a leading "~" per Delta Chat convention; otherwise the contact's
+         * display name. Returns null when neither is known.
+         */
+        private static string? effective_author_name (Message msg) {
+            if (msg.override_sender_name != null
+                && msg.override_sender_name.length > 0) {
+                return "~" + msg.override_sender_name;
+            }
+            if (msg.sender_name != null && msg.sender_name.length > 0) {
+                return msg.sender_name;
+            }
+            return null;
+        }
+
+        /**
+         * "Forwarded by <author>" for incoming messages where the forwarder is
+         * known, otherwise a plain "Forwarded" marker. Delta Chat does not
+         * preserve the original author of forwarded content, so the recoverable
+         * identity is the forwarder (sender), exposed as the tooltip address.
+         */
+        private static Gtk.Label build_forwarded_indicator (Message msg) {
+            string? author = msg.is_outgoing ? null : effective_author_name (msg);
+            var lbl = new Gtk.Label (author != null
+                ? "↪ Forwarded by " + author
+                : "↪ Forwarded");
+            lbl.add_css_class ("message-forwarded");
+            lbl.halign = Gtk.Align.START;
+            lbl.xalign = 0;
+            if (!msg.is_outgoing && msg.sender_address != null
+                && msg.sender_address.length > 0) {
+                lbl.tooltip_text = msg.sender_address;
+            }
+            return lbl;
         }
 
         private void build_info_row (Message msg) {

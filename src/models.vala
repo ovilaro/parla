@@ -177,6 +177,11 @@ namespace Dc {
         public string? text { get; set; default = null; }
         public string? sender_address { get; set; default = null; }
         public string? sender_name { get; set; default = null; }
+        /* True when the message was forwarded into this chat. */
+        public bool is_forwarded { get; set; default = false; }
+        /* Overridden author name (mailing lists, bots, non-group senders);
+           shown with a leading "~" by convention. */
+        public string? override_sender_name { get; set; default = null; }
         public int64 timestamp { get; set; default = 0; }
         public bool is_outgoing { get; set; default = false; }
         public string? file_path { get; set; default = null; }

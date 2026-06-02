@@ -20,6 +20,8 @@ namespace Dc {
             msg.text = json_str (obj, "text");
             msg.timestamp = json_int (obj, "timestamp");
             msg.is_info = json_bool (obj, "isInfo");
+            msg.is_forwarded = json_bool (obj, "isForwarded");
+            msg.override_sender_name = json_str (obj, "overrideSenderName");
 
             msg.file_path = json_str (obj, "file");
             msg.file_name = json_str (obj, "fileName");

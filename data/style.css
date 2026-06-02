@@ -29,6 +29,12 @@
     margin-top: 2px;
 }
 
+.message-forwarded {
+    font-size: small;
+    font-style: italic;
+    opacity: 0.7;
+}
+
 .message-attachment {
     padding: 4px 0;
 }
