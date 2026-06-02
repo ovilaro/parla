@@ -24,6 +24,12 @@ namespace Dc {
         private Gtk.Button cancel_reply_button;
         private Gtk.Label reply_label;
         private Gtk.Box reply_bar;
+        private Gtk.Box attachment_bar;
+        private Gtk.Picture attachment_picture;
+        private Gtk.Image attachment_icon;
+        private Gtk.Label attachment_name_label;
+        private Gtk.Label attachment_meta_label;
+        private Gtk.Button attachment_close_button;
         private string? pending_file = null;
         private string? pending_file_name = null;
         private bool pending_file_is_temp = false;
@@ -67,6 +73,58 @@ namespace Dc {
             reply_bar.append (cancel_reply_button);
 
             append (reply_bar);
+
+            /* Attachment preview bar (hidden by default). Shows either an
+               image preview (when the attached file is an image) or a
+               generic icon + filename + mimetype row. */
+            attachment_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            attachment_bar.add_css_class ("attachment-bar");
+            attachment_bar.visible = false;
+
+            attachment_picture = new Gtk.Picture ();
+            attachment_picture.add_css_class ("attachment-preview-image");
+            attachment_picture.content_fit = Gtk.ContentFit.COVER;
+            attachment_picture.set_size_request (72, 72);
+            attachment_picture.can_shrink = true;
+            attachment_bar.append (attachment_picture);
+
+            attachment_icon = new Gtk.Image ();
+            attachment_icon.add_css_class ("attachment-preview-icon");
+            attachment_icon.pixel_size = 36;
+            attachment_icon.valign = Gtk.Align.CENTER;
+            attachment_bar.append (attachment_icon);
+
+            var attachment_info = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+            attachment_info.valign = Gtk.Align.CENTER;
+            attachment_info.hexpand = true;
+
+            attachment_name_label = new Gtk.Label ("");
+            attachment_name_label.add_css_class ("attachment-preview-name");
+            attachment_name_label.halign = Gtk.Align.START;
+            attachment_name_label.xalign = 0;
+            attachment_name_label.ellipsize = Pango.EllipsizeMode.MIDDLE;
+            attachment_name_label.max_width_chars = 40;
+            attachment_name_label.single_line_mode = true;
+            attachment_info.append (attachment_name_label);
+
+            attachment_meta_label = new Gtk.Label ("");
+            attachment_meta_label.add_css_class ("attachment-preview-meta");
+            attachment_meta_label.halign = Gtk.Align.START;
+            attachment_meta_label.xalign = 0;
+            attachment_meta_label.ellipsize = Pango.EllipsizeMode.END;
+            attachment_info.append (attachment_meta_label);
+
+            attachment_bar.append (attachment_info);
+
+            attachment_close_button = new Gtk.Button.from_icon_name ("window-close-symbolic");
+            attachment_close_button.add_css_class ("flat");
+            attachment_close_button.add_css_class ("circular");
+            attachment_close_button.tooltip_text = "Remove attachment";
+            attachment_close_button.valign = Gtk.Align.CENTER;
+            attachment_close_button.clicked.connect (clear_attachment);
+            attachment_bar.append (attachment_close_button);
+
+            append (attachment_bar);
 
             /* Input row */
             var input_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
@@ -211,8 +269,98 @@ namespace Dc {
             pending_file_name = file_name ?? Path.get_basename (file_path);
             pending_file_is_temp = false;
             text_view.buffer.text = "";
-            set_placeholder ("📎 %s — Type a caption…".printf (pending_file_name));
+            populate_attachment_preview (file_path, pending_file_name);
             cancel_attach_button.visible = true;
+        }
+
+        private void populate_attachment_preview (string file_path, string file_name) {
+            string mime = guess_mime (file_path);
+            bool is_image = mime != null && mime.has_prefix ("image/");
+            attachment_picture.visible = false;
+            attachment_icon.visible = false;
+            if (is_image) {
+                try {
+                    var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
+                        file_path, 256, 256, true);
+                    var texture = Gdk.Texture.for_pixbuf (pixbuf);
+                    attachment_picture.paintable = texture;
+                    attachment_picture.visible = true;
+                } catch (Error e) {
+                    is_image = false;
+                }
+            }
+            if (!is_image) {
+                attachment_icon.icon_name = mime_icon_name (mime, file_path);
+                attachment_icon.visible = true;
+            }
+            attachment_name_label.label = file_name;
+            string size_str = format_size (file_size_or_zero (file_path));
+            attachment_meta_label.label = mime != null
+                ? "%s · %s".printf (mime, size_str)
+                : size_str;
+            attachment_bar.visible = true;
+        }
+
+        private static string? guess_mime (string file_path) {
+            try {
+                var info = GLib.File.new_for_path (file_path).query_info (
+                    "standard::content-type",
+                    GLib.FileQueryInfoFlags.NONE);
+                string? ct = info.get_content_type ();
+                if (ct != null) {
+                    var mime = GLib.ContentType.get_mime_type (ct);
+                    if (mime != null && mime.length > 0) return mime;
+                }
+            } catch (Error e) {
+            }
+            return null;
+        }
+
+        private static string mime_icon_name (string? mime, string file_path) {
+            if (mime != null) {
+                if (mime.has_prefix ("video/")) return "video-x-generic-symbolic";
+                if (mime.has_prefix ("audio/")) return "audio-x-generic-symbolic";
+                if (mime.has_prefix ("image/")) return "image-x-generic-symbolic";
+                if (mime == "application/pdf") return "application-pdf-symbolic";
+                if (mime.has_prefix ("text/")) return "text-x-generic-symbolic";
+                if (mime == "application/zip" || mime == "application/x-tar" ||
+                    mime == "application/gzip" || mime == "application/x-7z-compressed" ||
+                    mime == "application/x-rar-compressed" ||
+                    mime == "application/x-bzip" || mime == "application/x-bzip2")
+                    return "package-x-generic-symbolic";
+            }
+            var lower = file_path.down ();
+            if (lower.has_suffix (".pdf")) return "application-pdf-symbolic";
+            if (lower.has_suffix (".zip") || lower.has_suffix (".tar") ||
+                lower.has_suffix (".tgz") || lower.has_suffix (".gz") ||
+                lower.has_suffix (".7z") || lower.has_suffix (".rar") ||
+                lower.has_suffix (".bz2"))
+                return "package-x-generic-symbolic";
+            return "mail-attachment-symbolic";
+        }
+
+        private static int64 file_size_or_zero (string file_path) {
+            try {
+                var info = GLib.File.new_for_path (file_path).query_info (
+                    "standard::size",
+                    GLib.FileQueryInfoFlags.NONE);
+                return info.get_size ();
+            } catch (Error e) {
+                return 0;
+            }
+        }
+
+        private static string format_size (int64 bytes) {
+            if (bytes <= 0) return "—";
+            double v = bytes;
+            string[] units = { "B", "KB", "MB", "GB" };
+            int u = 0;
+            while (v >= 1024.0 && u < units.length - 1) {
+                v /= 1024.0;
+                u++;
+            }
+            if (u == 0) return "%lld %s".printf ((int64) v, units[u]);
+            return "%.1f %s".printf (v, units[u]);
         }
 
         private void clear_attachment () {
@@ -227,6 +375,10 @@ namespace Dc {
             pending_file_name = null;
             pending_file_is_temp = false;
             cancel_attach_button.visible = false;
+            attachment_bar.visible = false;
+            attachment_picture.paintable = null;
+            attachment_name_label.label = "";
+            attachment_meta_label.label = "";
             set_placeholder (placeholder_default);
         }
 

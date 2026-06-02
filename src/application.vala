@@ -247,6 +247,28 @@ namespace Dc {
             }
             .compose-bar { border-top: none; }
             .compose-entry { min-height: 36px; border-radius: 18px; }
+            .attachment-bar {
+                padding: 6px 10px;
+                margin-bottom: 6px;
+                border-left: 3px solid @accent_bg_color;
+                background-color: alpha(@view_fg_color, 0.05);
+                border-radius: 4px;
+                min-height: 56px;
+            }
+            .attachment-preview-image {
+                border-radius: 6px;
+                background-color: alpha(@view_fg_color, 0.08);
+            }
+            .attachment-preview-icon {
+                color: @accent_color;
+            }
+            .attachment-preview-name {
+                font-weight: bold;
+            }
+            .attachment-preview-meta {
+                font-size: x-small;
+                opacity: 0.65;
+            }
             .chat-drop-active {
                 background-color: alpha(@accent_bg_color, 0.08);
                 box-shadow: inset 0 0 0 2px alpha(@accent_bg_color, 0.45);
