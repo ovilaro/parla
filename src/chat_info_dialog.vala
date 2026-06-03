@@ -95,6 +95,25 @@ namespace Dc {
                 type_lbl.halign = Gtk.Align.CENTER;
                 content.append (type_lbl);
 
+                /* Invite link for groups/channels */
+                if (is_group) {
+                    var invite_list = new Gtk.ListBox ();
+                    invite_list.selection_mode = Gtk.SelectionMode.NONE;
+                    invite_list.add_css_class ("boxed-list");
+
+                    var invite_row = new Adw.ActionRow ();
+                    invite_row.title = "Invite Link";
+                    invite_row.subtitle = "Share a link or QR code for others to join";
+                    invite_row.add_prefix (new Gtk.Image.from_icon_name ("mail-forward-symbolic"));
+                    invite_row.activatable = true;
+                    invite_row.activated.connect (() => {
+                        var dialog = new InviteCodeDialog (rpc, rpc.account_id, chat_id);
+                        dialog.present (this);
+                    });
+                    invite_list.append (invite_row);
+                    content.append (invite_list);
+                }
+
                 /* Disappearing messages */
                 int ephemeral_timer = (int) json_int (chat, "ephemeralTimer");
 

@@ -864,6 +864,7 @@ namespace Dc {
 
         private RpcClient rpc;
         private int account_id;
+        private int chat_id;
         private Gtk.Label status_label;
         private Gtk.Picture qr_picture;
         private Gtk.TextView qr_text_view;
@@ -872,10 +873,11 @@ namespace Dc {
         private string? invite_text = null;
         private bool closing = false;
 
-        public InviteCodeDialog (RpcClient rpc, int acct_id) {
+        public InviteCodeDialog (RpcClient rpc, int acct_id, int chat_id = 0) {
             this.rpc = rpc;
             this.account_id = acct_id;
-            this.title = "Invite Code";
+            this.chat_id = chat_id;
+            this.title = chat_id > 0 ? "Invite Link" : "Invite Code";
             this.content_width = 480;
             this.content_height = 560;
             this.can_close = true;
@@ -939,7 +941,7 @@ namespace Dc {
 
         private async void load_invite_code () {
             try {
-                string text = yield rpc.get_chat_securejoin_qr_code (account_id);
+                string text = yield rpc.get_chat_securejoin_qr_code (account_id, chat_id);
                 string svg = yield rpc.create_qr_svg (text);
                 if (!closing) show_qr (text, svg);
             } catch (Error e) {
@@ -949,7 +951,9 @@ namespace Dc {
 
         private void show_qr (string text, string svg) {
             invite_text = text;
-            status_label.label = "Share this QR code with another user, or copy the invite link below.";
+            status_label.label = chat_id > 0
+                ? "Share this QR code or invite link to let others join."
+                : "Share this QR code with another user, or copy the invite link below.";
             qr_text_view.buffer.text = text;
             qr_text_scroll.visible = true;
             copy_btn.sensitive = true;
