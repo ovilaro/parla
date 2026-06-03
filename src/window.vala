@@ -1,5 +1,15 @@
 namespace Dc {
 
+    /* True for links that the SecureJoin flow can act on: the "openpgp4fpr:"
+       URI scheme (carried in QR codes / registered as a system handler) and
+       the "https://i.delta.chat/" web fallback. Used both to claim clicks on
+       in-message links and to recognise URIs passed on the command line. */
+    public bool is_delta_invite_uri (string uri) {
+        string u = uri.strip ().down ();
+        return u.has_prefix ("openpgp4fpr:")
+            || u.has_prefix ("https://i.delta.chat/");
+    }
+
     public class Window : Adw.ApplicationWindow {
 
         /* Layout */
@@ -55,6 +65,10 @@ namespace Dc {
 
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
+
+        /* An invite link received (via the system handler or an in-app click)
+           before a profile was connected; opened once try_connect finishes. */
+        private string? pending_invite_uri = null;
 
         private TrayIcon? tray = null;
         private bool minimized_to_tray = false;
@@ -476,6 +490,14 @@ namespace Dc {
                 yield load_chats ();
                 yield load_profile_avatar ();
                 events.start.begin ();
+
+                /* A link that arrived before the profile was ready (e.g. the
+                   app was cold-started by clicking it) waited here. */
+                if (pending_invite_uri != null) {
+                    string uri = pending_invite_uri;
+                    pending_invite_uri = null;
+                    show_use_invite_link_dialog (uri);
+                }
             }
         }
 
@@ -1523,7 +1545,24 @@ namespace Dc {
             about.present (this);
         }
 
-        private void show_use_invite_link_dialog () {
+        /* Entry point for invite links that arrive from outside the menu:
+           a click on an "openpgp4fpr:" / "https://i.delta.chat/" link in a
+           message, or the system handing us such a URI on the command line.
+           Brings the window forward and opens the join dialog pre-filled; if
+           no profile is connected yet (e.g. a cold start triggered by the
+           link), the URI is parked and opened once try_connect finishes. */
+        public void handle_invite_uri (string uri) {
+            restore_from_tray ();
+
+            if (rpc == null || rpc.account_id <= 0) {
+                pending_invite_uri = uri;
+                show_toast ("Invite link will open once a profile is ready");
+                return;
+            }
+            show_use_invite_link_dialog (uri);
+        }
+
+        private void show_use_invite_link_dialog (string? prefill = null) {
             if (active_modal != null) return;
             if (rpc.account_id <= 0) {
                 show_toast ("No active profile");
@@ -1595,7 +1634,16 @@ namespace Dc {
             active_modal = dialog;
             dialog.closed.connect (() => { active_modal = null; });
             dialog.present (this);
-            entry.grab_focus ();
+
+            /* When the link came from a click or the system handler, drop it
+               straight in so the user only has to confirm with "Add". */
+            if (prefill != null && prefill.strip ().length > 0) {
+                entry.text = prefill.strip ();
+                add_btn.sensitive = true;
+                add_btn.grab_focus ();
+            } else {
+                entry.grab_focus ();
+            }
         }
 
         private async void use_invite_link (Adw.Dialog dialog,
@@ -1617,19 +1665,51 @@ namespace Dc {
                 }
 
                 string kind = qr.get_string_member ("kind");
-                if (kind != "askVerifyContact" &&
-                    kind != "askVerifyGroup" &&
-                    kind != "askJoinBroadcast") {
-                    status.label = "This is not a contact, group, or channel invite link.";
-                    return;
-                }
 
-                status.label = "Accepting invite link…";
-                int chat_id = yield rpc.secure_join (rpc.account_id, invite_link);
-                yield load_chats ();
-                select_chat_by_id (chat_id);
-                dialog.close ();
-                show_toast ("Invite link accepted");
+                /* check_qr resolves a link relative to the current account.
+                   Someone else's invite is an "ask*" kind we can join. Our own
+                   invite comes back as withdraw* (token still active) or
+                   revive* (token withdrawn) — see core/src/qr.rs. Those are not
+                   errors: the link is ours to share, and a revive* simply means
+                   it must be re-activated before others can use it. */
+                switch (kind) {
+                case "askVerifyContact":
+                case "askVerifyGroup":
+                case "askJoinBroadcast":
+                    {
+                        status.label = "Accepting invite link…";
+                        int chat_id = yield rpc.secure_join (rpc.account_id, invite_link);
+                        yield load_chats ();
+                        select_chat_by_id (chat_id);
+                        dialog.close ();
+                        show_toast ("Invite link accepted");
+                    }
+                    break;
+
+                case "reviveVerifyContact":
+                case "reviveVerifyGroup":
+                case "reviveJoinBroadcast":
+                    /* Our own link, currently inactive — activate it so others
+                       can join. */
+                    status.label = "Activating your invite link…";
+                    yield rpc.set_config_from_qr (rpc.account_id, invite_link);
+                    status.label = "This is your own invite link. It is now active — "
+                        + "share it with others so they can join.";
+                    break;
+
+                case "withdrawVerifyContact":
+                case "withdrawVerifyGroup":
+                case "withdrawJoinBroadcast":
+                    /* Our own link, already active. Nothing to join — just tell
+                       the user it is ready to share. */
+                    status.label = "This is your own invite link and it is active. "
+                        + "Share it with others so they can join.";
+                    break;
+
+                default:
+                    status.label = "This is not a contact, group, or channel invite link.";
+                    break;
+                }
             } catch (Error e) {
                 status.label = "Invite link failed: " + e.message;
             } finally {

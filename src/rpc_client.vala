@@ -175,6 +175,17 @@ namespace Dc {
             return (int) result.get_int ();
         }
 
+        /* Applies a self-QR action — used to withdraw (deactivate) or revive
+           (re-activate) one of our own invite links. check_qr returns a
+           withdraw or revive kind for those, and this toggles the token. */
+        public async void set_config_from_qr (int acct_id, string qr_text) throws Error {
+            yield call ("set_config_from_qr",
+                Params.begin ()
+                    .add_int (acct_id)
+                    .add_string (qr_text)
+                    .build ());
+        }
+
         public async void add_or_update_transport (int acct_id, string email,
                                                     string password) throws Error {
             yield call ("add_or_update_transport",

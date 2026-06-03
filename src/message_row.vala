@@ -612,6 +612,16 @@ namespace Dc {
             text.halign = Gtk.Align.START; text.xalign = 0;
             text.selectable = true;
             if (max_width_chars > 0) text.max_width_chars = max_width_chars;
+
+            /* Delta Chat invite links join in-app instead of bouncing through a
+               browser; everything else falls through to the default handler. */
+            text.activate_link.connect ((uri) => {
+                if (is_delta_invite_uri (uri) && text.get_root () is Dc.Window) {
+                    ((Dc.Window) text.get_root ()).handle_invite_uri (uri);
+                    return true;
+                }
+                return false;
+            });
             return text;
         }
 

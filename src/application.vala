@@ -23,7 +23,10 @@ namespace Dc {
         public Application () {
             Object (
                 application_id: "io.github.trufae.Parla",
-                flags: ApplicationFlags.FLAGS_NONE
+                /* HANDLES_COMMAND_LINE (not HANDLES_OPEN) so we see invite URIs
+                   verbatim: GFile rewrites "openpgp4fpr:FPR#..." into
+                   "openpgp4fpr:///FPR#..." which Delta Chat's check_qr rejects. */
+                flags: ApplicationFlags.HANDLES_COMMAND_LINE
             );
         }
 
@@ -124,17 +127,32 @@ namespace Dc {
         }
 
         protected override void activate () {
-            Dc.Window? window = null;
+            get_or_create_window ().restore_from_tray ();
+        }
+
+        private Dc.Window get_or_create_window () {
             foreach (var win in get_windows ()) {
-                if (win is Dc.Window) {
-                    window = (Dc.Window) win;
+                if (win is Dc.Window) return (Dc.Window) win;
+            }
+            return new Dc.Window (this);
+        }
+
+        /* The app is single-instance and registered as the handler for
+           "openpgp4fpr:" links (see the .desktop file). When the OS — or a
+           second `parla <uri>` invocation — hands us a URI, it arrives here on
+           the primary instance. We pass the raw argument straight through so
+           the SecureJoin code receives the exact link the user clicked. */
+        protected override int command_line (ApplicationCommandLine cmd) {
+            var window = get_or_create_window ();
+            window.restore_from_tray ();
+
+            foreach (unowned string arg in cmd.get_arguments ()) {
+                if (is_delta_invite_uri (arg)) {
+                    window.handle_invite_uri (arg);
                     break;
                 }
             }
-            if (window == null) {
-                window = new Dc.Window (this);
-            }
-            window.restore_from_tray ();
+            return 0;
         }
 
         protected override void startup () {
