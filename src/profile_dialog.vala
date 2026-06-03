@@ -870,8 +870,11 @@ namespace Dc {
         private Gtk.TextView qr_text_view;
         private Gtk.ScrolledWindow qr_text_scroll;
         private Gtk.Button copy_btn;
+        private Gtk.Button? toggle_btn = null;
         private string? invite_text = null;
         private bool closing = false;
+        private bool link_active = true;
+        private bool toggle_busy = false;
 
         public InviteCodeDialog (RpcClient rpc, int acct_id, int chat_id = 0) {
             this.rpc = rpc;
@@ -921,6 +924,16 @@ namespace Dc {
             actions.halign = Gtk.Align.END;
             actions.margin_top = 6;
 
+            /* Group/channel invite links can be deactivated (withdrawn) and
+               reactivated (revived) by their owner — see set_config_from_qr.
+               Personal contact codes have no such toggle. */
+            if (chat_id > 0) {
+                toggle_btn = new Gtk.Button.with_label ("Deactivate Link");
+                toggle_btn.sensitive = false;
+                toggle_btn.clicked.connect (() => { toggle_link.begin (); });
+                actions.append (toggle_btn);
+            }
+
             copy_btn = new Gtk.Button.with_label ("Copy Link");
             copy_btn.sensitive = false;
             copy_btn.clicked.connect (copy_invite_text);
@@ -965,11 +978,76 @@ namespace Dc {
             } catch (Error e) {
                 status_label.label = "Invite link is ready, but the QR image could not be rendered: " + e.message;
             }
+
+            if (chat_id > 0) refresh_link_state.begin ();
+        }
+
+        /* Ask the core what state our own invite link is in. Checking our own
+           QR returns a "withdraw…" kind while it is active and a "revive…" kind
+           once it has been withdrawn, so the prefix tells us which way the
+           toggle should act. */
+        private async void refresh_link_state () {
+            if (invite_text == null || toggle_btn == null) return;
+            try {
+                var qr = yield rpc.check_qr (account_id, invite_text);
+                if (closing || qr == null || !qr.has_member ("kind")) return;
+                string kind = qr.get_string_member ("kind");
+                if (kind.has_prefix ("withdraw")) {
+                    link_active = true;
+                    apply_link_state ();
+                } else if (kind.has_prefix ("revive")) {
+                    link_active = false;
+                    apply_link_state ();
+                } else {
+                    /* Not a self-link state we can toggle — hide the control. */
+                    toggle_btn.visible = false;
+                }
+            } catch (Error e) {
+                /* Leave the toggle disabled; sharing/copying still works. */
+            }
+        }
+
+        private void apply_link_state () {
+            if (toggle_btn == null) return;
+            toggle_btn.sensitive = true;
+            if (link_active) {
+                toggle_btn.label = "Deactivate Link";
+                toggle_btn.remove_css_class ("suggested-action");
+                qr_picture.opacity = 1.0;
+                status_label.label =
+                    "Share this QR code or invite link to let others join.";
+            } else {
+                toggle_btn.label = "Activate Link";
+                toggle_btn.add_css_class ("suggested-action");
+                qr_picture.opacity = 0.35;
+                status_label.label =
+                    "This invite link is deactivated — activate it to let others join.";
+            }
+        }
+
+        private async void toggle_link () {
+            if (invite_text == null || toggle_btn == null || toggle_busy) return;
+            toggle_busy = true;
+            toggle_btn.sensitive = false;
+            toggle_btn.label = link_active ? "Deactivating…" : "Activating…";
+            try {
+                yield rpc.set_config_from_qr (account_id, invite_text);
+                yield refresh_link_state ();
+            } catch (Error e) {
+                if (!closing) {
+                    status_label.label =
+                        "Could not update the invite link: " + e.message;
+                    apply_link_state ();
+                }
+            } finally {
+                toggle_busy = false;
+            }
         }
 
         private void show_invite_error (string message) {
             status_label.label = "Invite code creation failed: " + message;
             copy_btn.sensitive = false;
+            if (toggle_btn != null) toggle_btn.visible = false;
         }
 
         private void copy_invite_text () {
