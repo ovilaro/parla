@@ -1496,6 +1496,19 @@ namespace Dc {
             about.release_notes_version = Parla.VERSION;
             about.release_notes =
                 "<ul>" +
+                "<li>Media playback</li>" +
+                "<li>Better input focus</li>" +
+                "<li>Double ESC to cancel attachment</li>" +
+                "<li>Configurable tray icon</li>" +
+                "<li>Invite link creation and opening inside the app</li>" +
+                "<li>Faster and non-blocking history loading</li>" +
+                "<li>Label forwarded messages accordingly</li>" +
+                "<li>Tag forwarded messages</li>" +
+                "<li>Show notifications from all accounts</li>" +
+                "<li>Support custom background color and gradient</li>" +
+                "</ul>" +
+                "<p>Version 0.3.0</p>" +
+                "<ul>" +
                 "<li>New icon and welcome screen</li>" +
                 "<li>Better jsonrpc download onboarding</li>" +
                 "<li>Allow to interrupt account creation before timeout</li>" +
