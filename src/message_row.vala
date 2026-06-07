@@ -390,7 +390,9 @@ namespace Dc {
             var label = new Gtk.Label (msg.text ?? "");
             label.add_css_class ("dim-label");
             label.add_css_class ("caption");
+            label.hexpand = true;
             label.halign = Gtk.Align.CENTER;
+            label.justify = Gtk.Justification.CENTER;
             label.margin_top = 4;
             label.margin_bottom = 4;
             label.wrap = true;
