@@ -22,6 +22,27 @@ config_file = configure_file(
   configuration: config,
 )
 
+python = import('python').find_installation()
+appdata_xml = files('data/io.github.trufae.Parla.appdata.xml')
+appdata_vala = custom_target(
+  'appdata-vala',
+  input: appdata_xml,
+  output: 'appdata.vala',
+  command: [
+    python,
+    files('build-aux/gen-appdata.py'),
+    '@INPUT@',
+    '@OUTPUT@',
+  ],
+)
+configure_file(
+  input: appdata_xml,
+  output: 'io.github.trufae.Parla.metainfo.xml',
+  copy: true,
+  install: true,
+  install_dir: get_option('datadir') / 'metainfo',
+)
+
 gnome = import('gnome')
 resources = gnome.compile_resources(
   'parla-resources',
@@ -64,7 +85,7 @@ sources = files(
 )
 
 executable('parla',
-  sources, config_file, resources,
+  sources, config_file, appdata_vala, resources,
   dependencies: deps,
   install: true,
 )
@@ -72,11 +93,6 @@ executable('parla',
 install_data(
   'data/io.github.trufae.Parla.desktop',
   install_dir: get_option('datadir') / 'applications',
-)
-
-install_data(
-  'data/io.github.trufae.Parla.metainfo.xml',
-  install_dir: get_option('datadir') / 'metainfo',
 )
 
 install_data(

@@ -1484,77 +1484,17 @@ namespace Dc {
 
         private void show_about_dialog () {
             var about = new Adw.AboutDialog ();
-            about.application_name = "Parla";
-            about.application_icon = "io.github.trufae.Parla";
+            about.application_name = Parla.AppData.NAME;
+            about.application_icon = Parla.AppData.ID;
             about.version = Parla.VERSION;
-            about.developer_name = "pancake";
-            about.developers = { "pancake" };
+            about.developer_name = Parla.AppData.DEVELOPER;
+            about.developers = Parla.AppData.developers ();
             about.license_type = Gtk.License.GPL_3_0;
-            about.website = "https://github.com/trufae/parla";
-            about.issue_url = "https://github.com/trufae/parla/issues";
-            about.comments = "A Delta Chat client for GNOME";
+            about.website = Parla.AppData.WEBSITE;
+            about.issue_url = Parla.AppData.ISSUE_URL;
+            about.comments = Parla.AppData.COMMENTS;
             about.release_notes_version = Parla.VERSION;
-            about.release_notes =
-                "<ul>" +
-                "<li>Media playback</li>" +
-                "<li>Better input focus</li>" +
-                "<li>Double ESC to cancel attachment</li>" +
-                "<li>Configurable tray icon</li>" +
-                "<li>Invite link creation and opening inside the app</li>" +
-                "<li>Faster and non-blocking history loading</li>" +
-                "<li>Label forwarded messages accordingly</li>" +
-                "<li>Tag forwarded messages</li>" +
-                "<li>Show notifications from all accounts</li>" +
-                "<li>Support custom background color and gradient</li>" +
-                "</ul>" +
-                "<p>Version 0.3.0</p>" +
-                "<ul>" +
-                "<li>New icon and welcome screen</li>" +
-                "<li>Better jsonrpc download onboarding</li>" +
-                "<li>Allow to interrupt account creation before timeout</li>" +
-                "</ul>" +
-                "<p>Version 0.2.8</p>" +
-                "<ul>" +
-                "<li>Custom accent color</li>" +
-                "<li>Bubble chat/irc view</li>" +
-                "<li>Improved message reactions</li>" +
-                "<li>Select default profile</li>" +
-                "<li>Create channels</li>" +
-                "<li>Toggle sidebar with Control+S</li>" +
-                "</ul>" +
-                "<p>Version 0.2.6</p>" +
-                "<ul>" +
-                "<li>Show user cache and server quota stats</li>" +
-                "<li>Download and update chatmail jsonrpc server</li>" +
-                "<li>No longer depends on deltachat desktop by default</li>" +
-                "</ul>" +
-                "<p>Version 0.2.4</p>" +
-                "<ul>" +
-                "<li>Account creation</li>" +
-                "<li>Enter chat via invite link</li>" +
-                "<li>Manage relay profiles</li>" +
-                "<li>Discover new relays from contacts</li>" +
-                "<li>Profile lists available in the avatar circle</li>" +
-                "<li>Support import/export secondary device</li>" +
-                "<li>Prompt before destructive actions</li>" +
-                "<li>Next/prev picture with arrows</li>" +
-                "</ul>" +
-                "<p>Version 0.2.2</p>" +
-                "<ul>" +
-                "<li>Focusable conversation list</li>" +
-                "<li>Paste images from clipboard</li>" +
-                "<li>Add delivery indicators</li>" +
-                "<li>Add forward message action</li>" +
-                "<li>Improve delete experience</li>" +
-                "<li>Composebar with emoji-picker</li>" +
-                "</ul>" +
-                "<p>Version 0.2.1</p>" +
-                "<ul>" +
-                "<li>Add factory reset option in settings</li>" +
-                "<li>Custom path to the JSONRPC server</li>" +
-                "<li>Use ESC to focus the composebar</li>" +
-                "<li>Faster conversation loads</li>" +
-                "</ul>";
+            about.release_notes = Parla.AppData.release_notes ();
             about.present (this);
         }
 

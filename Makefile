@@ -16,7 +16,7 @@ install:
 	install -Dm755 ./builddir/parla $(DESTDIR)$(BINDIR)/parla
 	install -Dm644 data/io.github.trufae.Parla.desktop $(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop
 	install -Dm644 data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg
-	install -Dm644 data/io.github.trufae.Parla.metainfo.xml $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
+	install -Dm644 data/io.github.trufae.Parla.appdata.xml $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
 	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
 
