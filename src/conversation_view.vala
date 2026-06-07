@@ -19,6 +19,8 @@ namespace Dc {
         private Gtk.FilterListModel filtered_message_store;
         private Gtk.CustomFilter message_filter;
         private ComposeBar compose_bar;
+        private Gtk.Box request_bar;
+        private bool is_contact_request = false;
         private Gtk.Button scroll_down_btn;
         private Gtk.Revealer loading_more_revealer;
         private Gtk.Spinner loading_more_spinner;
@@ -274,7 +276,84 @@ namespace Dc {
             });
             append (compose_bar);
 
+            /* For contact-request chats the compose bar is hidden and this
+               Accept/Block bar takes its place until the request is resolved
+               (see set_contact_request / accept_request / block_request). */
+            request_bar = build_request_bar ();
+            append (request_bar);
+
             install_drop_target ();
+        }
+
+        /* Bottom bar shown instead of the compose box while the chat is an
+           unaccepted contact request: a short notice plus Block and Accept
+           actions that drive the accept_chat / block_chat JSON-RPC calls. */
+        private Gtk.Box build_request_bar () {
+            var bar = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            bar.add_css_class ("contact-request-bar");
+            bar.margin_start = 8;
+            bar.margin_end = 8;
+            bar.margin_top = 8;
+            bar.margin_bottom = 8;
+            bar.visible = false;
+
+            var notice = new Gtk.Label ("This chat is a contact request. "
+                + "Accept it to reply, or block the sender.");
+            notice.add_css_class ("dim-label");
+            notice.wrap = true;
+            notice.justify = Gtk.Justification.CENTER;
+            notice.halign = Gtk.Align.CENTER;
+            bar.append (notice);
+
+            var buttons = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
+            buttons.halign = Gtk.Align.CENTER;
+
+            var block_btn = new Gtk.Button.with_label ("Block");
+            block_btn.add_css_class ("destructive-action");
+            block_btn.add_css_class ("pill");
+            block_btn.clicked.connect (() => { block_request.begin (); });
+            buttons.append (block_btn);
+
+            var accept_btn = new Gtk.Button.with_label ("Accept");
+            accept_btn.add_css_class ("suggested-action");
+            accept_btn.add_css_class ("pill");
+            accept_btn.clicked.connect (() => { accept_request.begin (); });
+            buttons.append (accept_btn);
+
+            bar.append (buttons);
+            return bar;
+        }
+
+        /* Swap the compose box for the Accept/Block bar (or back). Called by
+           the window when a chat is opened, and by accept_request once the
+           request has been accepted. */
+        public void set_contact_request (bool is_request) {
+            is_contact_request = is_request;
+            request_bar.visible = is_request;
+            compose_bar.visible = !is_request;
+        }
+
+        private async void accept_request () {
+            try {
+                yield rpc.accept_chat (chat_id);
+                set_contact_request (false);
+                compose_bar.grab_entry_focus ();
+                window.request_reload_chats ();
+            } catch (Error e) {
+                window.show_toast ("Failed to accept request: " + e.message);
+            }
+        }
+
+        private async void block_request () {
+            try {
+                yield rpc.block_chat (chat_id);
+                if (window.current_chat_id == chat_id) {
+                    window.clear_chat_view ();
+                }
+                window.request_reload_chats ();
+            } catch (Error e) {
+                window.show_toast ("Failed to block request: " + e.message);
+            }
         }
 
         /* ================================================================
@@ -286,7 +365,7 @@ namespace Dc {
                 messages_loaded = true;
                 load_messages.begin ();
             }
-            compose_bar.grab_entry_focus ();
+            if (!is_contact_request) compose_bar.grab_entry_focus ();
         }
 
         public void on_reselected () {
@@ -673,7 +752,7 @@ namespace Dc {
         private void install_drop_target () {
             var drop = new Gtk.DropTarget (typeof (Gdk.FileList), Gdk.DragAction.COPY);
             drop.accept.connect (() => {
-                return compose_bar.can_accept_attachment ();
+                return !is_contact_request && compose_bar.can_accept_attachment ();
             });
             drop.enter.connect ((x, y) => {
                 add_css_class ("chat-drop-active");
@@ -684,7 +763,7 @@ namespace Dc {
             });
             drop.drop.connect ((value, x, y) => {
                 remove_css_class ("chat-drop-active");
-                if (!compose_bar.can_accept_attachment ()) return false;
+                if (is_contact_request || !compose_bar.can_accept_attachment ()) return false;
                 var fl = (Gdk.FileList?) value.get_boxed ();
                 if (fl == null) return false;
                 var files = fl.get_files ();

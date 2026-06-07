@@ -505,6 +505,20 @@ namespace Dc {
                 Params.begin ().add_int (account_id).add_int (chat_id).build ());
         }
 
+        /* Accept an incoming contact-request chat: the chat leaves the
+           "request" state and normal messaging is unlocked. */
+        public async void accept_chat (int chat_id) throws Error {
+            yield call ("accept_chat",
+                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+        }
+
+        /* Block a contact-request chat: the chat is moved out of the list and
+           future messages from the sender are silently dropped. */
+        public async void block_chat (int chat_id) throws Error {
+            yield call ("block_chat",
+                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+        }
+
         public async void set_chat_visibility (int chat_id, string visibility) throws Error {
             yield call ("set_chat_visibility",
                 Params.begin ()

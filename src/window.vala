@@ -759,6 +759,8 @@ namespace Dc {
             if (entry != null) {
                 content_title_label.label = entry.name;
             }
+            /* Contact requests swap the compose box for an Accept/Block bar. */
+            view.set_contact_request (entry != null && entry.is_contact_request);
 
             content_stack.visible_child_name = "chat_%d".printf (chat_id);
             view.on_activated ();

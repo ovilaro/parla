@@ -410,6 +410,9 @@ namespace Dc {
                 min-width: 20px; min-height: 20px;
                 font-size: small; font-weight: bold;
             }
+            .contact-request-bar {
+                padding: 4px 8px;
+            }
             .message-new {
                 background-color: alpha(@accent_bg_color, 0.15);
                 transition: background-color 2s ease-out;
