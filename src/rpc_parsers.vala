@@ -9,6 +9,7 @@ namespace Dc {
             c.address = json_str (obj, "address") ?? "";
             c.profile_image = json_str (obj, "profileImage");
             c.is_verified = json_bool (obj, "isVerified");
+            c.is_blocked = json_bool (obj, "isBlocked");
             return c;
         }
 

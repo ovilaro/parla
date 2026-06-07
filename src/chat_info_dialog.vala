@@ -9,9 +9,11 @@ namespace Dc {
         private Gtk.Box content;
         private string chat_name = "";
         private int[] member_contact_ids = {};
+        private Contact? dm_contact = null;
 
         public signal void chat_deleted (int chat_id);
         public signal void chat_changed ();
+        public signal void contact_blocked (int chat_id);
 
         public ChatInfoDialog (RpcClient rpc, int chat_id) {
             this.rpc = rpc;
@@ -60,9 +62,13 @@ namespace Dc {
                 string chat_type = json_str (chat, "chatType") ?? "";
                 string? profile_image = json_str (chat, "profileImage");
                 bool encrypted = json_bool (chat, "isEncrypted");
+                bool is_dm_chat = chat_type == "Single"
+                    && !json_bool (chat, "isSelfTalk")
+                    && !json_bool (chat, "isDeviceChat");
 
                 is_group = chat_type == "Group" || chat_type == "Broadcast";
                 chat_name = name;
+                dm_contact = null;
 
                 /* Avatar */
                 var avatar = new Adw.Avatar (80, name, true);
@@ -188,6 +194,8 @@ namespace Dc {
                         var contact_obj = yield rpc.get_contact (cid);
                         if (contact_obj == null) continue;
                         var contact = RpcParsers.parse_contact (cid, contact_obj);
+                        if (is_dm_chat && contact.id > 1 && dm_contact == null)
+                            dm_contact = contact;
 
                         var row = build_contact_row (contact);
                         members_list.append (row);
@@ -251,6 +259,10 @@ namespace Dc {
                     actions_list.append (disband_row);
                 }
 
+                if (dm_contact != null) {
+                    actions_list.append (build_contact_block_row (dm_contact));
+                }
+
                 /* Delete for Me */
                 var del_row = new Adw.ActionRow ();
                 del_row.title = "Delete for Me";
@@ -307,6 +319,39 @@ namespace Dc {
             return row;
         }
 
+        private Adw.ActionRow build_contact_block_row (Contact contact) {
+            var row = new Adw.ActionRow ();
+            row.add_prefix (new Gtk.Image.from_icon_name ("action-unavailable-symbolic"));
+            row.activatable = true;
+            update_contact_block_row (row, contact);
+            row.activated.connect (() => {
+                if (contact.is_blocked) {
+                    set_contact_blocked.begin (contact, row, false);
+                } else {
+                    confirm_block_contact (contact, row);
+                }
+            });
+            return row;
+        }
+
+        private void update_contact_block_row (Adw.ActionRow row,
+                                                Contact contact) {
+            string label = contact_label (contact);
+            if (contact.is_blocked) {
+                row.title = "Unblock Contact";
+                row.subtitle = "Allow messages from %s".printf (label);
+            } else {
+                row.title = "Block Contact";
+                row.subtitle = "Stop receiving messages from %s".printf (label);
+            }
+        }
+
+        private static string contact_label (Contact contact) {
+            if (contact.display_name.length > 0) return contact.display_name;
+            if (contact.address.length > 0) return contact.address;
+            return "this contact";
+        }
+
         private async void remove_member (int contact_id, Adw.ActionRow row) {
             try {
                 yield rpc.remove_contact_from_chat (chat_id, contact_id);
@@ -343,6 +388,33 @@ namespace Dc {
         }
 
         /* ---- Destructive action confirmations ---- */
+
+        private void confirm_block_contact (Contact contact, Adw.ActionRow row) {
+            string label = contact_label (contact);
+            confirm_action (this, "Block Contact",
+                "Block \"%s\"? You will no longer receive messages from this contact.".printf (label),
+                "block", "Block", () => {
+                    set_contact_blocked.begin (contact, row, true);
+                });
+        }
+
+        private async void set_contact_blocked (Contact contact,
+                                                Adw.ActionRow row,
+                                                bool blocked) {
+            try {
+                if (blocked) {
+                    yield rpc.block_contact (contact.id);
+                } else {
+                    yield rpc.unblock_contact (contact.id);
+                }
+                contact.is_blocked = blocked;
+                update_contact_block_row (row, contact);
+                if (blocked) contact_blocked (chat_id);
+                else chat_changed ();
+            } catch (Error e) {
+                show_error (this, e.message);
+            }
+        }
 
         private async void confirm_clear_history (bool for_all) {
             string title = for_all ? "Clear for Everyone" : "Clear History";

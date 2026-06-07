@@ -126,6 +126,8 @@ namespace Dc {
         string subtitle = c.display_name.length > 0 ? c.address : "";
         if (c.is_verified && subtitle.length > 0) subtitle += " (verified)";
         else if (c.is_verified) subtitle = "(verified)";
+        if (c.is_blocked && subtitle.length > 0) subtitle += " (blocked)";
+        else if (c.is_blocked) subtitle = "(blocked)";
 
         var row = new Adw.ActionRow ();
         row.use_markup = false;
@@ -229,6 +231,7 @@ namespace Dc {
         public string address { get; set; default = ""; }
         public string? profile_image { get; set; default = null; }
         public bool is_verified { get; set; default = false; }
+        public bool is_blocked { get; set; default = false; }
     }
 
     public ChatEntry? find_chat_entry (GLib.ListStore store, int chat_id) {

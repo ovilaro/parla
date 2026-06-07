@@ -519,6 +519,16 @@ namespace Dc {
                 Params.begin ().add_int (account_id).add_int (chat_id).build ());
         }
 
+        public async void block_contact (int contact_id) throws Error {
+            yield call ("block_contact",
+                Params.begin ().add_int (account_id).add_int (contact_id).build ());
+        }
+
+        public async void unblock_contact (int contact_id) throws Error {
+            yield call ("unblock_contact",
+                Params.begin ().add_int (account_id).add_int (contact_id).build ());
+        }
+
         public async void set_chat_visibility (int chat_id, string visibility) throws Error {
             yield call ("set_chat_visibility",
                 Params.begin ()
