@@ -19,6 +19,8 @@ namespace Dc {
         private Gtk.Button send_button;
         private Gtk.Button attach_button;
         private Gtk.MenuButton emoji_button;
+        private const string EMOJI_TRIGGER_START_MARK = "parla-emoji-trigger-start";
+        private const string EMOJI_TRIGGER_END_MARK = "parla-emoji-trigger-end";
         private Gtk.Button cancel_attach_button;
         private Gtk.Button cancel_edit_button;
         private Gtk.Button cancel_reply_button;
@@ -146,6 +148,12 @@ namespace Dc {
             var emoji_chooser = create_emoji_chooser ();
             if (emoji_chooser != null) {
                 emoji_chooser.emoji_picked.connect (on_emoji_picked);
+                emoji_chooser.closed.connect (() => {
+                    GLib.Idle.add (() => {
+                        clear_emoji_trigger_marks ();
+                        return GLib.Source.REMOVE;
+                    });
+                });
                 emoji_button.popover = emoji_chooser;
             } else {
                 emoji_button.sensitive = false;
@@ -242,8 +250,10 @@ namespace Dc {
         /* Insert text at the cursor and take focus. Used by the window's
            type-ahead so pressing a key anywhere starts a message. */
         public void type_text (string text) {
+            bool open_emoji = text == ":" && is_emoji_trigger_context ();
             text_view.buffer.insert_at_cursor (text, text.length);
             text_view.grab_focus ();
+            if (open_emoji) open_emoji_picker_after_typed_colon ();
         }
 
         public void clear () {
@@ -480,7 +490,9 @@ namespace Dc {
         }
 
         private void on_emoji_picked (string emoji) {
-            text_view.buffer.insert_at_cursor (emoji, emoji.length);
+            if (!replace_emoji_trigger (emoji)) {
+                text_view.buffer.insert_at_cursor (emoji, emoji.length);
+            }
             text_view.grab_focus ();
         }
 
@@ -506,6 +518,11 @@ namespace Dc {
             /* Escape (and dropping the active reply/edit/attachment mode) is
                handled centrally in the window key handler so the two-press
                behavior is consistent. */
+            if (is_plain_colon_key (keyval, state) && is_emoji_trigger_context ()) {
+                open_emoji_picker_after_typed_colon ();
+                return false;
+            }
+
             bool shift = (state & Gdk.ModifierType.SHIFT_MASK) != 0;
             if (keyval == Gdk.Key.Return
                 || keyval == Gdk.Key.KP_Enter
@@ -528,6 +545,84 @@ namespace Dc {
             if (!has_files && !has_texture) return false;
             paste_from_clipboard.begin (clipboard, has_files, has_texture);
             return true;
+        }
+
+        private static bool is_plain_colon_key (uint keyval, Gdk.ModifierType state) {
+            if (keyval != Gdk.Key.colon) return false;
+            var mods = state & (Gdk.ModifierType.CONTROL_MASK
+                              | Gdk.ModifierType.ALT_MASK
+                              | Gdk.ModifierType.SUPER_MASK
+                              | Gdk.ModifierType.META_MASK);
+            return mods == 0;
+        }
+
+        private bool is_emoji_trigger_context () {
+            Gtk.TextIter cursor;
+            Gtk.TextIter selection_start, selection_end;
+            if (text_view.buffer.get_selection_bounds (out selection_start,
+                                                        out selection_end)) {
+                cursor = selection_start;
+            } else {
+                text_view.buffer.get_iter_at_mark (out cursor,
+                                                   text_view.buffer.get_insert ());
+            }
+            if (cursor.get_offset () == 0) return true;
+
+            Gtk.TextIter previous = cursor;
+            if (!previous.backward_char ()) return true;
+            return previous.get_char ().isspace ();
+        }
+
+        private void open_emoji_picker_after_typed_colon () {
+            GLib.Idle.add (() => {
+                if (emoji_button.get_popover () != null
+                    && remember_typed_colon_trigger ()) {
+                    emoji_button.popup ();
+                }
+                return GLib.Source.REMOVE;
+            });
+        }
+
+        private bool remember_typed_colon_trigger () {
+            clear_emoji_trigger_marks ();
+
+            Gtk.TextIter end;
+            text_view.buffer.get_iter_at_mark (out end, text_view.buffer.get_insert ());
+            Gtk.TextIter start = end;
+            if (!start.backward_char ()) return false;
+            if (start.get_char () != ':') return false;
+
+            text_view.buffer.create_mark (EMOJI_TRIGGER_START_MARK, start, true);
+            text_view.buffer.create_mark (EMOJI_TRIGGER_END_MARK, end, false);
+            return true;
+        }
+
+        private bool replace_emoji_trigger (string emoji) {
+            var start_mark = text_view.buffer.get_mark (EMOJI_TRIGGER_START_MARK);
+            var end_mark = text_view.buffer.get_mark (EMOJI_TRIGGER_END_MARK);
+            if (start_mark == null || end_mark == null) return false;
+
+            Gtk.TextIter start, end;
+            text_view.buffer.get_iter_at_mark (out start, start_mark);
+            text_view.buffer.get_iter_at_mark (out end, end_mark);
+            if (start.compare (end) >= 0
+                || text_view.buffer.get_text (start, end, false) != ":") {
+                clear_emoji_trigger_marks ();
+                return false;
+            }
+
+            text_view.buffer.@delete (ref start, ref end);
+            text_view.buffer.insert (ref start, emoji, emoji.length);
+            clear_emoji_trigger_marks ();
+            return true;
+        }
+
+        private void clear_emoji_trigger_marks () {
+            var start_mark = text_view.buffer.get_mark (EMOJI_TRIGGER_START_MARK);
+            if (start_mark != null) text_view.buffer.delete_mark (start_mark);
+
+            var end_mark = text_view.buffer.get_mark (EMOJI_TRIGGER_END_MARK);
+            if (end_mark != null) text_view.buffer.delete_mark (end_mark);
         }
 
         /* Browser pastes often expose a FileList with remote URIs or
