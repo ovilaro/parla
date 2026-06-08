@@ -70,6 +70,13 @@ namespace Dc {
                 chat_name = name;
                 dm_contact = null;
 
+                int dm_contact_id = 0;
+                if (is_dm_chat && chat.has_member ("contactIds")) {
+                    var ids = chat.get_array_member ("contactIds");
+                    if (ids.get_length () > 0)
+                        dm_contact_id = (int) ids.get_int_element (0);
+                }
+
                 /* Avatar */
                 var avatar = new Adw.Avatar (80, name, true);
                 avatar.custom_image = load_avatar (profile_image);
@@ -88,10 +95,27 @@ namespace Dc {
                 }
 
                 /* Name */
+                var name_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+                name_box.halign = Gtk.Align.CENTER;
+
                 var name_lbl = new Gtk.Label (name);
                 name_lbl.add_css_class ("title-1");
-                name_lbl.halign = Gtk.Align.CENTER;
-                content.append (name_lbl);
+                name_lbl.ellipsize = Pango.EllipsizeMode.END;
+                name_lbl.max_width_chars = 24;
+                name_box.append (name_lbl);
+
+                if (is_dm_chat && dm_contact_id > 1) {
+                    var edit_name_btn = new Gtk.Button.from_icon_name (
+                        "document-edit-symbolic");
+                    edit_name_btn.add_css_class ("flat");
+                    edit_name_btn.tooltip_text = "Edit contact name";
+                    edit_name_btn.clicked.connect (() => {
+                        show_edit_contact_name_dialog (dm_contact_id, name_lbl);
+                    });
+                    name_box.append (edit_name_btn);
+                }
+
+                content.append (name_box);
 
                 /* Type + encryption */
                 string type_str = chat_type;
@@ -350,6 +374,68 @@ namespace Dc {
             if (contact.display_name.length > 0) return contact.display_name;
             if (contact.address.length > 0) return contact.address;
             return "this contact";
+        }
+
+        private void show_edit_contact_name_dialog (int contact_id,
+                                                    Gtk.Label name_lbl) {
+            var dialog = new Adw.AlertDialog (
+                "Edit Contact Name",
+                "Leave empty to use the contact's own name."
+            );
+
+            var entry = new Gtk.Entry ();
+            entry.text = name_lbl.label;
+            entry.placeholder_text = "Contact name";
+            entry.activates_default = true;
+            entry.hexpand = true;
+
+            dialog.extra_child = entry;
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("save", "Save");
+            dialog.set_response_appearance ("save", Adw.ResponseAppearance.SUGGESTED);
+            dialog.default_response = "save";
+            dialog.close_response = "cancel";
+
+            entry.activate.connect (() => {
+                dialog.response ("save");
+            });
+
+            dialog.response.connect ((resp) => {
+                if (resp == "save") {
+                    save_contact_name.begin (
+                        contact_id, entry.text.strip (), name_lbl);
+                }
+            });
+
+            dialog.present (this);
+            entry.grab_focus ();
+        }
+
+        private async void save_contact_name (int contact_id, string new_name,
+                                              Gtk.Label name_lbl) {
+            try {
+                yield rpc.change_contact_name (contact_id, new_name);
+
+                var contact_obj = yield rpc.get_contact (contact_id);
+                if (contact_obj != null) {
+                    var contact = RpcParsers.parse_contact (
+                        contact_id, contact_obj);
+                    dm_contact = contact;
+                    chat_name = contact_label (contact);
+                    name_lbl.label = chat_name;
+                    if (members_list != null && !is_group) {
+                        clear_listbox (members_list);
+                        members_list.append (build_contact_row (contact));
+                    }
+                } else if (new_name.length > 0) {
+                    chat_name = new_name;
+                    name_lbl.label = new_name;
+                }
+
+                chat_changed ();
+            } catch (Error e) {
+                show_error (this, e.message);
+            }
         }
 
         private async void remove_member (int contact_id, Adw.ActionRow row) {

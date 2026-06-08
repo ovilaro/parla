@@ -529,6 +529,15 @@ namespace Dc {
                 Params.begin ().add_int (account_id).add_int (contact_id).build ());
         }
 
+        public async void change_contact_name (int contact_id, string name) throws Error {
+            yield call ("change_contact_name",
+                Params.begin ()
+                    .add_int (account_id)
+                    .add_int (contact_id)
+                    .add_string (name)
+                    .build ());
+        }
+
         public async void set_chat_visibility (int chat_id, string visibility) throws Error {
             yield call ("set_chat_visibility",
                 Params.begin ()
