@@ -174,10 +174,11 @@ namespace Dc {
             register_icons ();
             Gtk.Window.set_default_icon_name ("io.github.trufae.Parla");
 
-            set_accels_for_action ("win.new-chat", {"<Control>n"});
-            set_accels_for_action ("win.refresh", {"<Control>r"});
-            set_accels_for_action ("win.settings", {"<Control>comma"});
-            set_accels_for_action ("win.quit", {"<Control>q"});
+            var primary = Platform.primary_accelerator_prefix ();
+            set_accels_for_action ("win.new-chat", { primary + "n" });
+            set_accels_for_action ("win.refresh", { primary + "r" });
+            set_accels_for_action ("win.settings", { primary + "comma" });
+            set_accels_for_action ("win.quit", { primary + "q" });
         }
 
         private void register_icons () {

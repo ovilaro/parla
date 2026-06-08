@@ -38,7 +38,10 @@ namespace Dc {
             string[] emojis = { "\xf0\x9f\x91\x8d", "\xe2\x9d\xa4\xef\xb8\x8f",
                                  "\xf0\x9f\x98\x82", "\xf0\x9f\x98\xae",
                                  "\xf0\x9f\x98\xa2", "\xf0\x9f\x91\x8e",
-                                 "\xf0\x9f\x94\xa5", "…" };
+                                 "\xf0\x9f\x94\xa5" };
+            if (gtk_emoji_chooser_available ()) {
+                emojis += "…";
+            }
             var msg = find_message (message_store, msg_id);
             string[] my_emojis = {};
             if (msg != null && msg.my_reactions != null) {
@@ -50,7 +53,7 @@ namespace Dc {
                 string emoji = emojis[i];
                 var btn = new Gtk.Button.with_label (emoji);
                 btn.add_css_class ("flat");
-                bool is_more = (i == emojis.length - 1);
+                bool is_more = (emoji == "…");
                 if (is_more) {
                     btn.tooltip_text = "More emojis…";
                     btn.clicked.connect (() => {
@@ -212,7 +215,11 @@ namespace Dc {
 
         private void show_emoji_picker (int msg_id, Gtk.Widget parent,
                                          double x, double y) {
-            var chooser = new Gtk.EmojiChooser ();
+            var chooser = create_emoji_chooser ();
+            if (chooser == null) {
+                window.show_toast ("Emoji picker unavailable");
+                return;
+            }
             chooser.emoji_picked.connect ((emoji) => {
                 send_reaction.begin (msg_id, emoji);
             });

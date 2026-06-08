@@ -138,14 +138,19 @@ namespace Dc {
             input_row.append (attach_button);
 
             /* Emoji picker button */
-            var emoji_chooser = new Gtk.EmojiChooser ();
-            emoji_chooser.emoji_picked.connect (on_emoji_picked);
             emoji_button = new Gtk.MenuButton ();
             emoji_button.icon_name = "face-smile-symbolic";
-            emoji_button.popover = emoji_chooser;
             emoji_button.add_css_class ("flat");
             emoji_button.tooltip_text = "Insert emoji";
             emoji_button.valign = Gtk.Align.CENTER;
+            var emoji_chooser = create_emoji_chooser ();
+            if (emoji_chooser != null) {
+                emoji_chooser.emoji_picked.connect (on_emoji_picked);
+                emoji_button.popover = emoji_chooser;
+            } else {
+                emoji_button.sensitive = false;
+                emoji_button.tooltip_text = "Emoji picker unavailable";
+            }
             input_row.append (emoji_button);
 
             /* Cancel attachment button (hidden by default) */
@@ -226,7 +231,7 @@ namespace Dc {
             /* Gtk.TextView does not select text on grab_focus the way
                Gtk.Entry does, so a plain grab_focus is safe here.
                Defer to idle so focus lands after the current event
-               (e.g. a global Ctrl+L shortcut) has finished dispatching. */
+               (e.g. a global shortcut) has finished dispatching. */
             text_view.grab_focus ();
             GLib.Idle.add (() => {
                 text_view.grab_focus ();
@@ -512,9 +517,9 @@ namespace Dc {
             }
 
             if (!can_accept_attachment ()) return false;
-            bool ctrl_v = (state & Gdk.ModifierType.CONTROL_MASK) != 0
-                        && (keyval == Gdk.Key.v || keyval == Gdk.Key.V);
-            if (!ctrl_v && !(shift && keyval == Gdk.Key.Insert)) return false;
+            bool primary_v = Platform.has_primary_modifier (state)
+                          && (keyval == Gdk.Key.v || keyval == Gdk.Key.V);
+            if (!primary_v && !(shift && keyval == Gdk.Key.Insert)) return false;
 
             var clipboard = get_display ().get_clipboard ();
             var formats = clipboard.get_formats ();

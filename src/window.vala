@@ -104,17 +104,11 @@ namespace Dc {
             this.add_css_class ("parla-custom-bg");
             build_ui ();
             MessageRow.style = settings.message_style;
-            ((Dc.Application) this.application).apply_accent_color (
-                settings.accent_color);
-            ((Dc.Application) this.application).apply_background (
-                settings.background_mode, settings.background_color);
+            apply_current_appearance ();
 
             settings.appearance_changed.connect (() => {
                 MessageRow.style = settings.message_style;
-                ((Dc.Application) this.application).apply_accent_color (
-                    settings.accent_color);
-                ((Dc.Application) this.application).apply_background (
-                    settings.background_mode, settings.background_color);
+                apply_current_appearance ();
                 int chat_id = current_chat_id;
                 discard_all_views ();
                 if (chat_id > 0) {
@@ -136,6 +130,14 @@ namespace Dc {
                 sync_tray ();
                 return Source.REMOVE;
             });
+        }
+
+        private void apply_current_appearance () {
+            var app = this.application as Dc.Application;
+            if (app == null) return;
+            app.apply_accent_color (settings.accent_color);
+            app.apply_background (
+                settings.background_mode, settings.background_color);
         }
 
         private bool on_close_request () {
@@ -285,7 +287,8 @@ namespace Dc {
 
             /* Search/filter button on the right side */
             var search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
-            search_btn.tooltip_text = "Search in conversation (Ctrl+F)";
+            search_btn.tooltip_text = "Search in conversation (%s)".printf (
+                Platform.primary_shortcut_text ("F"));
             search_btn.clicked.connect (() => { toggle_message_search (); });
             content_header.pack_end (search_btn);
 
@@ -1805,7 +1808,8 @@ namespace Dc {
                 if (search_entry != null) search_entry.visible = true;
                 if (sidebar_title != null) sidebar_title.title = "Parla";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (Ctrl+S)";
+                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (%s)".printf (
+                    Platform.primary_shortcut_text ("S"));
                 break;
             case SidebarMode.COMPACT:
                 split_view.show_sidebar = true;
@@ -1816,13 +1820,15 @@ namespace Dc {
                 if (search_entry != null) search_entry.visible = false;
                 if (sidebar_title != null) sidebar_title.title = "";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (Ctrl+S)";
+                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (%s)".printf (
+                    Platform.primary_shortcut_text ("S"));
                 break;
             case SidebarMode.HIDDEN:
                 split_view.show_sidebar = false;
                 if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Show Sidebar (Ctrl+S)";
+                sidebar_toggle_btn.tooltip_text = "Show Sidebar (%s)".printf (
+                    Platform.primary_shortcut_text ("S"));
                 break;
             }
             apply_compact_to_rows (mode == SidebarMode.COMPACT);
@@ -1907,8 +1913,9 @@ namespace Dc {
                 }
             }
 
-            /* All other shortcuts require Ctrl */
-            if ((state & Gdk.ModifierType.CONTROL_MASK) == 0) return false;
+            /* All other shortcuts require the platform primary modifier:
+               Ctrl normally, Command on macOS. */
+            if (!Platform.has_primary_modifier (state)) return false;
 
             switch (keyval) {
             case Gdk.Key.n:
@@ -2042,19 +2049,24 @@ namespace Dc {
         }
 
         private const string[] SHORTCUTS = {
-            "New chat",              "<Control>n",
-            "New group",             "<Control>g",
-            "New channel",           "<Control><Shift>g",
-            "Open settings",         "<Control>comma",
-            "Search in conversation","<Control>f",
-            "Quick switch chat",     "<Control>k",
-            "Refresh messages",      "<Control>r",
-            "Cycle sidebar mode",    "<Control>s",
+            "New chat",              "<Primary>n",
+            "New group",             "<Primary>g",
+            "New channel",           "<Primary><Shift>g",
+            "Open settings",         "<Primary>comma",
+            "Search in conversation","<Primary>f",
+            "Quick switch chat",     "<Primary>k",
+            "Refresh messages",      "<Primary>r",
+            "Cycle sidebar mode",    "<Primary>s",
             "Focus message entry",   "Escape",
             "Cancel reply/edit/image", "Escape+Escape",
-            "Close window",          "<Control>w",
-            "Quit application",      "<Control>q",
+            "Close window",          "<Primary>w",
+            "Quit application",      "<Primary>q",
         };
+
+        private static string shortcut_accelerator (string accelerator) {
+            return accelerator.replace ("<Primary>",
+                Platform.primary_accelerator_prefix ());
+        }
 
         private void show_keyboard_shortcuts_dialog () {
             if (active_modal != null) return;
@@ -2081,7 +2093,8 @@ namespace Dc {
             for (int i = 0; i + 1 < SHORTCUTS.length; i += 2) {
                 var row = new Adw.ActionRow ();
                 row.title = SHORTCUTS[i];
-                var lbl = new Gtk.ShortcutLabel (SHORTCUTS[i + 1]);
+                var lbl = new Gtk.ShortcutLabel (
+                    shortcut_accelerator (SHORTCUTS[i + 1]));
                 lbl.valign = Gtk.Align.CENTER;
                 row.add_suffix (lbl);
                 list.append (row);

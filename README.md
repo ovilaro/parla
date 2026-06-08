@@ -31,7 +31,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - **Reply previews** — quoted sender and text preview (capped at 3 lines) above the compose entry and inside bubbles.
 - **Inline image previews** with a full-screen viewer (click to open, right-click to save, Escape to close).
 - **Optional Markdown rendering** — **bold**, *italic*, ~~strikethrough~~, `inline code`, fenced code blocks, headings, and auto-linkified URLs.
-- **In-chat search** (Ctrl+F) with real-time filtering and highlight.
+- **In-chat search** (Ctrl+F, Command+F on macOS) with real-time filtering and highlight.
 - **Save attachments** to disk from the message context menu.
 
 ### Chats
@@ -62,19 +62,20 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 
 ### Keyboard shortcuts
 
-| Action | Shortcut |
-| --- | --- |
-| New chat | `Ctrl+N` |
-| New group | `Ctrl+G` |
-| Quick chat switcher | `Ctrl+K` |
-| Search in conversation | `Ctrl+F` |
-| Focus compose entry | `Ctrl+L` |
-| Refresh | `Ctrl+R` |
-| Cycle sidebar mode | `Ctrl+S` |
-| Settings | `Ctrl+,` |
-| Close window | `Ctrl+W` |
-| Quit | `Ctrl+Q` |
-| Close dialog / viewer / search | `Esc` |
+| Action | Other platforms | macOS |
+| --- | --- | --- |
+| New chat | `Ctrl+N` | `Command+N` |
+| New group | `Ctrl+G` | `Command+G` |
+| New channel | `Ctrl+Shift+G` | `Command+Shift+G` |
+| Quick chat switcher | `Ctrl+K` | `Command+K` |
+| Search in conversation | `Ctrl+F` | `Command+F` |
+| Focus compose entry | `Esc` | `Esc` |
+| Refresh | `Ctrl+R` | `Command+R` |
+| Cycle sidebar mode | `Ctrl+S` | `Command+S` |
+| Settings | `Ctrl+,` | `Command+,` |
+| Close window | `Ctrl+W` | `Command+W` |
+| Quit | `Ctrl+Q` | `Command+Q` |
+| Close dialog / viewer / search | `Esc` | `Esc` |
 
 ## Build
 

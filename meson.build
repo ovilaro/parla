@@ -71,6 +71,7 @@ sources = files(
   'src/video_player.vala',
   'src/audio_player.vala',
   'src/compose_bar.vala',
+  'src/emoji.vala',
   'src/conversation_view.vala',
   'src/chat_info_dialog.vala',
   'src/contact_picker_dialog.vala',
