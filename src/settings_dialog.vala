@@ -209,19 +209,29 @@ namespace Dc {
 
         private Gtk.Box content;
         private unowned Window app_window;
+        private RpcClient rpc;
+        private Adw.ActionRow proxy_switch_row;
+        private Adw.ActionRow proxy_url_row;
+        private Gtk.Switch proxy_switch;
+        private Gtk.Entry proxy_entry;
         private Adw.ActionRow rpc_row;
         private Adw.ActionRow rpc_version_row;
         private Gtk.DropDown rpc_source_dropdown;
         private Gtk.Button rpc_choose_btn;
         private Gtk.Button rpc_download_btn;
         private Gtk.Button rpc_update_btn;
+        private bool loading_proxy = false;
+        private bool saving_proxy = false;
+        private bool saved_proxy_enabled = false;
+        private string saved_proxy_url = "";
         private bool syncing_rpc_source = false;
         private uint rpc_version_request = 0;
         private string? rpc_current_version = null;
         private bool rpc_update_check_available = false;
 
-        public SettingsDialog (Window window) {
+        public SettingsDialog (Window window, RpcClient rpc) {
             this.app_window = window;
+            this.rpc = rpc;
             this.title = "Settings";
             this.content_width = 400;
             this.content_height = 480;
@@ -426,6 +436,50 @@ namespace Dc {
 
             content.append (appearance_list);
 
+            /* Network section */
+            var network_label = new Gtk.Label ("Network");
+            network_label.add_css_class ("title-3");
+            network_label.halign = Gtk.Align.START;
+            content.append (network_label);
+
+            var network_list = new Gtk.ListBox ();
+            network_list.selection_mode = Gtk.SelectionMode.NONE;
+            network_list.add_css_class ("boxed-list");
+
+            proxy_switch_row = new Adw.ActionRow ();
+            proxy_switch_row.title = "Use Proxy";
+            proxy_switch_row.subtitle =
+                "Route this profile through the configured proxy";
+
+            proxy_switch = new Gtk.Switch ();
+            proxy_switch.valign = Gtk.Align.CENTER;
+            proxy_switch.notify["active"].connect (() => {
+                if (!loading_proxy) save_proxy_settings.begin ();
+            });
+            proxy_switch_row.add_suffix (proxy_switch);
+            proxy_switch_row.activatable_widget = proxy_switch;
+            network_list.append (proxy_switch_row);
+
+            proxy_url_row = new Adw.ActionRow ();
+            proxy_url_row.title = "Proxy URL";
+            proxy_url_row.subtitle = "socks5://, http://, https://, or ss://";
+
+            proxy_entry = new Gtk.Entry ();
+            proxy_entry.placeholder_text = "socks5://127.0.0.1:9050";
+            proxy_entry.input_purpose = Gtk.InputPurpose.URL;
+            proxy_entry.hexpand = true;
+            proxy_entry.valign = Gtk.Align.CENTER;
+            proxy_entry.activate.connect (() => { save_proxy_settings.begin (); });
+            var proxy_focus = new Gtk.EventControllerFocus ();
+            proxy_focus.leave.connect (() => { save_proxy_settings.begin (); });
+            proxy_entry.add_controller (proxy_focus);
+            proxy_url_row.add_suffix (proxy_entry);
+            proxy_url_row.activatable_widget = proxy_entry;
+            network_list.append (proxy_url_row);
+
+            content.append (network_list);
+            load_proxy_settings.begin ();
+
             /* Advanced section */
             var advanced_label = new Gtk.Label ("Advanced");
             advanced_label.add_css_class ("title-3");
@@ -521,6 +575,135 @@ namespace Dc {
             box.append (scroll);
 
             this.child = box;
+        }
+
+        private async void load_proxy_settings () {
+            if (!rpc.is_connected || rpc.account_id <= 0) {
+                set_proxy_controls_sensitive (false);
+                proxy_switch_row.subtitle = "No active profile";
+                proxy_url_row.subtitle = "No active profile";
+                return;
+            }
+
+            loading_proxy = true;
+            set_proxy_controls_sensitive (false);
+
+            try {
+                string? enabled = yield rpc.get_config ("proxy_enabled",
+                                                        rpc.account_id);
+                string? proxy_url = yield rpc.get_config ("proxy_url",
+                                                          rpc.account_id);
+                string first = first_proxy_url (proxy_url ?? "");
+                proxy_switch.active = (enabled ?? "") == "1";
+                proxy_entry.text = first;
+                saved_proxy_enabled = proxy_switch.active;
+                saved_proxy_url = first;
+
+                proxy_switch_row.subtitle = proxy_switch.active
+                    ? "Enabled for current profile"
+                    : "Disabled for current profile";
+                proxy_url_row.subtitle = "socks5://, http://, https://, or ss://";
+                proxy_url_row.tooltip_text = first.length > 0 ? first : null;
+            } catch (Error e) {
+                proxy_switch_row.subtitle = "Unable to read proxy settings";
+                proxy_url_row.tooltip_text = e.message;
+            } finally {
+                loading_proxy = false;
+                set_proxy_controls_sensitive (true);
+            }
+        }
+
+        private void set_proxy_controls_sensitive (bool sensitive) {
+            bool active = sensitive && rpc.is_connected && rpc.account_id > 0;
+            proxy_switch.sensitive = active;
+            proxy_entry.sensitive = active;
+        }
+
+        private static string first_proxy_url (string urls) {
+            foreach (string line in urls.split ("\n")) {
+                string s = line.strip ();
+                if (s.length > 0) return s;
+            }
+            return "";
+        }
+
+        private async string? normalize_proxy_url (string url) {
+            try {
+                var qr = yield rpc.check_qr (rpc.account_id, url);
+                if (qr == null || !qr.has_member ("kind") ||
+                    qr.get_string_member ("kind") != "proxy") {
+                    show_error (this, "Invalid proxy URL: " + url);
+                    return null;
+                }
+                return qr.has_member ("url") ? qr.get_string_member ("url") : url;
+            } catch (Error e) {
+                show_error (this, "Invalid proxy URL: %s\n%s".printf (
+                    url, e.message));
+                return null;
+            }
+        }
+
+        private async void save_proxy_settings () {
+            if (loading_proxy || saving_proxy) return;
+
+            if (!rpc.is_connected || rpc.account_id <= 0) {
+                app_window.show_toast ("No active profile");
+                return;
+            }
+
+            string url = proxy_entry.text.strip ();
+            bool enabled = proxy_switch.active;
+
+            if (enabled == saved_proxy_enabled && url == saved_proxy_url) {
+                return;
+            }
+
+            if (enabled && url.length == 0) {
+                show_error (this, "Enter a proxy URL before enabling the proxy.");
+                loading_proxy = true;
+                proxy_switch.active = false;
+                loading_proxy = false;
+                enabled = false;
+                if (!saved_proxy_enabled && saved_proxy_url.length == 0) {
+                    return;
+                }
+            }
+
+            saving_proxy = true;
+            set_proxy_controls_sensitive (false);
+
+            if (url.length > 0) {
+                string? normalized = yield normalize_proxy_url (url);
+                if (normalized == null) {
+                    saving_proxy = false;
+                    set_proxy_controls_sensitive (true);
+                    return;
+                }
+                url = normalized;
+                proxy_entry.text = url;
+            }
+
+            try {
+                yield rpc.batch_set_config ("proxy_url", url, rpc.account_id);
+                yield rpc.batch_set_config ("proxy_enabled",
+                                            enabled ? "1" : "0",
+                                            rpc.account_id);
+                yield rpc.stop_io (rpc.account_id);
+                yield rpc.start_io (rpc.account_id);
+
+                proxy_switch_row.subtitle = enabled
+                    ? "Enabled for current profile"
+                    : "Disabled for current profile";
+                proxy_url_row.tooltip_text = url.length > 0 ? url : null;
+                saved_proxy_enabled = enabled;
+                saved_proxy_url = url;
+                app_window.show_toast ("Proxy settings saved");
+            } catch (Error e) {
+                show_error (this, "Failed to save proxy settings: " + e.message);
+            } finally {
+                saving_proxy = false;
+                set_proxy_controls_sensitive (true);
+            }
         }
 
         private void update_rpc_row () {
@@ -806,4 +989,5 @@ namespace Dc {
             DirUtils.remove (dir);
         }
     }
+
 }

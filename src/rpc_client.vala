@@ -64,8 +64,9 @@ namespace Dc {
             yield call ("start_io", Params.begin ().add_int (acct_id).build ());
         }
 
-        public async void stop_io () throws Error {
-            yield call ("stop_io", Params.begin ().add_int (account_id).build ());
+        public async void stop_io (int acct_id = 0) throws Error {
+            int id = acct_id > 0 ? acct_id : account_id;
+            yield call ("stop_io", Params.begin ().add_int (id).build ());
         }
 
         /* Start/stop IO for every account so background accounts keep receiving

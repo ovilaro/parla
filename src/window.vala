@@ -1678,7 +1678,7 @@ namespace Dc {
         private void show_settings_dialog () {
             if (active_modal != null) return;
 
-            var dialog = new SettingsDialog (this);
+            var dialog = new SettingsDialog (this, rpc);
             active_modal = dialog;
             dialog.closed.connect (() => {
                 active_modal = null;
