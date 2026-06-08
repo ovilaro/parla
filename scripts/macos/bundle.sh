@@ -22,37 +22,7 @@ FRAMEWORKS="$CONTENTS/Frameworks"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES" "$FRAMEWORKS"
 
-cp "$BUILD_DIR/parla" "$MACOS/parla-bin"
-chmod 755 "$MACOS/parla-bin"
-
-cat > "$MACOS/parla" <<'EOF'
-#!/bin/sh
-APP_MACOS="$(cd "$(dirname "$0")" && pwd)"
-APP_CONTENTS="$(cd "$APP_MACOS/.." && pwd)"
-APP_RESOURCES="$APP_CONTENTS/Resources"
-
-export XDG_DATA_DIRS="$APP_RESOURCES/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
-export GSETTINGS_SCHEMA_DIR="$APP_RESOURCES/share/glib-2.0/schemas"
-export GTK_DATA_PREFIX="$APP_RESOURCES"
-export GTK_EXE_PREFIX="$APP_CONTENTS"
-export GTK_PATH="$APP_RESOURCES"
-export GIO_EXTRA_MODULES="$APP_RESOURCES/lib/gio/modules"
-
-PIXBUF_DIR="$APP_RESOURCES/lib/gdk-pixbuf-2.0/2.10.0/loaders"
-PIXBUF_QUERY="$APP_RESOURCES/bin/gdk-pixbuf-query-loaders"
-PIXBUF_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/Library/Caches}/Parla"
-PIXBUF_CACHE="$PIXBUF_CACHE_DIR/gdk-pixbuf-loaders.cache"
-if [ -d "$PIXBUF_DIR" ] && [ -x "$PIXBUF_QUERY" ]; then
-    mkdir -p "$PIXBUF_CACHE_DIR"
-    if [ ! -f "$PIXBUF_CACHE" ] || ! grep -q "$PIXBUF_DIR" "$PIXBUF_CACHE" 2>/dev/null; then
-        "$PIXBUF_QUERY" "$PIXBUF_DIR"/*.so > "$PIXBUF_CACHE" 2>/dev/null || rm -f "$PIXBUF_CACHE"
-    fi
-    [ -f "$PIXBUF_CACHE" ] && export GDK_PIXBUF_MODULE_FILE="$PIXBUF_CACHE"
-    export GDK_PIXBUF_MODULEDIR="$PIXBUF_DIR"
-fi
-
-exec "$APP_MACOS/parla-bin" "$@"
-EOF
+cp "$BUILD_DIR/parla" "$MACOS/parla"
 chmod 755 "$MACOS/parla"
 
 cat > "$CONTENTS/Info.plist" <<EOF
@@ -108,6 +78,7 @@ make_icon() {
     local iconset="$RESOURCES/Parla.iconset"
     local tmp="$RESOURCES/.icon.png"
     rm -rf "$iconset"
+    rm -f "$RESOURCES/Parla.icns"
     mkdir -p "$iconset"
 
     if command -v rsvg-convert >/dev/null 2>&1; then
@@ -126,7 +97,53 @@ make_icon() {
     sips -z 512 512   "$tmp" --out "$iconset/icon_256x256@2x.png" >/dev/null
     sips -z 512 512   "$tmp" --out "$iconset/icon_512x512.png" >/dev/null
     sips -z 1024 1024 "$tmp" --out "$iconset/icon_512x512@2x.png" >/dev/null
-    iconutil -c icns "$iconset" -o "$RESOURCES/Parla.icns"
+
+    if command -v iconutil >/dev/null 2>&1 && \
+       iconutil --convert icns --output "$RESOURCES/Parla.icns" "$iconset" 2>/dev/null; then
+        :
+    elif command -v python3 >/dev/null 2>&1 && \
+         python3 - "$iconset" "$RESOURCES/Parla.icns" <<'PY'
+import os
+import struct
+import sys
+
+iconset, output = sys.argv[1], sys.argv[2]
+mapping = [
+    ("icp4", "icon_16x16.png"),
+    ("ic11", "icon_16x16@2x.png"),
+    ("icp5", "icon_32x32.png"),
+    ("ic12", "icon_32x32@2x.png"),
+    ("ic07", "icon_128x128.png"),
+    ("ic13", "icon_128x128@2x.png"),
+    ("ic08", "icon_256x256.png"),
+    ("ic14", "icon_256x256@2x.png"),
+    ("ic09", "icon_512x512.png"),
+    ("ic10", "icon_512x512@2x.png"),
+]
+
+entries = []
+for code, name in mapping:
+    path = os.path.join(iconset, name)
+    if not os.path.exists(path):
+        continue
+    with open(path, "rb") as f:
+        data = f.read()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise SystemExit(f"{path} is not a PNG")
+    entries.append(code.encode("ascii") + struct.pack(">I", len(data) + 8) + data)
+
+if not entries:
+    raise SystemExit("empty iconset")
+
+body = b"".join(entries)
+with open(output, "wb") as f:
+    f.write(b"icns" + struct.pack(">I", len(body) + 8) + body)
+PY
+    then
+        :
+    else
+        sips -s format icns "$iconset/icon_512x512.png" --out "$RESOURCES/Parla.icns" >/dev/null
+    fi
     rm -rf "$iconset" "$tmp"
 }
 

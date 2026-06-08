@@ -5,6 +5,9 @@ namespace Dc.Platform {
     [CCode (cheader_filename = "platform.h", cname = "parla_platform_is_macos")]
     private extern bool platform_is_macos ();
 
+    [CCode (cheader_filename = "platform.h", cname = "parla_setup_macos_bundle_environment")]
+    private extern void platform_setup_macos_bundle_environment ();
+
     public string? get_executable_path () {
         return platform_get_executable_path ();
     }
@@ -16,6 +19,10 @@ namespace Dc.Platform {
 
     public bool is_macos () {
         return platform_is_macos ();
+    }
+
+    public void setup_macos_bundle_environment () {
+        platform_setup_macos_bundle_environment ();
     }
 
     public Gdk.ModifierType primary_modifier_mask () {

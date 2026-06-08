@@ -4,3 +4,4 @@
 
 gchar *parla_get_executable_path (void);
 gboolean parla_platform_is_macos (void);
+void parla_setup_macos_bundle_environment (void);

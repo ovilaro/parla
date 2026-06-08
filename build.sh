@@ -25,4 +25,8 @@ meson compile -C "$BUILD_DIR"
 
 echo ""
 echo "Build successful! Run with:"
-echo "  ./$BUILD_DIR/parla"
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "  make macos-run"
+else
+    echo "  ./$BUILD_DIR/parla"
+fi

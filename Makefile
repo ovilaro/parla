@@ -9,7 +9,11 @@ all:
 	./build.sh
 
 run: all
+ifeq ($(UNAME_S),Darwin)
+	scripts/macos/run.sh
+else
 	./$(BUILD_DIR)/parla
+endif
 
 clean:
 	rm -rf builddir builddir-macos dist/macos
