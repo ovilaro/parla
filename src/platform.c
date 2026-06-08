@@ -210,3 +210,15 @@ parla_setup_macos_bundle_environment (void)
 	setup_pixbuf_cache (resources_dir);
 #endif
 }
+
+#if !defined(__APPLE__)
+void
+parla_macos_install_file_drop_handler (GtkWidget                  *widget,
+                                       ParlaMacosFileDropCallback  callback,
+                                       gpointer                    user_data)
+{
+	(void) widget;
+	(void) callback;
+	(void) user_data;
+}
+#endif

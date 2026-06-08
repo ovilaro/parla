@@ -73,6 +73,7 @@ namespace Dc {
 
         private TrayIcon? tray = null;
         private bool minimized_to_tray = false;
+        private NativeFileDropTarget? native_file_drop_target;
 
         /* Set after an Escape that had nothing transient to dismiss while a
            compose mode is active; a second consecutive Escape then drops the
@@ -103,6 +104,8 @@ namespace Dc {
                Application.apply_background). */
             this.add_css_class ("parla-custom-bg");
             build_ui ();
+            native_file_drop_target = new NativeFileDropTarget (this);
+            native_file_drop_target.path_dropped.connect (handle_native_file_drop);
             MessageRow.style = settings.message_style;
             apply_current_appearance ();
 
@@ -146,6 +149,15 @@ namespace Dc {
             this.application.hold ();
             minimized_to_tray = true;
             return true;
+        }
+
+        private void handle_native_file_drop (string path) {
+            var v = current_view ();
+            if (v == null) {
+                show_toast ("Select a chat before dropping a file");
+                return;
+            }
+            v.attach_dropped_file_path (path);
         }
 
         /* Single source of truth for the tray icon: create it on first need,

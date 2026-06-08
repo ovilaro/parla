@@ -27,6 +27,7 @@ namespace Dc {
         private Gtk.Revealer message_search_revealer;
         private Gtk.SearchEntry message_search_entry;
         private bool search_toggling;
+        private FileDropTarget? file_drop_target;
 
         private bool stick_to_bottom = true;
         private Json.Array? all_msg_ids = null;
@@ -282,7 +283,7 @@ namespace Dc {
             request_bar = build_request_bar ();
             append (request_bar);
 
-            install_drop_target ();
+            install_file_drop_target ();
         }
 
         /* Bottom bar shown instead of the compose box while the chat is an
@@ -371,6 +372,10 @@ namespace Dc {
         public void on_reselected () {
             scroll_to_bottom ();
             compose_bar.grab_entry_focus ();
+        }
+
+        public void attach_dropped_file_path (string path) {
+            attach_local_file (path, Path.get_basename (path));
         }
 
         public void focus_entry () {
@@ -749,48 +754,31 @@ namespace Dc {
             }
         }
 
-        private void install_drop_target () {
-            var drop = new Gtk.DropTarget (typeof (Gdk.FileList), Gdk.DragAction.COPY);
-            drop.accept.connect (() => {
-                return !is_contact_request && compose_bar.can_accept_attachment ();
-            });
-            drop.enter.connect ((x, y) => {
-                add_css_class ("chat-drop-active");
-                return Gdk.DragAction.COPY;
-            });
-            drop.leave.connect (() => {
-                remove_css_class ("chat-drop-active");
-            });
-            drop.drop.connect ((value, x, y) => {
-                remove_css_class ("chat-drop-active");
-                if (is_contact_request || !compose_bar.can_accept_attachment ()) return false;
-                var fl = (Gdk.FileList?) value.get_boxed ();
-                if (fl == null) return false;
-                var files = fl.get_files ();
-                if (files == null || files.data == null) return false;
-                attach_dropped_file.begin (files.data);
-                return true;
-            });
-            add_controller (drop);
+        private bool can_accept_file_attachment () {
+            return !is_contact_request && compose_bar.can_accept_attachment ();
         }
 
-        private async void attach_dropped_file (GLib.File file) {
-            try {
-                string? path = file.get_path ();
-                string name = file.get_basename () ?? "attachment";
-                if (path == null) {
-                    GLib.FileIOStream stream;
-                    var tmp = GLib.File.new_tmp ("parla-XXXXXX", out stream);
-                    stream.close ();
-                    yield file.copy_async (tmp, FileCopyFlags.OVERWRITE,
-                                           Priority.DEFAULT, null, null);
-                    path = tmp.get_path ();
-                }
-                compose_bar.set_pending_attachment (path, name);
-                compose_bar.grab_entry_focus ();
-            } catch (Error e) {
-                window.show_toast ("Attach failed: " + e.message);
+        private void attach_local_file (string path, string name) {
+            if (!can_accept_file_attachment ()) {
+                window.show_toast ("Attach failed: cannot attach here");
+                return;
             }
+            if (path.strip ().length == 0 ||
+                !GLib.FileUtils.test (path, GLib.FileTest.EXISTS)) {
+                window.show_toast ("Attach failed: file not found");
+                return;
+            }
+            compose_bar.set_pending_attachment (path, name);
+            compose_bar.grab_entry_focus ();
+        }
+
+        private void install_file_drop_target () {
+            file_drop_target = new FileDropTarget (this);
+            file_drop_target.accept.connect (can_accept_file_attachment);
+            file_drop_target.dropped.connect (attach_local_file);
+            file_drop_target.failed.connect ((message) => {
+                window.show_toast ("Attach failed: " + message);
+            });
         }
 
         private MessageRow? pick_message_row (double x, double y) {

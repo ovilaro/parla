@@ -1,4 +1,7 @@
 namespace Dc.Platform {
+    [CCode (has_target = false)]
+    public delegate void RawMacosFileDropCallback (string path, void* user_data);
+
     [CCode (cheader_filename = "platform.h", cname = "parla_get_executable_path")]
     private extern string? platform_get_executable_path ();
 
@@ -7,6 +10,12 @@ namespace Dc.Platform {
 
     [CCode (cheader_filename = "platform.h", cname = "parla_setup_macos_bundle_environment")]
     private extern void platform_setup_macos_bundle_environment ();
+
+    [CCode (cheader_filename = "platform.h", cname = "parla_macos_install_file_drop_handler")]
+    private extern void platform_macos_install_file_drop_handler (
+        Gtk.Widget widget,
+        RawMacosFileDropCallback callback,
+        void* user_data);
 
     public string? get_executable_path () {
         return platform_get_executable_path ();
@@ -23,6 +32,13 @@ namespace Dc.Platform {
 
     public void setup_macos_bundle_environment () {
         platform_setup_macos_bundle_environment ();
+    }
+
+    public void install_macos_file_drop_handler (Gtk.Widget widget,
+                                                 RawMacosFileDropCallback callback,
+                                                 void* user_data) {
+        if (!is_macos ()) return;
+        platform_macos_install_file_drop_handler (widget, callback, user_data);
     }
 
     public Gdk.ModifierType primary_modifier_mask () {

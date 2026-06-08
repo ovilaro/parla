@@ -72,6 +72,7 @@ sources = files(
   'src/audio_player.vala',
   'src/compose_bar.vala',
   'src/emoji.vala',
+  'src/file_drop.vala',
   'src/conversation_view.vala',
   'src/chat_info_dialog.vala',
   'src/contact_picker_dialog.vala',
@@ -87,6 +88,12 @@ sources = files(
   'src/account_creation.vala',
   'src/relay_picker.vala',
 )
+
+if host_machine.system() == 'darwin'
+  add_languages('objc', native: false)
+  sources += files('src/platform_macos.m')
+  deps += dependency('appleframeworks', modules: ['Cocoa'])
+endif
 
 executable('parla',
   sources, config_file, appdata_vala, resources,
