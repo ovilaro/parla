@@ -9,6 +9,7 @@ APP_NAME="${APP_NAME:-Parla}"
 APP_DIR="${APP_DIR:-$ROOT/dist/macos/$APP_NAME.app}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.trufae.Parla}"
 VERSION="${VERSION:-$(awk -F"'" '/version:/ { print $2; exit }' "$ROOT/meson.build")}"
+PARLA_BUNDLE_CLEAN="${PARLA_BUNDLE_CLEAN:-1}"
 
 if [ ! -x "$BUILD_DIR/parla" ]; then
     "$ROOT/scripts/macos/build.sh"
@@ -19,7 +20,9 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 FRAMEWORKS="$CONTENTS/Frameworks"
 
-rm -rf "$APP_DIR"
+if [ "$PARLA_BUNDLE_CLEAN" != "0" ]; then
+    rm -rf "$APP_DIR"
+fi
 mkdir -p "$MACOS" "$RESOURCES" "$FRAMEWORKS"
 
 cp "$BUILD_DIR/parla" "$MACOS/parla"
@@ -77,14 +80,25 @@ copy_file() {
 make_icon() {
     local iconset="$RESOURCES/Parla.iconset"
     local tmp="$RESOURCES/.icon.png"
+    local source="$ROOT/parla.svg"
+    if ! command -v rsvg-convert >/dev/null 2>&1; then
+        source="$ROOT/parla.png"
+    fi
+
+    if [ -f "$RESOURCES/Parla.icns" ] && \
+       [ "$RESOURCES/Parla.icns" -nt "$source" ] && \
+       [ "$RESOURCES/Parla.icns" -nt "$ROOT/scripts/macos/bundle.sh" ]; then
+        return 0
+    fi
+
     rm -rf "$iconset"
     rm -f "$RESOURCES/Parla.icns"
     mkdir -p "$iconset"
 
-    if command -v rsvg-convert >/dev/null 2>&1; then
-        rsvg-convert -w 1024 -h 1024 "$ROOT/parla.svg" -o "$tmp"
+    if [ "$source" = "$ROOT/parla.svg" ]; then
+        rsvg-convert -w 1024 -h 1024 "$source" -o "$tmp"
     else
-        cp "$ROOT/parla.png" "$tmp"
+        cp "$source" "$tmp"
     fi
 
     sips -z 16 16     "$tmp" --out "$iconset/icon_16x16.png" >/dev/null
@@ -149,7 +163,11 @@ PY
 
 copy_dir "$BREW_PREFIX/share/glib-2.0/schemas" "$RESOURCES/share/glib-2.0/schemas"
 if command -v glib-compile-schemas >/dev/null 2>&1 && [ -d "$RESOURCES/share/glib-2.0/schemas" ]; then
-    glib-compile-schemas "$RESOURCES/share/glib-2.0/schemas"
+    compiled_schemas="$RESOURCES/share/glib-2.0/schemas/gschemas.compiled"
+    if [ ! -f "$compiled_schemas" ] || \
+       [ -n "$(find "$RESOURCES/share/glib-2.0/schemas" -name '*.xml' -newer "$compiled_schemas" -print -quit)" ]; then
+        glib-compile-schemas "$RESOURCES/share/glib-2.0/schemas"
+    fi
 fi
 
 copy_dir "$BREW_PREFIX/share/icons/Adwaita" "$RESOURCES/share/icons/Adwaita"
