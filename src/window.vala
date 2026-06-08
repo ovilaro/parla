@@ -62,6 +62,7 @@ namespace Dc {
         private VideoPlayer video_player;
         private EventHandler events;
         private ChatContextMenu chat_menu;
+        private bool reconnecting_rpc = false;
 
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
@@ -507,7 +508,7 @@ namespace Dc {
                install switches the source to Auto so the downloaded binary is
                picked up. Custom/Desktop choices still get their specific error
                text, but the download is the primary action. */
-            bool can_download = RpcInstaller.detect_asset_name () != null;
+            bool can_download = RpcInstaller.can_auto_install ();
 
             empty_status.icon_name = "dialog-error-symbolic";
             empty_status.title = "RPC server not found";
@@ -615,7 +616,7 @@ namespace Dc {
             }
 
             show_toast ("Delta Chat engine installed");
-            yield try_connect ();
+            yield reconnect_rpc_server ();
         }
 
         /* Quietly check GitHub for a newer managed server and offer to update. */
@@ -646,10 +647,40 @@ namespace Dc {
             var installer = new RpcInstaller ();
             try {
                 yield installer.download_latest ();
-                show_toast ("Update installed — restart Parla to apply");
+                show_toast ("Update installed");
+                yield reconnect_rpc_server ();
             } catch (Error e) {
                 show_toast ("Update failed: " + e.message);
             }
+        }
+
+        public async void reconnect_rpc_server () {
+            if (reconnecting_rpc) return;
+            reconnecting_rpc = true;
+
+            var app = (Dc.Application) this.application;
+            app.reset_rpc_client ();
+            rpc = app.rpc;
+            events = null;
+            chat_menu = null;
+            current_chat_id = 0;
+
+            discard_all_views ();
+            chat_store.remove_all ();
+            clear_listbox (chat_listbox);
+            search_entry.text = "";
+            content_title_label.label = "Select a chat";
+            if (profile_unread_badge != null) profile_unread_badge.visible = false;
+
+            empty_status.child = null;
+            empty_status.icon_name = "parla-welcome";
+            empty_status.title = "Connecting";
+            empty_status.description = "Starting Delta Chat engine…";
+            content_stack.visible_child_name = "empty";
+            set_connection_status (false, "Reconnecting…");
+
+            yield try_connect ();
+            reconnecting_rpc = false;
         }
 
         /* ================================================================

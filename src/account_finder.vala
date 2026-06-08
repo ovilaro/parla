@@ -72,6 +72,10 @@ namespace Dc {
             /* Last resort: a server Parla downloaded into its own data dir.
                Anything packaged or system-provided above wins over this. */
             string managed = get_managed_rpc_path ();
+            if (FileUtils.test (managed, FileTest.EXISTS) &&
+                !FileUtils.test (managed, FileTest.IS_EXECUTABLE)) {
+                FileUtils.chmod (managed, 0755);
+            }
             if (is_executable (managed)) return managed;
 
             return null;
@@ -209,7 +213,7 @@ namespace Dc {
                 }
                 description =
                     "No Delta Chat accounts configured.\n" +
-                    "Add an account from Settings to connect.";
+                    "Add an account from the top left empty avatar icon to connect.";
             } catch (Error e) {
                 toast_msg = "Account setup error: " + e.message;
             }

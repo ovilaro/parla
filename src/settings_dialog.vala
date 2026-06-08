@@ -505,14 +505,14 @@ namespace Dc {
             rpc_row.add_suffix (rpc_source_dropdown);
             rpc_row.activatable_widget = rpc_source_dropdown;
 
-            rpc_choose_btn = new Gtk.Button.with_label ("Pick");
+            rpc_choose_btn = new Gtk.Button.with_label ("Choose");
             rpc_choose_btn.valign = Gtk.Align.CENTER;
             rpc_choose_btn.add_css_class ("flat");
-            rpc_choose_btn.tooltip_text = "Pick a deltachat-rpc-server binary";
+            rpc_choose_btn.tooltip_text = "Choose a deltachat-rpc-server binary";
             rpc_choose_btn.clicked.connect (() => { on_browse_rpc_server.begin (); });
             rpc_row.add_suffix (rpc_choose_btn);
 
-            rpc_download_btn = new Gtk.Button.with_label ("Get");
+            rpc_download_btn = new Gtk.Button.with_label ("Install");
             rpc_download_btn.valign = Gtk.Align.CENTER;
             rpc_download_btn.add_css_class ("flat");
             rpc_download_btn.tooltip_text =
@@ -708,12 +708,16 @@ namespace Dc {
 
         private void update_rpc_row () {
             sync_rpc_source_dropdown ();
-            rpc_choose_btn.sensitive =
-                app_window.settings.rpc_server_source == RpcServerSource.CUSTOM;
 
             string custom = app_window.settings.rpc_server_path;
             RpcServerSource source = app_window.settings.rpc_server_source;
             string? found = AccountFinder.find_rpc_server (custom, source);
+            rpc_choose_btn.visible = source == RpcServerSource.CUSTOM;
+            rpc_choose_btn.sensitive = source == RpcServerSource.CUSTOM;
+            rpc_download_btn.visible = source == RpcServerSource.AUTO;
+            rpc_download_btn.sensitive = RpcInstaller.can_auto_install ();
+            rpc_download_btn.label =
+                found == AccountFinder.get_managed_rpc_path () ? "Update" : "Install";
             switch (source) {
             case RpcServerSource.CUSTOM:
                 if (custom.length == 0) {
@@ -837,7 +841,7 @@ namespace Dc {
                         latest_version, rpc_current_version);
                     if (managed_active) {
                         app_window.show_toast (
-                            "Update available: %s — press Get to install".printf (
+                            "Update available: %s — press Install to update".printf (
                                 latest_version));
                     } else {
                         app_window.show_toast (
@@ -876,8 +880,9 @@ namespace Dc {
             }
 
             app_window.settings.save_rpc_server_source (source);
-            app_window.show_toast ("RPC server preference saved. Restart to apply.");
+            app_window.show_toast ("RPC server preference saved");
             update_rpc_row ();
+            app_window.reconnect_rpc_server.begin ();
         }
 
         private async void on_browse_rpc_server () {
@@ -896,7 +901,9 @@ namespace Dc {
                     if (path != null && FileUtils.test (path, FileTest.IS_EXECUTABLE)) {
                         app_window.settings.save_rpc_server_path (path);
                         app_window.settings.save_rpc_server_source (RpcServerSource.CUSTOM);
-                        app_window.show_toast ("RPC server path saved. Restart to apply.");
+                        sync_rpc_source_dropdown ();
+                        app_window.show_toast ("RPC server path saved");
+                        app_window.reconnect_rpc_server.begin ();
                     } else {
                         show_error (app_window, "Selected file is not an executable binary.");
                     }
@@ -910,7 +917,7 @@ namespace Dc {
 
         /* One-click: download the latest server into Parla's data dir. */
         private async void install_managed_server () {
-            if (RpcInstaller.detect_asset_name () == null) {
+            if (!RpcInstaller.can_auto_install ()) {
                 /* No prebuilt binary for this arch — fall back to the browser. */
                 yield open_rpc_download_page ();
                 return;
@@ -932,12 +939,13 @@ namespace Dc {
             try {
                 yield installer.download_latest ();
                 /* Make sure the freshly installed managed binary is the one
-                   Parla resolves on next start. */
+                   Parla resolves immediately. */
                 if (app_window.settings.rpc_server_source != RpcServerSource.AUTO) {
                     app_window.settings.save_rpc_server_source (RpcServerSource.AUTO);
                     sync_rpc_source_dropdown ();
                 }
-                app_window.show_toast ("RPC server installed. Restart to apply.");
+                app_window.show_toast ("RPC server installed");
+                yield app_window.reconnect_rpc_server ();
             } catch (Error e) {
                 rpc_row.subtitle = prev_subtitle;
                 app_window.show_toast ("Download failed: " + e.message);

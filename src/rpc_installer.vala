@@ -29,13 +29,51 @@ namespace Dc {
         }
 
         /**
-         * Name of the GitHub release asset matching the host architecture, or
-         * null when no prebuilt Linux binary is published for this machine.
+         * True when Parla can install a managed server for this host with one
+         * click. The package source differs by OS, but the UX is the same.
+         */
+        public static bool can_auto_install () {
+            return detect_asset_name () != null;
+        }
+
+        /**
+         * Name of the GitHub release asset matching the host OS/architecture,
+         * or null when no prebuilt binary is published for this machine.
          */
         public static string? detect_asset_name () {
-            string? arch = detect_arch ();
-            if (arch == null) return null;
-            return "%s-%s-linux".printf (RPC_BIN, arch);
+            string? os = detect_os ();
+            string? arch = (os == "Linux") ? detect_arch () : arch_from_uname ();
+            switch (arch) {
+            case "x86_64":
+            case "aarch64":
+            case "armv7l":
+            case "armv6l":
+            case "i686":
+                break;
+            default:
+                return null;
+            }
+
+            switch (os) {
+            case "Linux":
+                return "%s-%s-linux".printf (RPC_BIN, arch);
+            case "Darwin":
+                if (arch != "x86_64" && arch != "aarch64") return null;
+                return "%s-%s-macos".printf (RPC_BIN, arch);
+            default:
+                return null;
+            }
+        }
+
+        private static string? detect_os () {
+            try {
+                string output;
+                Process.spawn_command_line_sync ("uname -s", out output);
+                string os = output.strip ();
+                return os.length > 0 ? os : null;
+            } catch (SpawnError e) {
+                return null;
+            }
         }
 
         /**
@@ -186,10 +224,15 @@ namespace Dc {
          */
         public async string download_latest () throws Error {
             string? asset = detect_asset_name ();
-            if (asset == null) {
-                throw new IOError.NOT_SUPPORTED (
-                    "No prebuilt deltachat-rpc-server is published for this architecture");
+            if (asset != null) {
+                return yield download_release_asset (asset);
             }
+
+            throw new IOError.NOT_SUPPORTED (
+                "No prebuilt deltachat-rpc-server is published for this platform");
+        }
+
+        private async string download_release_asset (string asset) throws Error {
             string dir = managed_dir ();
             DirUtils.create_with_parents (dir, 0700);
 
@@ -202,22 +245,28 @@ namespace Dc {
 
             try {
                 yield https_get_to_file (url, tmp, 0);
-                if (!is_elf (tmp)) {
-                    throw new IOError.INVALID_DATA (
-                        "Downloaded file is not a valid executable");
-                }
-                if (FileUtils.chmod (tmp, 0755) != 0) {
-                    throw new IOError.FAILED ("Could not make the server executable");
-                }
+                ensure_executable (tmp);
                 string final_path = managed_bin_path ();
                 FileUtils.unlink (final_path);
                 if (FileUtils.rename (tmp, final_path) != 0) {
                     throw new IOError.FAILED ("Could not install the server binary");
                 }
+                ensure_executable (final_path);
                 return final_path;
             } catch (Error e) {
                 FileUtils.unlink (tmp);
                 throw e;
+            }
+        }
+
+        private static void ensure_executable (string path) throws Error {
+            if (FileUtils.chmod (path, 0755) != 0) {
+                throw new IOError.FAILED (
+                    "Could not make the server executable: %s".printf (path));
+            }
+            if (!FileUtils.test (path, FileTest.IS_EXECUTABLE)) {
+                throw new IOError.FAILED (
+                    "Installed server is not executable: %s".printf (path));
             }
         }
 
@@ -329,20 +378,6 @@ namespace Dc {
                 throw new IOError.PARTIAL_INPUT (
                     "Download truncated (%lld of %lld bytes)".printf (
                         received, content_length));
-            }
-        }
-
-        private static bool is_elf (string path) {
-            try {
-                uint8[] magic = new uint8[4];
-                var stream = File.new_for_path (path).read ();
-                size_t got;
-                stream.read_all (magic, out got);
-                stream.close ();
-                return got == 4 && magic[0] == 0x7f && magic[1] == 'E'
-                    && magic[2] == 'L' && magic[3] == 'F';
-            } catch (Error e) {
-                return false;
             }
         }
 

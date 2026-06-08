@@ -34,6 +34,11 @@ namespace Dc {
             rpc = new RpcClient ();
         }
 
+        public void reset_rpc_client () {
+            rpc.stop ();
+            rpc = new RpcClient ();
+        }
+
         public void apply_accent_color (string hex) {
             var display = Gdk.Display.get_default ();
             if (display == null) return;
