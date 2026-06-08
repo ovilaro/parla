@@ -40,7 +40,7 @@ namespace Dc {
                 return is_executable (env_path) ? env_path : null;
             }
 
-            string? exe_dir = get_executable_dir ();
+            string? exe_dir = Platform.get_executable_dir ();
             if (exe_dir != null) {
                 string prefix = Path.get_dirname (exe_dir);
                 string[] packaged = {
@@ -114,15 +114,6 @@ namespace Dc {
         private static bool is_executable (string? path) {
             return path != null && path.length > 0
                 && FileUtils.test (path, FileTest.IS_EXECUTABLE);
-        }
-
-        private static string? get_executable_dir () {
-            try {
-                string exe_path = FileUtils.read_link ("/proc/self/exe");
-                return Path.get_dirname (exe_path);
-            } catch (FileError e) {
-                return null;
-            }
         }
 
         /**

@@ -50,8 +50,11 @@ resources = gnome.compile_resources(
   source_dir: 'data/icons/hicolor',
 )
 
+src_inc = include_directories('src')
 sources = files(
   'src/main.vala',
+  'src/platform.vala',
+  'src/platform.c',
   'src/application.vala',
   'src/window.vala',
   'src/rpc_transport.vala',
@@ -87,6 +90,7 @@ sources = files(
 executable('parla',
   sources, config_file, appdata_vala, resources,
   dependencies: deps,
+  include_directories: src_inc,
   install: true,
 )
 

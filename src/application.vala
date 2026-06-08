@@ -182,16 +182,14 @@ namespace Dc {
                prefix, XDG_DATA_DIRS, or a stale hicolor icon cache. */
             theme.add_resource_path ("/io/github/trufae/Parla/icons");
             /* Support running uninstalled: add the project data/icons dir */
-            try {
-                var exe_path = FileUtils.read_link ("/proc/self/exe");
+            string? exe_path = Platform.get_executable_path ();
+            if (exe_path != null) {
                 var exe_dir = File.new_for_path (exe_path).get_parent ();
                 /* exe in builddir/ → icons in ../data/icons */
                 var project_icons = exe_dir.get_parent ().get_child ("data").get_child ("icons");
                 if (project_icons.query_exists ()) {
                     theme.add_search_path (project_icons.get_path ());
                 }
-            } catch (FileError e) {
-                /* not on Linux or unreadable — fall through to installed path */
             }
         }
 

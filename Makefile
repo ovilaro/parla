@@ -2,18 +2,20 @@ DESTDIR?=
 PREFIX?=/usr/local
 BINDIR?=$(PREFIX)/bin
 DATADIR?=$(PREFIX)/share
+UNAME_S := $(shell uname -s)
+BUILD_DIR ?= $(if $(filter Darwin,$(UNAME_S)),builddir-macos,builddir)
 
 all:
 	./build.sh
 
 run: all
-	./builddir/parla
+	./$(BUILD_DIR)/parla
 
 clean:
-	rm -rf builddir
+	rm -rf builddir builddir-macos dist/macos
 
 install:
-	install -Dm755 ./builddir/parla $(DESTDIR)$(BINDIR)/parla
+	install -Dm755 ./$(BUILD_DIR)/parla $(DESTDIR)$(BINDIR)/parla
 	install -Dm644 data/io.github.trufae.Parla.desktop $(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop
 	install -Dm644 data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg
 	install -Dm644 data/io.github.trufae.Parla.appdata.xml $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
@@ -30,3 +32,15 @@ uninstall:
 
 deb: all
 	$(MAKE) -C dist/debian
+
+macos:
+	scripts/macos/build.sh
+
+macos-run:
+	scripts/macos/run.sh
+
+macos-app:
+	scripts/macos/bundle.sh
+
+macos-dmg:
+	scripts/macos/package-dmg.sh

@@ -1,5 +1,7 @@
 builddir/
+builddir-macos/
 accounts/
+dist/macos/
 dist/debian/parla/build/
 dist/debian/parla/control/
 dist/debian/parla/data/
