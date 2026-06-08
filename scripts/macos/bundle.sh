@@ -183,6 +183,7 @@ copy_file "$ROOT/data/io.github.trufae.Parla.desktop" \
     "$RESOURCES/share/applications/io.github.trufae.Parla.desktop"
 
 copy_dir "$BREW_PREFIX/lib/gio/modules" "$RESOURCES/lib/gio/modules"
+rm -f "$RESOURCES/lib/gio/modules/giomodule.cache"
 copy_dir "$BREW_PREFIX/lib/gdk-pixbuf-2.0" "$RESOURCES/lib/gdk-pixbuf-2.0"
 copy_dir "$BREW_PREFIX/lib/gtk-4.0" "$RESOURCES/lib/gtk-4.0"
 if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
@@ -254,6 +255,10 @@ bundle_macho() {
 while IFS= read -r -d '' file; do
     bundle_macho "$file"
 done < <(find "$APP_DIR" -type f -print0)
+
+if command -v gio-querymodules >/dev/null 2>&1 && [ -d "$RESOURCES/lib/gio/modules" ]; then
+    gio-querymodules "$RESOURCES/lib/gio/modules"
+fi
 
 if [ "${CODESIGN:-adhoc}" != "none" ] && command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign "${CODESIGN_IDENTITY:--}" "$APP_DIR" >/dev/null 2>&1 || \

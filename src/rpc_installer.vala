@@ -160,6 +160,10 @@ namespace Dc {
          * the redirect from the GitHub "latest" release URL.
          */
         public static async string fetch_latest_tag () throws Error {
+            if (Platform.is_macos ()) {
+                return yield fetch_latest_tag_with_curl ();
+            }
+
             var client = new SocketClient ();
             client.timeout = 15;
             var tcp = yield client.connect_to_host_async ("github.com", 443, null);
@@ -244,7 +248,11 @@ namespace Dc {
             FileUtils.unlink (tmp);
 
             try {
-                yield https_get_to_file (url, tmp, 0);
+                if (Platform.is_macos ()) {
+                    yield curl_get_to_file (url, tmp);
+                } else {
+                    yield https_get_to_file (url, tmp, 0);
+                }
                 ensure_executable (tmp);
                 string final_path = managed_bin_path ();
                 FileUtils.unlink (final_path);
@@ -256,6 +264,105 @@ namespace Dc {
             } catch (Error e) {
                 FileUtils.unlink (tmp);
                 throw e;
+            }
+        }
+
+        private static string? macos_curl_path () {
+            if (FileUtils.test ("/usr/bin/curl", FileTest.IS_EXECUTABLE)) {
+                return "/usr/bin/curl";
+            }
+            return Environment.find_program_in_path ("curl");
+        }
+
+        private static string curl_failure_message (string? stderr_buf) {
+            string msg = (stderr_buf ?? "").strip ();
+            return msg.length > 0 ? msg : "curl exited unsuccessfully";
+        }
+
+        private static async string fetch_latest_tag_with_curl () throws Error {
+            string? curl = macos_curl_path ();
+            if (curl == null) {
+                throw new IOError.NOT_SUPPORTED ("curl is required to download on macOS");
+            }
+
+            var process = new Subprocess (
+                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
+                curl,
+                "--head",
+                "--silent",
+                "--show-error",
+                "--max-time", "15",
+                "--user-agent", "Parla",
+                "https://github.com/chatmail/core/releases/latest");
+
+            string? stdout_buf;
+            string? stderr_buf;
+            yield process.communicate_utf8_async (
+                null, null, out stdout_buf, out stderr_buf);
+
+            if (!process.get_successful ()) {
+                throw new IOError.FAILED (curl_failure_message (stderr_buf));
+            }
+
+            string? location = null;
+            foreach (string line in (stdout_buf ?? "").split ("\n")) {
+                string stripped = line.strip ();
+                if (stripped.down ().has_prefix ("location:")) {
+                    location = stripped.substring ("location:".length).strip ();
+                    break;
+                }
+            }
+
+            if (location == null) {
+                throw new IOError.FAILED ("GitHub response did not include a release redirect");
+            }
+
+            string? tag = extract_release_tag (location);
+            if (tag == null) {
+                throw new IOError.FAILED ("GitHub response did not include a release tag");
+            }
+            return tag;
+        }
+
+        private async void curl_get_to_file (string url, string dest) throws Error {
+            string? curl = macos_curl_path ();
+            if (curl == null) {
+                throw new IOError.NOT_SUPPORTED ("curl is required to download on macOS");
+            }
+
+            progress (0, -1);
+
+            var process = new Subprocess (
+                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
+                curl,
+                "--location",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--connect-timeout", "15",
+                "--max-time", "300",
+                "--user-agent", "Parla",
+                "--output", dest,
+                url);
+
+            string? stdout_buf;
+            string? stderr_buf;
+            yield process.communicate_utf8_async (
+                null, null, out stdout_buf, out stderr_buf);
+
+            if (!process.get_successful ()) {
+                throw new IOError.FAILED (curl_failure_message (stderr_buf));
+            }
+
+            try {
+                var info = File.new_for_path (dest).query_info (
+                    FileAttribute.STANDARD_SIZE,
+                    FileQueryInfoFlags.NONE,
+                    null);
+                int64 size = info.get_size ();
+                progress (size, size);
+            } catch (Error e) {
+                progress (0, -1);
             }
         }
 
