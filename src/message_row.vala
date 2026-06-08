@@ -600,6 +600,7 @@ namespace Dc {
         /** Message body label with markdown + link markup. Shared by both row styles. */
         private static Gtk.Label build_text_label (Message msg, int max_width_chars) {
             var text = new Gtk.Label (msg.text);
+            bool big_emoji = is_single_emoji_text (msg.text);
             try {
                 string markup = Markdown.format (msg.text);
                 var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
@@ -613,6 +614,7 @@ namespace Dc {
             text.wrap_mode = Pango.WrapMode.WORD_CHAR;
             text.halign = Gtk.Align.START; text.xalign = 0;
             text.selectable = true;
+            if (big_emoji) text.add_css_class ("message-big-emoji");
             if (max_width_chars > 0) text.max_width_chars = max_width_chars;
 
             /* Delta Chat invite links join in-app instead of bouncing through a
@@ -625,6 +627,119 @@ namespace Dc {
                 return false;
             });
             return text;
+        }
+
+        private static bool is_single_emoji_text (string? raw) {
+            if (raw == null) return false;
+            string text = raw.strip ();
+            if (text.length == 0) return false;
+
+            int index = 0;
+            if (!consume_emoji_sequence (text, ref index)) return false;
+            return index == text.length;
+        }
+
+        private static bool consume_emoji_sequence (string text, ref int index) {
+            unichar c;
+            if (!text.get_next_char (ref index, out c)) return false;
+
+            if (is_keycap_base (c)) {
+                consume_variation_selectors (text, ref index);
+                return consume_char (text, ref index, 0x20e3);
+            }
+
+            if (is_regional_indicator (c)) {
+                if (!text.get_next_char (ref index, out c)) return false;
+                return is_regional_indicator (c);
+            }
+
+            if (!is_emoji_base (c)) return false;
+            consume_emoji_modifiers (text, ref index);
+
+            while (consume_char (text, ref index, 0x200d)) {
+                if (!text.get_next_char (ref index, out c)) return false;
+                if (!is_emoji_base (c)) return false;
+                consume_emoji_modifiers (text, ref index);
+            }
+
+            return true;
+        }
+
+        private static bool consume_char (string text, ref int index, unichar expected) {
+            int next = index;
+            unichar c;
+            if (!text.get_next_char (ref next, out c)) return false;
+            if (c != expected) return false;
+            index = next;
+            return true;
+        }
+
+        private static void consume_emoji_modifiers (string text, ref int index) {
+            while (consume_variation_selectors (text, ref index)
+                   || consume_emoji_modifier (text, ref index)) {
+            }
+            consume_tag_sequence (text, ref index);
+        }
+
+        private static bool consume_variation_selectors (string text, ref int index) {
+            bool consumed = false;
+            while (true) {
+                int next = index;
+                unichar c;
+                if (!text.get_next_char (ref next, out c)) return consumed;
+                if (c != 0xfe0e && c != 0xfe0f) return consumed;
+                index = next;
+                consumed = true;
+            }
+        }
+
+        private static bool consume_emoji_modifier (string text, ref int index) {
+            int next = index;
+            unichar c;
+            if (!text.get_next_char (ref next, out c)) return false;
+            if (c < 0x1f3fb || c > 0x1f3ff) return false;
+            index = next;
+            return true;
+        }
+
+        private static void consume_tag_sequence (string text, ref int index) {
+            int before = index;
+            int next = index;
+            unichar c;
+            bool has_tag = false;
+            while (text.get_next_char (ref next, out c)) {
+                if (c < 0xe0020 || c > 0xe007e) break;
+                index = next;
+                has_tag = true;
+            }
+            if (has_tag && consume_char (text, ref index, 0xe007f)) return;
+            index = before;
+        }
+
+        private static bool is_keycap_base (unichar c) {
+            return c == 0x23 || c == 0x2a || (c >= 0x30 && c <= 0x39);
+        }
+
+        private static bool is_regional_indicator (unichar c) {
+            return c >= 0x1f1e6 && c <= 0x1f1ff;
+        }
+
+        private static bool is_emoji_base (unichar c) {
+            return c == 0x00a9 || c == 0x00ae
+                || c == 0x203c || c == 0x2049
+                || c == 0x2122 || c == 0x2139
+                || (c >= 0x2194 && c <= 0x21aa)
+                || c == 0x231a || c == 0x231b || c == 0x2328 || c == 0x23cf
+                || (c >= 0x23e9 && c <= 0x23f3)
+                || (c >= 0x23f8 && c <= 0x23fa)
+                || c == 0x24c2
+                || c == 0x25aa || c == 0x25ab || c == 0x25b6 || c == 0x25c0
+                || (c >= 0x25fb && c <= 0x25fe)
+                || (c >= 0x2600 && c <= 0x27bf)
+                || c == 0x2934 || c == 0x2935
+                || (c >= 0x2b05 && c <= 0x2b55)
+                || c == 0x3030 || c == 0x303d || c == 0x3297 || c == 0x3299
+                || (c >= 0x1f000 && c <= 0x1faff);
         }
 
         /** Reaction badge bar, or null when the message has no reactions. */

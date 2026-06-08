@@ -35,6 +35,10 @@
     opacity: 0.7;
 }
 
+.message-big-emoji {
+    font-size: 500%;
+}
+
 .message-attachment {
     padding: 4px 0;
 }

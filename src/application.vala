@@ -234,6 +234,9 @@ namespace Dc {
                 font-style: italic;
                 opacity: 0.7;
             }
+            .message-big-emoji {
+                font-size: 500%;
+            }
             .message-irc {
                 padding: 1px 0;
             }
