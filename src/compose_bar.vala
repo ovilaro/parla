@@ -250,7 +250,7 @@ namespace Dc {
         /* Insert text at the cursor and take focus. Used by the window's
            type-ahead so pressing a key anywhere starts a message. */
         public void type_text (string text) {
-            bool open_emoji = text == ":" && is_emoji_trigger_context ();
+            bool open_emoji = text == ":" && previous_char_is_colon ();
             text_view.buffer.insert_at_cursor (text, text.length);
             text_view.grab_focus ();
             if (open_emoji) open_emoji_picker_after_typed_colon ();
@@ -518,7 +518,9 @@ namespace Dc {
             /* Escape (and dropping the active reply/edit/attachment mode) is
                handled centrally in the window key handler so the two-press
                behavior is consistent. */
-            if (is_plain_colon_key (keyval, state) && is_emoji_trigger_context ()) {
+            /* The emoji picker is opened by typing a second colon ("::"),
+               so it only fires when one is already in front of the cursor. */
+            if (is_plain_colon_key (keyval, state) && previous_char_is_colon ()) {
                 open_emoji_picker_after_typed_colon ();
                 return false;
             }
@@ -556,7 +558,7 @@ namespace Dc {
             return mods == 0;
         }
 
-        private bool is_emoji_trigger_context () {
+        private bool previous_char_is_colon () {
             Gtk.TextIter cursor;
             Gtk.TextIter selection_start, selection_end;
             if (text_view.buffer.get_selection_bounds (out selection_start,
@@ -566,11 +568,9 @@ namespace Dc {
                 text_view.buffer.get_iter_at_mark (out cursor,
                                                    text_view.buffer.get_insert ());
             }
-            if (cursor.get_offset () == 0) return true;
-
             Gtk.TextIter previous = cursor;
-            if (!previous.backward_char ()) return true;
-            return previous.get_char ().isspace ();
+            if (!previous.backward_char ()) return false;
+            return previous.get_char () == ':';
         }
 
         private void open_emoji_picker_after_typed_colon () {
@@ -589,8 +589,8 @@ namespace Dc {
             Gtk.TextIter end;
             text_view.buffer.get_iter_at_mark (out end, text_view.buffer.get_insert ());
             Gtk.TextIter start = end;
-            if (!start.backward_char ()) return false;
-            if (start.get_char () != ':') return false;
+            if (!start.backward_char () || !start.backward_char ()) return false;
+            if (text_view.buffer.get_text (start, end, false) != "::") return false;
 
             text_view.buffer.create_mark (EMOJI_TRIGGER_START_MARK, start, true);
             text_view.buffer.create_mark (EMOJI_TRIGGER_END_MARK, end, false);
@@ -606,7 +606,7 @@ namespace Dc {
             text_view.buffer.get_iter_at_mark (out start, start_mark);
             text_view.buffer.get_iter_at_mark (out end, end_mark);
             if (start.compare (end) >= 0
-                || text_view.buffer.get_text (start, end, false) != ":") {
+                || text_view.buffer.get_text (start, end, false) != "::") {
                 clear_emoji_trigger_marks ();
                 return false;
             }

@@ -2112,6 +2112,17 @@ namespace Dc {
                 list.append (row);
             }
 
+            /* The emoji picker opens on a typed "::" rather than a key
+               accelerator, so it gets a plain-text suffix instead of a
+               Gtk.ShortcutLabel. */
+            var emoji_row = new Adw.ActionRow ();
+            emoji_row.title = "Emoji picker";
+            var emoji_lbl = new Gtk.Label ("::");
+            emoji_lbl.valign = Gtk.Align.CENTER;
+            emoji_lbl.add_css_class ("dim-label");
+            emoji_row.add_suffix (emoji_lbl);
+            list.append (emoji_row);
+
             scroller.child = list;
             box.append (scroller);
             dialog.child = box;
