@@ -163,7 +163,8 @@ namespace Dc {
             var value = yield drop.read_value_async (typeof (Gdk.FileList),
                                                      Priority.DEFAULT, null);
             var fl = value == null ? null : (Gdk.FileList?) value.get_boxed ();
-            var files = fl == null ? null : fl.get_files ();
+            GLib.SList<weak GLib.File>? files = null;
+            if (fl != null) files = fl.get_files ();
             if (files == null || files.data == null) return null;
 
             unowned GLib.File borrowed = files.data;
