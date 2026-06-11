@@ -76,6 +76,7 @@ namespace Dc {
                     sender.add_css_class ("message-sender");
                     sender.halign = Gtk.Align.START;
                     sender.xalign = 0;
+                    sender.ellipsize = Pango.EllipsizeMode.END;
                     if (msg.sender_address != null && msg.sender_address.length > 0)
                         sender.tooltip_text = msg.sender_address;
                     bubble.append (sender);
@@ -190,6 +191,7 @@ namespace Dc {
                 ? "message-sender-self" : "message-sender-other");
             sender_lbl.valign = Gtk.Align.START;
             sender_lbl.xalign = 0;
+            sender_lbl.ellipsize = Pango.EllipsizeMode.END;
             this.append (sender_lbl);
 
             var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
@@ -318,12 +320,21 @@ namespace Dc {
                 if (min_h > 0 && dh < min_h) {
                     dw = (int) ((double) dw * min_h / dh); dh = min_h;
                 }
+                /* Bake the display size into the texture so it becomes the
+                   picture's natural size, and keep can_shrink on. A hard
+                   set_size_request would become a minimum width that
+                   propagates up to the window and crops the whole UI on
+                   screens narrower than the bubble (issue #31). */
+                if (dw != pixbuf.width || dh != pixbuf.height) {
+                    var scaled = pixbuf.scale_simple (dw, dh, Gdk.InterpType.BILINEAR);
+                    if (scaled != null) pixbuf = scaled;
+                }
                 var texture = Gdk.Texture.for_pixbuf (pixbuf);
                 var picture = new Gtk.Picture.for_paintable (texture);
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
-                picture.can_shrink = false;
+                picture.can_shrink = true;
+                picture.halign = Gtk.Align.START;
                 picture.add_css_class ("message-image");
-                picture.set_size_request (dw, dh);
                 return picture;
             } catch (Error e) {
                 stderr.printf ("  -> Image load failed: %s\n", e.message);
@@ -388,6 +399,7 @@ namespace Dc {
             lbl.add_css_class ("message-forwarded");
             lbl.halign = Gtk.Align.START;
             lbl.xalign = 0;
+            lbl.ellipsize = Pango.EllipsizeMode.END;
             if (!msg.is_outgoing && msg.sender_address != null
                 && msg.sender_address.length > 0) {
                 lbl.tooltip_text = msg.sender_address;
@@ -481,9 +493,13 @@ namespace Dc {
             var overlay = new Gtk.Overlay ();
             overlay.halign = Gtk.Align.START;
 
-            var bg = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            /* An empty paintable gives the card its 260x150 natural size
+               while can_shrink keeps the minimum at zero, so the card scales
+               down on narrow screens instead of propagating a hard minimum
+               width up to the window (issue #31). */
+            var bg = new Gtk.Picture.for_paintable (Gdk.Paintable.empty (260, 150));
+            bg.can_shrink = true;
             bg.add_css_class ("message-video-bg");
-            bg.set_size_request (260, 150);
             overlay.child = bg;
 
             var play = new Gtk.Image.from_icon_name ("media-playback-start-symbolic");

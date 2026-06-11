@@ -91,7 +91,7 @@ namespace Dc {
                 application: app,
                 default_width: 920,
                 default_height: 640,
-                width_request: 360,
+                width_request: 300,
                 height_request: 320,
                 title: "Parla"
             );
@@ -284,6 +284,18 @@ namespace Dc {
             chat_listbox.add_css_class ("navigation-sidebar");
             chat_listbox.set_filter_func (filter_chats);
             chat_listbox.row_selected.connect (on_chat_selected);
+            /* row_selected does not fire when tapping the already-selected
+               chat, so that tap would otherwise do nothing in collapsed
+               (mobile) mode. Close the sidebar to return to the conversation.
+               For different-chat taps row_selected runs first and has already
+               closed the sidebar, so this is a no-op. */
+            chat_listbox.row_activated.connect ((row) => {
+                if (split_view.collapsed && split_view.show_sidebar) {
+                    split_view.show_sidebar = false;
+                    var v = current_view ();
+                    if (v != null && this.is_active) v.flush_pending_seen ();
+                }
+            });
 
             /* Right-click context menu */
             var right_click = new Gtk.GestureClick ();
@@ -309,6 +321,7 @@ namespace Dc {
             content_header = new Adw.HeaderBar ();
             content_title_label = new Gtk.Label ("Select a chat");
             content_title_label.add_css_class ("heading");
+            content_title_label.ellipsize = Pango.EllipsizeMode.END;
             content_header.title_widget = content_title_label;
 
             /* Sidebar tri-state cycle button (Full → Compact → Hidden → Full) */
@@ -356,6 +369,15 @@ namespace Dc {
                 Adw.BreakpointCondition.parse ("max-width: 600px"));
             breakpoint.add_setter (split_view, "collapsed", true);
             this.add_breakpoint (breakpoint);
+
+            /* min-sidebar-width is a hard minimum for the whole split view
+               even while collapsed and hidden, so below ~280px it would force
+               the window minimum to 260px and GTK would warn-loop at 100%
+               CPU. Let the sidebar narrow along with the window instead. */
+            var narrow_bp = new Adw.Breakpoint (
+                Adw.BreakpointCondition.parse ("max-width: 280px"));
+            narrow_bp.add_setter (split_view, "min-sidebar-width", 220.0);
+            this.add_breakpoint (narrow_bp);
 
             /* When the window widens out of the collapsed breakpoint, re-apply
                the persisted mode so a chat-selected-while-narrow doesn't leave
@@ -811,6 +833,9 @@ namespace Dc {
 
             if (chat_id == current_chat_id) {
                 if (suppress_reselect_scroll) return;
+                if (split_view.collapsed) {
+                    split_view.show_sidebar = false;
+                }
                 var v = current_view ();
                 if (v != null) {
                     v.on_reselected ();
