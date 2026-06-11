@@ -218,6 +218,29 @@ namespace Dc {
             text_view.buffer.changed.connect (update_placeholder);
             update_placeholder ();
 
+            /* A bare TextView reports the height of its last *validated*
+               layout, which is computed asynchronously and for the width it
+               had at the time. When its width changes (the cancel-edit
+               button appearing, a window resize) or multi-line text is set
+               programmatically, the surrounding box keeps the stale height
+               and the text gets clipped. The view tracks its content height
+               in the vadjustment's "upper", so whenever that settles on a
+               new value force a revalidation (the measure) and requeue a
+               resize — deferred to idle because the value changes during
+               allocation. */
+            var entry_vadj = new Gtk.Adjustment (0, 0, 0, 0, 0, 0);
+            entry_vadj.notify["upper"].connect (() => {
+                GLib.Idle.add (() => {
+                    int b1, b2, b3, b4;
+                    text_view.measure (Gtk.Orientation.VERTICAL,
+                                       text_view.get_width (),
+                                       out b1, out b2, out b3, out b4);
+                    text_view.queue_resize ();
+                    return GLib.Source.REMOVE;
+                });
+            });
+            text_view.vadjustment = entry_vadj;
+
             var key_ctrl = new Gtk.EventControllerKey ();
             key_ctrl.key_pressed.connect (on_entry_key_pressed);
             text_view.add_controller (key_ctrl);
@@ -463,6 +486,13 @@ namespace Dc {
             Gtk.TextIter end_iter;
             text_view.buffer.get_end_iter (out end_iter);
             text_view.buffer.place_cursor (end_iter);
+            /* If the message is taller than the space the entry gets, make
+               sure the cursor end is on screen. Deferred to idle so the
+               text view has validated the new content first. */
+            GLib.Idle.add (() => {
+                text_view.scroll_mark_onscreen (text_view.buffer.get_insert ());
+                return GLib.Source.REMOVE;
+            });
         }
 
         private void cancel_edit () {
@@ -478,6 +508,15 @@ namespace Dc {
         public bool has_active_mode () {
             return editing_msg_id != 0 || replying_msg_id != 0
                 || pending_file != null;
+        }
+
+        /* True when keyboard focus is in the message entry. */
+        public bool entry_has_focus () {
+            var root = get_root () as Gtk.Window;
+            if (root == null) return false;
+            var fw = root.get_focus ();
+            return fw != null
+                && (fw == text_view || fw.is_ancestor (text_view));
         }
 
         /* Drop whichever of reply/edit/attachment is active and return to

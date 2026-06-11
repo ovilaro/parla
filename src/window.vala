@@ -1941,7 +1941,11 @@ namespace Dc {
                 if (dismissed) {
                     escape_armed = false;
                 } else if (v != null && v.has_active_compose_mode ()) {
-                    if (escape_armed) {
+                    /* With focus already in the entry the first Escape has
+                       nothing else to do, so drop the reply/edit/attachment
+                       right away; from anywhere else the first Escape only
+                       focuses the entry and the second one cancels. */
+                    if (escape_armed || v.compose_entry_has_focus ()) {
                         v.cancel_active_compose_mode ();
                         escape_armed = false;
                     } else {
@@ -2115,7 +2119,7 @@ namespace Dc {
             "Refresh messages",      "<Primary>r",
             "Cycle sidebar mode",    "<Primary>s",
             "Focus message entry",   "Escape",
-            "Cancel reply/edit/image", "Escape+Escape",
+            "Cancel reply/edit/image", "Escape",
             "Close window",          "<Primary>w",
             "Quit application",      "<Primary>q",
         };

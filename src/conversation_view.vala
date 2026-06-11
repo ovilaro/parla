@@ -387,6 +387,10 @@ namespace Dc {
             return compose_bar.has_active_mode ();
         }
 
+        public bool compose_entry_has_focus () {
+            return compose_bar.entry_has_focus ();
+        }
+
         public void cancel_active_compose_mode () {
             compose_bar.cancel_active_mode ();
         }
