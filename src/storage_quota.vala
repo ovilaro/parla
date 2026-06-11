@@ -5,6 +5,8 @@ namespace Dc {
         public int64 used_bytes { get; set; default = 0; }
         public int64 limit_bytes { get; set; default = 0; }
 
+        private const double WARNING_FRACTION = 0.75;
+        private const double ERROR_FRACTION = 0.95;
         private static Regex? quota_re = null;
 
         public static StorageQuota parse_connectivity_report (string report) {
@@ -28,6 +30,46 @@ namespace Dc {
             }
 
             return quota;
+        }
+
+        public bool has_limit () {
+            return available && limit_bytes > 0;
+        }
+
+        public int64 left_bytes () {
+            int64 left = limit_bytes - used_bytes;
+            return left > 0 ? left : 0;
+        }
+
+        public double used_fraction () {
+            if (!has_limit ()) return 0.0;
+
+            double fraction = (double) used_bytes / (double) limit_bytes;
+            if (fraction < 0.0) return 0.0;
+            if (fraction > 1.0) return 1.0;
+            return fraction;
+        }
+
+        public bool is_warning () {
+            double fraction = used_fraction ();
+            return fraction >= WARNING_FRACTION && fraction < ERROR_FRACTION;
+        }
+
+        public bool is_error () {
+            return used_fraction () >= ERROR_FRACTION;
+        }
+
+        public string summary_text () {
+            if (!has_limit ()) return "Server quota has not been reported yet.";
+            return "%s used · %s left of %s".printf (
+                format_mb (used_bytes),
+                format_mb (left_bytes ()),
+                format_mb (limit_bytes));
+        }
+
+        public static string format_mb (int64 bytes) {
+            double mb = (double) bytes / (1024.0 * 1024.0);
+            return "%.1f MB".printf (mb);
         }
 
         private static void ensure_regex () throws RegexError {

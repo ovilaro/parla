@@ -325,42 +325,13 @@ namespace Dc {
 
                 string html = yield rpc.get_connectivity_html (account_id);
                 var quota = StorageQuota.parse_connectivity_report (html);
-                set_storage_quota_summary (quota);
+                apply_quota_progress (storage_progress, quota);
+                storage_summary_label.label = quota.summary_text ();
             } catch (Error e) {
                 connectivity_status_label.label = "Connection details unavailable";
                 storage_summary_label.label = e.message;
                 storage_progress.fraction = 0.0;
             }
-        }
-
-        private void set_storage_quota_summary (StorageQuota quota) {
-            storage_progress.remove_css_class ("storage-quota-warning");
-            storage_progress.remove_css_class ("storage-quota-error");
-
-            if (!quota.available || quota.limit_bytes <= 0) {
-                storage_progress.fraction = 0.0;
-                storage_summary_label.label =
-                    "Server quota has not been reported yet.";
-                return;
-            }
-
-            double fraction = (double) quota.used_bytes / (double) quota.limit_bytes;
-            if (fraction < 0.0) fraction = 0.0;
-            if (fraction > 1.0) fraction = 1.0;
-            storage_progress.fraction = fraction;
-
-            if (fraction >= 0.95) {
-                storage_progress.add_css_class ("storage-quota-error");
-            } else if (fraction >= 0.75) {
-                storage_progress.add_css_class ("storage-quota-warning");
-            }
-
-            int64 left = quota.limit_bytes - quota.used_bytes;
-            if (left < 0) left = 0;
-            storage_summary_label.label = "%s used · %s left of %s".printf (
-                format_mb (quota.used_bytes),
-                format_mb (left),
-                format_mb (quota.limit_bytes));
         }
 
         private static string connection_label_for_state (int state) {
@@ -605,7 +576,9 @@ namespace Dc {
 
                 try {
                     string html = yield rpc.get_connectivity_html (account_id);
-                    set_quota (StorageQuota.parse_connectivity_report (html));
+                    var quota = StorageQuota.parse_connectivity_report (html);
+                    apply_quota_progress (quota_progress, quota);
+                    quota_label.label = quota.summary_text ();
                 } catch (Error e) {
                     quota_progress.fraction = 0.0;
                     quota_label.label = "Server quota unavailable: " + e.message;
@@ -618,14 +591,14 @@ namespace Dc {
                 if (account_bytes > 0) {
                     local_total_label.label =
                         "%s local account data · %s downloaded message files · %s known attachment payload".printf (
-                            format_mb (account_bytes),
-                            format_mb (unique_local_file_bytes),
-                            format_mb (known_attachment_bytes));
+                            StorageQuota.format_mb (account_bytes),
+                            StorageQuota.format_mb (unique_local_file_bytes),
+                            StorageQuota.format_mb (known_attachment_bytes));
                 } else {
                     local_total_label.label =
                         "%s downloaded message files · %s known attachment payload".printf (
-                            format_mb (unique_local_file_bytes),
-                            format_mb (known_attachment_bytes));
+                            StorageQuota.format_mb (unique_local_file_bytes),
+                            StorageQuota.format_mb (known_attachment_bytes));
                 }
 
                 scan_status_label.label = usages.length == 0
@@ -636,32 +609,6 @@ namespace Dc {
             }
 
             refresh_btn.sensitive = true;
-        }
-
-        private void set_quota (StorageQuota quota) {
-            quota_progress.remove_css_class ("storage-quota-warning");
-            quota_progress.remove_css_class ("storage-quota-error");
-
-            if (!quota.available || quota.limit_bytes <= 0) {
-                quota_progress.fraction = 0.0;
-                quota_label.label = "Server quota has not been reported yet.";
-                return;
-            }
-
-            double fraction = (double) quota.used_bytes / (double) quota.limit_bytes;
-            if (fraction < 0.0) fraction = 0.0;
-            if (fraction > 1.0) fraction = 1.0;
-            quota_progress.fraction = fraction;
-
-            if (fraction >= 0.95) quota_progress.add_css_class ("storage-quota-error");
-            else if (fraction >= 0.75) quota_progress.add_css_class ("storage-quota-warning");
-
-            int64 left = quota.limit_bytes - quota.used_bytes;
-            if (left < 0) left = 0;
-            quota_label.label = "%s used · %s left of %s".printf (
-                format_mb (quota.used_bytes),
-                format_mb (left),
-                format_mb (quota.limit_bytes));
         }
 
         private async ChatStorageUsage[] scan_all_chats () throws Error {
@@ -817,7 +764,7 @@ namespace Dc {
             title.hexpand = true;
             top.append (title);
 
-            var amount = new Gtk.Label (format_mb (usage.total_bytes ()));
+            var amount = new Gtk.Label (StorageQuota.format_mb (usage.total_bytes ()));
             amount.add_css_class ("numeric");
             amount.halign = Gtk.Align.END;
             top.append (amount);
@@ -825,8 +772,8 @@ namespace Dc {
 
             var subtitle = new Gtk.Label (
                 "%s local · %s attached · %d files · %d messages".printf (
-                    format_mb (usage.local_bytes),
-                    format_mb (usage.remote_bytes),
+                    StorageQuota.format_mb (usage.local_bytes),
+                    StorageQuota.format_mb (usage.remote_bytes),
                     usage.local_file_count,
                     usage.message_count));
             subtitle.halign = Gtk.Align.START;
@@ -855,9 +802,16 @@ namespace Dc {
         }
     }
 
-    private static string format_mb (int64 bytes) {
-        double mb = (double) bytes / (1024.0 * 1024.0);
-        return "%.1f MB".printf (mb);
+    private static void apply_quota_progress (Gtk.ProgressBar progress,
+                                              StorageQuota quota) {
+        progress.remove_css_class ("storage-quota-warning");
+        progress.remove_css_class ("storage-quota-error");
+        progress.fraction = quota.used_fraction ();
+        if (quota.is_error ()) {
+            progress.add_css_class ("storage-quota-error");
+        } else if (quota.is_warning ()) {
+            progress.add_css_class ("storage-quota-warning");
+        }
     }
 
     public class InviteCodeDialog : Adw.Dialog {
