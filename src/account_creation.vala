@@ -1,18 +1,5 @@
 namespace Dc {
 
-    /**
-     * Account-creation flows. Hosts the dialog(s) that turn the four
-     * "Add Account" entry points into concrete RPC calls.
-     *
-     * Currently implemented:
-     *   - Create new profile (CreateProfileDialog) — chatmail relay
-     *   - Add as secondary device (ReceiveBackupDialog)
-     *   - Use invitation code (InvitationCodeProfileDialog)
-     *
-     * Stubs for future work:
-     *   - Use classic email address (lives in window.vala for now)
-     */
-
     private static Gtk.Box account_setup_content () {
         var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
         content.margin_start = content.margin_end = 18;
@@ -61,6 +48,44 @@ namespace Dc {
         return box;
     }
 
+    private static Gtk.Stack account_setup_dialog (Adw.Dialog dialog,
+                                                    string title,
+                                                    Gtk.Widget input_page,
+                                                    Gtk.Widget progress_page) {
+        dialog.title = title;
+        dialog.content_width = 480;
+        dialog.can_close = true;
+        var stack = account_setup_stack (input_page, progress_page);
+        dialog.child = account_setup_shell (stack);
+        install_escape_close (dialog);
+        return stack;
+    }
+
+    private static Gtk.Button account_setup_action (Gtk.Box content,
+                                                    string label,
+                                                    owned VoidFunc action,
+                                                    bool with_margin = true) {
+        var row = account_setup_action_row (with_margin);
+        var button = new Gtk.Button.with_label (label);
+        button.add_css_class ("suggested-action");
+        button.clicked.connect (() => { action (); });
+        row.append (button);
+        content.append (row);
+        return button;
+    }
+
+    private static Gtk.Entry account_setup_entry (string placeholder,
+                                                  bool hexpand = false,
+                                                  Gtk.InputPurpose purpose =
+                                                      Gtk.InputPurpose.FREE_FORM) {
+        var entry = new Gtk.Entry ();
+        entry.placeholder_text = placeholder;
+        entry.input_purpose = purpose;
+        entry.hexpand = hexpand;
+        entry.activates_default = true;
+        return entry;
+    }
+
     private static void disconnect_progress_handler (EventHandler events,
                                                      ref ulong handler_id) {
         if (handler_id == 0) return;
@@ -86,6 +111,21 @@ namespace Dc {
         }
         try { yield rpc.remove_account (account_id); }
         catch (Error e) { /* ignore */ }
+    }
+
+    private static void cleanup_unfinished_account (RpcClient rpc,
+                                                    ref int account_id,
+                                                    bool finished) {
+        if (finished || account_id <= 0) return;
+        int aid = account_id;
+        account_id = 0;
+        cleanup_pending_account.begin (rpc, aid, true);
+    }
+
+    private static bool close_if_idle (Adw.Dialog dialog, bool running) {
+        if (running) return false;
+        dialog.close ();
+        return true;
     }
 
     private class AccountProgressPage : Gtk.Box {
@@ -155,12 +195,6 @@ namespace Dc {
         }
     }
 
-    /**
-     * Creates a fresh chatmail profile on the relay chosen by the user.
-     * Server-side picks an address, returns credentials, and the rpc
-     * server configures the account end-to-end. ConfigureProgress events
-     * drive the progress bar.
-     */
     public class CreateProfileDialog : Adw.Dialog {
 
         public signal void account_created (int new_account_id);
@@ -184,19 +218,10 @@ namespace Dc {
             this.rpc = rpc;
             this.events = events;
 
-            this.title = "Create New Profile";
-            this.content_width = 480;
-            this.can_close = true;
-
-            stack = account_setup_stack (
+            stack = account_setup_dialog (this, "Create New Profile",
                 build_input_page (), build_progress_page ());
-            this.child = account_setup_shell (stack);
-
-            install_escape_close (this);
             this.closed.connect (on_dialog_closed);
         }
-
-        /* ---- UI ---- */
 
         private Gtk.Widget build_input_page () {
             var content = account_setup_content ();
@@ -207,9 +232,7 @@ namespace Dc {
 
             content.append (account_setup_heading ("Display Name"));
 
-            name_entry = new Gtk.Entry ();
-            name_entry.placeholder_text = "Your name";
-            name_entry.activates_default = true;
+            name_entry = account_setup_entry ("Your name");
             content.append (name_entry);
 
             content.append (account_setup_heading ("Server"));
@@ -227,13 +250,9 @@ namespace Dc {
                 "chatmail.at/relays</a> for the full list.";
             content.append (hint);
 
-            var row = account_setup_action_row ();
-            create_btn = new Gtk.Button.with_label ("Create Profile");
-            create_btn.add_css_class ("suggested-action");
-            create_btn.clicked.connect (() => { do_create.begin (); });
-            row.append (create_btn);
+            create_btn = account_setup_action (content, "Create Profile",
+                () => { do_create.begin (); });
             this.default_widget = create_btn;
-            content.append (row);
 
             return content;
         }
@@ -243,8 +262,6 @@ namespace Dc {
             progress_page.cancel_requested.connect (cancel_create);
             return progress_page;
         }
-
-        /* ---- Flow ---- */
 
         private async void do_create () {
             if (create_running) return;
@@ -282,9 +299,7 @@ namespace Dc {
                 try {
                     yield rpc.batch_set_config ("displayname", display_name,
                                                   new_account_id);
-                } catch (Error e) {
-                    /* non-fatal — just continue */
-                }
+                } catch (Error e) { /* ignore */ }
             }
 
             if (cancelled) {
@@ -333,30 +348,15 @@ namespace Dc {
                 return;
             }
             cancelled = true;
-            /* Close the dialog immediately so the user gets feedback.
-               The in-flight RPC may be inside a network retry loop and take
-               many seconds to return — on_dialog_closed handles cleanup. */
             this.close ();
         }
 
         private void on_dialog_closed () {
             cleanup_signal ();
-            if (!create_finished && new_account_id > 0) {
-                int aid = new_account_id;
-                new_account_id = 0;
-                cleanup_pending_account.begin (rpc, aid, true);
-            }
+            cleanup_unfinished_account (rpc, ref new_account_id, create_finished);
         }
     }
 
-    /**
-     * Creates a profile from a pasted Delta Chat invitation/account link.
-     *
-     * DCACCOUNT/DCLOGIN links configure the new profile directly using the
-     * linked server credentials. Secure-join invitation links first create a
-     * default chatmail profile and then accept the invite on the new profile,
-     * matching Delta Chat Desktop's instant-onboarding flow.
-     */
     public class InvitationCodeProfileDialog : Adw.Dialog {
 
         public signal void account_created (int new_account_id, int chat_id);
@@ -378,15 +378,8 @@ namespace Dc {
             this.rpc = rpc;
             this.events = events;
 
-            this.title = "Use Invitation Code";
-            this.content_width = 480;
-            this.can_close = true;
-
-            stack = account_setup_stack (
+            stack = account_setup_dialog (this, "Use Invitation Code",
                 build_input_page (), build_progress_page ());
-            this.child = account_setup_shell (stack);
-
-            install_escape_close (this);
             this.closed.connect (on_dialog_closed);
         }
 
@@ -397,23 +390,17 @@ namespace Dc {
                 "use the linked server; contact and group invites create a new " +
                 "chatmail profile first."));
 
-            invite_entry = new Gtk.Entry ();
-            invite_entry.placeholder_text = "dcaccount:example.org or https://i.delta.chat/#...";
-            invite_entry.input_purpose = Gtk.InputPurpose.URL;
-            invite_entry.hexpand = true;
-            invite_entry.activates_default = true;
+            invite_entry = account_setup_entry (
+                "dcaccount:example.org or https://i.delta.chat/#...",
+                true, Gtk.InputPurpose.URL);
             invite_entry.changed.connect (update_start_sensitivity);
             content.append (invite_entry);
 
-            var row = account_setup_action_row (false);
-            start_btn = new Gtk.Button.with_label ("Create Profile");
-            start_btn.add_css_class ("suggested-action");
+            start_btn = account_setup_action (content, "Create Profile",
+                () => { start_create.begin (); }, false);
             start_btn.sensitive = false;
-            start_btn.clicked.connect (() => { start_create.begin (); });
-            row.append (start_btn);
 
             this.default_widget = start_btn;
-            content.append (row);
 
             return content;
         }
@@ -527,33 +514,16 @@ namespace Dc {
         }
 
         private void cancel_create () {
-            if (!create_running) {
-                this.close ();
-                return;
-            }
-            if (new_account_id > 0) {
-                stop_ongoing_account (rpc, new_account_id);
-            }
+            if (close_if_idle (this, create_running)) return;
+            stop_ongoing_account (rpc, new_account_id);
         }
 
         private void on_dialog_closed () {
             cleanup_signal ();
-            if (!create_finished && new_account_id > 0) {
-                int aid = new_account_id;
-                new_account_id = 0;
-                cleanup_pending_account.begin (rpc, aid, true);
-            }
+            cleanup_unfinished_account (rpc, ref new_account_id, create_finished);
         }
     }
 
-    /**
-     * Imports a profile from another device using the dcbackup token shown
-     * by the source device. The user pastes the token into the entry; we
-     * call get_backup() and stream ImexProgress to a progress bar. Cancel
-     * stops the ongoing process and removes the half-imported account.
-     *
-     * On success the new account_id is reported via account_imported.
-     */
     public class ReceiveBackupDialog : Adw.Dialog {
 
         public signal void account_imported (int new_account_id);
@@ -575,19 +545,10 @@ namespace Dc {
             this.rpc = rpc;
             this.events = events;
 
-            this.title = "Add as Secondary Device";
-            this.content_width = 480;
-            this.can_close = true;
-
-            stack = account_setup_stack (
+            stack = account_setup_dialog (this, "Add as Secondary Device",
                 build_input_page (), build_progress_page ());
-            this.child = account_setup_shell (stack);
-
-            install_escape_close (this);
             this.closed.connect (on_dialog_closed);
         }
-
-        /* ---- UI ---- */
 
         private Gtk.Widget build_input_page () {
             var content = account_setup_content ();
@@ -596,22 +557,15 @@ namespace Dc {
                 "“Add Second Device” and copy the setup code shown there. " +
                 "Paste it below."));
 
-            url_entry = new Gtk.Entry ();
-            url_entry.placeholder_text = "DCBACKUP2:…";
-            url_entry.hexpand = true;
-            url_entry.activates_default = true;
+            url_entry = account_setup_entry ("DCBACKUP2:…", true);
             url_entry.changed.connect (update_start_sensitivity);
             content.append (url_entry);
 
-            var row = account_setup_action_row (false);
-            start_btn = new Gtk.Button.with_label ("Start Import");
-            start_btn.add_css_class ("suggested-action");
+            start_btn = account_setup_action (content, "Start Import",
+                () => { start_import.begin (); }, false);
             start_btn.sensitive = false;
-            start_btn.clicked.connect (() => { start_import.begin (); });
-            row.append (start_btn);
 
             this.default_widget = start_btn;
-            content.append (row);
 
             return content;
         }
@@ -622,14 +576,9 @@ namespace Dc {
             return progress_page;
         }
 
-        /* ---- Helpers ---- */
-
         private void update_start_sensitivity () {
-            string t = url_entry.text.strip ();
-            start_btn.sensitive = t.length > 0;
+            start_btn.sensitive = url_entry.text.strip ().length > 0;
         }
-
-        /* ---- Import flow ---- */
 
         private async void start_import () {
             if (import_running) return;
@@ -640,7 +589,6 @@ namespace Dc {
             import_running = true;
             stack.visible_child_name = "progress";
 
-            /* Subscribe to ImexProgress for the new account */
             progress_handler_id = events.imex_progress.connect (on_imex_progress);
 
             try {
@@ -658,7 +606,6 @@ namespace Dc {
             } catch (Error e) {
                 cleanup_signal ();
                 import_running = false;
-                /* Drop the half-imported account so the user can retry */
                 if (new_account_id > 0) {
                     yield cleanup_pending_account (rpc, new_account_id, false);
                     new_account_id = 0;
@@ -668,19 +615,17 @@ namespace Dc {
                 return;
             }
 
-            /* Success */
             cleanup_signal ();
             import_finished = true;
             import_running = false;
             int imported = new_account_id;
-            new_account_id = 0; /* prevent cleanup from removing it */
+            new_account_id = 0;
             account_imported (imported);
             this.close ();
         }
 
         private void on_imex_progress (int ctx, int progress) {
             if (ctx != new_account_id) return;
-            /* progress: 0=error, 1-999=permille, 1000=done */
             progress_page.set_permille (progress, null, "Transferring…");
         }
 
@@ -689,25 +634,13 @@ namespace Dc {
         }
 
         private void cancel_import () {
-            if (!import_running) {
-                this.close ();
-                return;
-            }
-            if (new_account_id > 0) {
-                stop_ongoing_account (rpc, new_account_id);
-            }
-            /* The pending get_backup() will return with an error and
-               the cleanup path in start_import() will remove the account. */
+            if (close_if_idle (this, import_running)) return;
+            stop_ongoing_account (rpc, new_account_id);
         }
 
         private void on_dialog_closed () {
             cleanup_signal ();
-            /* If user dismissed mid-flight without success, clean up. */
-            if (!import_finished && new_account_id > 0) {
-                int aid = new_account_id;
-                new_account_id = 0;
-                cleanup_pending_account.begin (rpc, aid, true);
-            }
+            cleanup_unfinished_account (rpc, ref new_account_id, import_finished);
         }
     }
 }

@@ -13,7 +13,6 @@ namespace Dc {
         public bool is_connected { get { return transport.is_connected; } }
         public int account_id { get; set; default = 0; }
         public string? self_email { get; set; default = null; }
-        public string? self_display_name { get; set; default = null; }
 
         construct {
             transport = new RpcTransport ();
@@ -64,9 +63,8 @@ namespace Dc {
             yield call ("start_io", Params.begin ().add_int (acct_id).build ());
         }
 
-        public async void stop_io (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
-            yield call ("stop_io", Params.begin ().add_int (id).build ());
+        public async void stop_io (int acct_id) throws Error {
+            yield call ("stop_io", Params.begin ().add_int (acct_id).build ());
         }
 
         /* Start/stop IO for every account so background accounts keep receiving
@@ -75,35 +73,27 @@ namespace Dc {
             yield call ("start_io_for_all_accounts", Params.begin ().build ());
         }
 
-        public async void stop_io_for_all_accounts () throws Error {
-            yield call ("stop_io_for_all_accounts", Params.begin ().build ());
-        }
-
-        public async int get_connectivity (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+        public async int get_connectivity (int acct_id) throws Error {
             var result = yield call ("get_connectivity",
-                Params.begin ().add_int (id).build ());
+                Params.begin ().add_int (acct_id).build ());
             return (int) result.get_int ();
         }
 
-        public async string get_connectivity_html (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+        public async string get_connectivity_html (int acct_id) throws Error {
             var result = yield call ("get_connectivity_html",
-                Params.begin ().add_int (id).build ());
+                Params.begin ().add_int (acct_id).build ());
             return result.get_string ();
         }
 
-        public async int64 get_account_file_size (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+        public async int64 get_account_file_size (int acct_id) throws Error {
             var result = yield call ("get_account_file_size",
-                Params.begin ().add_int (id).build ());
+                Params.begin ().add_int (acct_id).build ());
             return result.get_int ();
         }
 
-        public async string? get_blob_dir (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+        public async string? get_blob_dir (int acct_id) throws Error {
             var result = yield call ("get_blob_dir",
-                Params.begin ().add_int (id).build ());
+                Params.begin ().add_int (acct_id).build ());
             if (result == null || result.is_null ()) return null;
             return result.get_string ();
         }
@@ -224,27 +214,21 @@ namespace Dc {
         }
 
         public async void batch_set_config (string key, string val,
-                                             int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+                                             int acct_id) throws Error {
             yield call ("batch_set_config",
                 Params.begin ()
-                    .add_int (id)
+                    .add_int (acct_id)
                     .begin_object ()
                         .set_string_member (key, val)
                     .end_object ()
                     .build ());
         }
 
-        public async string? get_config (string key, int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
+        public async string? get_config (string key, int acct_id) throws Error {
             var result = yield call ("get_config",
-                Params.begin ().add_int (id).add_string (key).build ());
+                Params.begin ().add_int (acct_id).add_string (key).build ());
             if (result == null || result.is_null ()) return null;
             return result.get_string ();
-        }
-
-        public async Json.Array? get_chatlist_entries (string? query = null) throws Error {
-            return yield get_chatlist_entries_for (account_id, query);
         }
 
         public async Json.Array? get_chatlist_entries_for (int acct_id,
@@ -258,10 +242,6 @@ namespace Dc {
                     .build ());
             if (result == null) return null;
             return result.get_array ();
-        }
-
-        public async Json.Object? get_chatlist_items_by_entries (Json.Array entries) throws Error {
-            return yield get_chatlist_items_by_entries_for (account_id, entries);
         }
 
         public async Json.Object? get_chatlist_items_by_entries_for (int acct_id,
@@ -278,21 +258,15 @@ namespace Dc {
         /**
          * Number of fresh (notification-worthy) messages for an account.
          * Mirrors the Delta Chat core semantics for badge counters: messages in
-         * muted chats and contact requests are excluded. Pass 0 (or omit) for
-         * the current account.
+         * muted chats and contact requests are excluded.
          */
-        public async int get_fresh_msg_count (int acct_id = 0) throws Error {
-            int id = acct_id > 0 ? acct_id : account_id;
-            if (id <= 0) return 0;
+        public async int get_fresh_msg_count (int acct_id) throws Error {
+            if (acct_id <= 0) return 0;
             var result = yield call ("get_fresh_msgs",
-                Params.begin ().add_int (id).build ());
+                Params.begin ().add_int (acct_id).build ());
             if (result == null || result.get_node_type () != Json.NodeType.ARRAY)
                 return 0;
             return (int) result.get_array ().get_length ();
-        }
-
-        public async Json.Object? get_full_chat_by_id (int chat_id) throws Error {
-            return yield get_full_chat_by_id_for (account_id, chat_id);
         }
 
         public async Json.Object? get_full_chat_by_id_for (int acct_id,
@@ -301,11 +275,6 @@ namespace Dc {
                 Params.begin ().add_int (acct_id).add_int (chat_id).build ());
             if (result == null) return null;
             return result.get_object ();
-        }
-
-        public async Json.Array? get_message_ids (int chat_id,
-                                                    bool info_only = false) throws Error {
-            return yield get_message_ids_for (account_id, chat_id, info_only);
         }
 
         public async Json.Array? get_message_ids_for (int acct_id,
@@ -320,10 +289,6 @@ namespace Dc {
                     .build ());
             if (result == null) return null;
             return result.get_array ();
-        }
-
-        public async Json.Object? get_message (int msg_id) throws Error {
-            return yield get_message_for (account_id, msg_id);
         }
 
         public async Json.Object? get_message_for (int acct_id, int msg_id) throws Error {
@@ -342,10 +307,6 @@ namespace Dc {
             var obj = yield get_message_for (acct_id, msg_id);
             if (obj == null) return null;
             return RpcParsers.parse_message (obj, self_addr);
-        }
-
-        public async Json.Object? get_messages (int[] msg_ids) throws Error {
-            return yield get_messages_for (account_id, msg_ids);
         }
 
         public async Json.Object? get_messages_for (int acct_id,
@@ -424,10 +385,6 @@ namespace Dc {
             if (result == null || result.get_node_type () != Json.NodeType.OBJECT)
                 return null;
             return result.get_object ();
-        }
-
-        public async Json.Array? get_contact_ids (string? query) throws Error {
-            return yield get_contact_ids_for (account_id, query);
         }
 
         public async Json.Array? get_contact_ids_for (int acct_id, string? query) throws Error {
@@ -578,13 +535,6 @@ namespace Dc {
                 Params.begin ().add_int (acct_id).add_int (contact_id).build ());
             if (result == null || result.get_node_type () != Json.NodeType.OBJECT)
                 return null;
-            return result.get_object ();
-        }
-
-        public async Json.Object? get_contact (int contact_id) throws Error {
-            var result = yield call ("get_contact",
-                Params.begin ().add_int (account_id).add_int (contact_id).build ());
-            if (result == null) return null;
             return result.get_object ();
         }
 

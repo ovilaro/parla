@@ -287,7 +287,7 @@ namespace Dc {
         }
 
         private async Contact? load_dm_contact (int chat_id) throws Error {
-            var chat = yield rpc.get_full_chat_by_id (chat_id);
+            var chat = yield rpc.get_full_chat_by_id_for (rpc.account_id, chat_id);
             if (chat == null) return null;
 
             string chat_type = json_str (chat, "chatType") ?? "";
@@ -303,7 +303,7 @@ namespace Dc {
             int contact_id = (int) ids.get_int_element (0);
             if (contact_id <= 1) return null;
 
-            var obj = yield rpc.get_contact (contact_id);
+            var obj = yield rpc.get_contact_for (rpc.account_id, contact_id);
             if (obj == null) return null;
 
             return RpcParsers.parse_contact (contact_id, obj);

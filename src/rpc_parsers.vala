@@ -17,7 +17,6 @@ namespace Dc {
                                              string? self_email = null) {
             var msg = new Message ();
             msg.id = (int) json_int (obj, "id");
-            msg.chat_id = (int) json_int (obj, "chatId");
             msg.text = json_str (obj, "text");
             msg.timestamp = json_int (obj, "timestamp");
             msg.is_info = json_bool (obj, "isInfo");
@@ -71,7 +70,6 @@ namespace Dc {
             entry.avatar_path = json_str (obj, "avatarPath");
             entry.is_muted = json_bool (obj, "isMuted");
             entry.is_contact_request = json_bool (obj, "isContactRequest");
-            entry.is_archived = json_bool (obj, "isArchived");
             entry.is_pinned = json_bool (obj, "isPinned");
             return entry;
         }

@@ -1,5 +1,56 @@
 namespace Dc {
 
+    private Gtk.Label heading_label (string text) {
+        var label = new Gtk.Label (text);
+        label.add_css_class ("heading");
+        label.halign = Gtk.Align.START;
+        return label;
+    }
+
+    private Gtk.Label dim_label (string text, bool hexpand = false) {
+        var label = new Gtk.Label (text);
+        label.add_css_class ("dim-label");
+        label.halign = Gtk.Align.START;
+        label.xalign = 0;
+        label.wrap = true;
+        label.hexpand = hexpand;
+        return label;
+    }
+
+    private Gtk.Box content_box (int side_margin = 16) {
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        box.margin_start = side_margin;
+        box.margin_end = side_margin;
+        box.margin_top = 12;
+        box.margin_bottom = side_margin;
+        return box;
+    }
+
+    private Gtk.Box end_actions_box () {
+        var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+        actions.halign = Gtk.Align.END;
+        actions.margin_top = 6;
+        return actions;
+    }
+
+    private Gtk.Box setup_qr_dialog (Adw.Dialog dialog, QrCodeView qr_view) {
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        box.append (new Adw.HeaderBar ());
+        var content = content_box (18);
+        content.append (qr_view);
+        var actions = end_actions_box ();
+        content.append (actions);
+        box.append (content);
+        dialog.child = box;
+        return actions;
+    }
+
+    private Gtk.Button close_button (Adw.Dialog dialog) {
+        var button = new Gtk.Button.with_label ("Close");
+        button.clicked.connect (() => { dialog.close (); });
+        return button;
+    }
+
     public class ProfileDialog : Adw.Dialog {
 
         private RpcClient rpc;
@@ -41,11 +92,7 @@ namespace Dc {
             header.pack_end (save_btn);
             box.append (header);
 
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = 16;
-            content.margin_end = 16;
-            content.margin_top = 12;
-            content.margin_bottom = 16;
+            var content = content_box ();
 
             /* Avatar */
             avatar_widget = new Adw.Avatar (96, "", true);
@@ -62,11 +109,7 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            /* Display name */
-            var name_lbl = new Gtk.Label ("Display Name");
-            name_lbl.add_css_class ("heading");
-            name_lbl.halign = Gtk.Align.START;
-            content.append (name_lbl);
+            content.append (heading_label ("Display Name"));
 
             name_entry = new Gtk.Entry ();
             name_entry.placeholder_text = "Your name";
@@ -76,25 +119,15 @@ namespace Dc {
             });
             content.append (name_entry);
 
-            /* Status */
-            var status_lbl = new Gtk.Label ("Status");
-            status_lbl.add_css_class ("heading");
-            status_lbl.halign = Gtk.Align.START;
-            content.append (status_lbl);
+            content.append (heading_label ("Status"));
 
             status_entry = new Gtk.Entry ();
             status_entry.placeholder_text = "Your status message";
             content.append (status_entry);
 
-            /* Email (read-only) */
-            var email_lbl = new Gtk.Label ("Email");
-            email_lbl.add_css_class ("heading");
-            email_lbl.halign = Gtk.Align.START;
-            content.append (email_lbl);
+            content.append (heading_label ("Email"));
 
-            email_label = new Gtk.Label ("");
-            email_label.halign = Gtk.Align.START;
-            email_label.add_css_class ("dim-label");
+            email_label = dim_label ("");
             email_label.selectable = true;
             content.append (email_label);
 
@@ -106,78 +139,18 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            var invite_code_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            invite_code_box.margin_top = 4;
-
-            var invite_code_btn = new Gtk.Button.with_label ("Invite Code");
-            invite_code_btn.tooltip_text = "Show a contact invite QR code";
-            invite_code_btn.clicked.connect (show_invite_code_dialog);
-            invite_code_box.append (invite_code_btn);
-
-            var invite_code_label = new Gtk.Label ("Share your contact");
-            invite_code_label.add_css_class ("dim-label");
-            invite_code_label.valign = Gtk.Align.CENTER;
-            invite_code_label.wrap = true;
-            invite_code_label.xalign = 0;
-            invite_code_label.hexpand = true;
-            invite_code_box.append (invite_code_label);
-
-            content.append (invite_code_box);
-
-            var relays_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            relays_box.margin_top = 4;
-
-            var relays_btn = new Gtk.Button.with_label ("Relays...");
-            relays_btn.tooltip_text = "Manage chatmail relays for this profile";
-            relays_btn.clicked.connect (show_relays_dialog);
-            relays_box.append (relays_btn);
-
-            var relays_label = new Gtk.Label ("Manage transports");
-            relays_label.add_css_class ("dim-label");
-            relays_label.valign = Gtk.Align.CENTER;
-            relays_label.wrap = true;
-            relays_label.xalign = 0;
-            relays_label.hexpand = true;
-            relays_box.append (relays_label);
-
-            content.append (relays_box);
-
-            var second_device_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            second_device_box.margin_top = 4;
-
-            var second_device_btn = new Gtk.Button.with_label ("Add Second Device");
-            second_device_btn.tooltip_text = "Show a setup QR code for another device";
-            second_device_btn.clicked.connect (show_second_device_dialog);
-            second_device_box.append (second_device_btn);
-
-            var second_device_label = new Gtk.Label ("Transfer to another device");
-            second_device_label.add_css_class ("dim-label");
-            second_device_label.valign = Gtk.Align.CENTER;
-            second_device_label.wrap = true;
-            second_device_label.xalign = 0;
-            second_device_label.hexpand = true;
-            second_device_box.append (second_device_label);
-
-            content.append (second_device_box);
-
-            var delete_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            delete_box.margin_top = 4;
-
-            var delete_btn = new Gtk.Button.with_label ("Delete Profile");
-            delete_btn.add_css_class ("destructive-action");
-            delete_btn.tooltip_text = "Delete local profile data";
-            delete_btn.clicked.connect (confirm_delete_account);
-            delete_box.append (delete_btn);
-
-            var delete_label = new Gtk.Label ("Delete local profile data");
-            delete_label.add_css_class ("dim-label");
-            delete_label.valign = Gtk.Align.CENTER;
-            delete_label.wrap = true;
-            delete_label.xalign = 0;
-            delete_label.hexpand = true;
-            delete_box.append (delete_label);
-
-            content.append (delete_box);
+            content.append (build_profile_action_row ("Invite Code",
+                "Show a contact invite QR code", "Share your contact",
+                show_invite_code_dialog));
+            content.append (build_profile_action_row ("Relays...",
+                "Manage chatmail relays for this profile", "Manage transports",
+                show_relays_dialog));
+            content.append (build_profile_action_row ("Add Second Device",
+                "Show a setup QR code for another device",
+                "Transfer to another device", show_second_device_dialog));
+            content.append (build_profile_action_row ("Delete Profile",
+                "Delete local profile data", "Delete local profile data",
+                confirm_delete_account, "destructive-action"));
 
             var scroll = new Gtk.ScrolledWindow ();
             scroll.vexpand = true;
@@ -189,6 +162,27 @@ namespace Dc {
 
             load_profile.begin ();
             load_connectivity_summary.begin ();
+        }
+
+        private Gtk.Widget build_profile_action_row (string button_label,
+                                                     string tooltip,
+                                                     string caption_text,
+                                                     owned VoidFunc action,
+                                                     string? css_class = null) {
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            box.margin_top = 4;
+
+            var button = new Gtk.Button.with_label (button_label);
+            if (css_class != null) button.add_css_class (css_class);
+            button.tooltip_text = tooltip;
+            button.clicked.connect (() => { action (); });
+            box.append (button);
+
+            var caption = dim_label (caption_text, true);
+            caption.valign = Gtk.Align.CENTER;
+            box.append (caption);
+
+            return box;
         }
 
         private Gtk.Widget build_default_account_row () {
@@ -236,22 +230,14 @@ namespace Dc {
         private Gtk.Widget build_connectivity_storage_section () {
             var section = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
 
-            var title = new Gtk.Label ("Storage & Connectivity");
-            title.add_css_class ("heading");
-            title.halign = Gtk.Align.START;
-            section.append (title);
+            section.append (heading_label ("Storage & Connectivity"));
 
             var conn_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             var conn_icon = new Gtk.Image.from_icon_name ("network-transmit-receive-symbolic");
             conn_icon.valign = Gtk.Align.CENTER;
             conn_row.append (conn_icon);
 
-            connectivity_status_label = new Gtk.Label ("Checking connection…");
-            connectivity_status_label.halign = Gtk.Align.START;
-            connectivity_status_label.xalign = 0;
-            connectivity_status_label.wrap = true;
-            connectivity_status_label.hexpand = true;
-            connectivity_status_label.add_css_class ("dim-label");
+            connectivity_status_label = dim_label ("Checking connection…", true);
             conn_row.append (connectivity_status_label);
             section.append (conn_row);
 
@@ -260,11 +246,7 @@ namespace Dc {
             storage_progress.fraction = 0.0;
             section.append (storage_progress);
 
-            storage_summary_label = new Gtk.Label ("Loading server quota…");
-            storage_summary_label.halign = Gtk.Align.START;
-            storage_summary_label.xalign = 0;
-            storage_summary_label.wrap = true;
-            storage_summary_label.add_css_class ("dim-label");
+            storage_summary_label = dim_label ("Loading server quota…");
             section.append (storage_summary_label);
 
             var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
@@ -361,11 +343,9 @@ namespace Dc {
             if (account_addr == null || account_addr.length == 0) return;
             string mine = account_addr.down ().strip ();
             string stored = settings.default_account_addr.down ().strip ();
-            if (default_switch.active) {
-                if (stored != mine) {
-                    settings.save_default_account_addr (account_addr);
-                }
-            } else if (stored == mine) {
+            if (default_switch.active && stored != mine) {
+                settings.save_default_account_addr (account_addr);
+            } else if (!default_switch.active && stored == mine) {
                 settings.save_default_account_addr ("");
             }
         }
@@ -483,38 +463,20 @@ namespace Dc {
             header.pack_end (refresh_btn);
             box.append (header);
 
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = 16;
-            content.margin_end = 16;
-            content.margin_top = 12;
-            content.margin_bottom = 16;
+            var content = content_box ();
 
-            var quota_title = new Gtk.Label ("Server Quota");
-            quota_title.add_css_class ("heading");
-            quota_title.halign = Gtk.Align.START;
-            content.append (quota_title);
+            content.append (heading_label ("Server Quota"));
 
             quota_progress = new Gtk.ProgressBar ();
             quota_progress.add_css_class ("storage-quota-bar");
             content.append (quota_progress);
 
-            quota_label = new Gtk.Label ("Loading quota…");
-            quota_label.halign = Gtk.Align.START;
-            quota_label.xalign = 0;
-            quota_label.wrap = true;
-            quota_label.add_css_class ("dim-label");
+            quota_label = dim_label ("Loading quota…");
             content.append (quota_label);
 
-            var local_title = new Gtk.Label ("Local Copies");
-            local_title.add_css_class ("heading");
-            local_title.halign = Gtk.Align.START;
-            content.append (local_title);
+            content.append (heading_label ("Local Copies"));
 
-            local_total_label = new Gtk.Label ("Scanning local files…");
-            local_total_label.halign = Gtk.Align.START;
-            local_total_label.xalign = 0;
-            local_total_label.wrap = true;
-            local_total_label.add_css_class ("dim-label");
+            local_total_label = dim_label ("Scanning local files…");
             content.append (local_total_label);
 
             clear_cache_btn = new Gtk.Button.with_label ("Clear Local Cache…");
@@ -525,16 +487,9 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            var chats_title = new Gtk.Label ("Conversations by Storage Size");
-            chats_title.add_css_class ("heading");
-            chats_title.halign = Gtk.Align.START;
-            content.append (chats_title);
+            content.append (heading_label ("Conversations by Storage Size"));
 
-            scan_status_label = new Gtk.Label ("Preparing scan…");
-            scan_status_label.halign = Gtk.Align.START;
-            scan_status_label.xalign = 0;
-            scan_status_label.wrap = true;
-            scan_status_label.add_css_class ("dim-label");
+            scan_status_label = dim_label ("Preparing scan…");
             content.append (scan_status_label);
 
             chat_usage_list = new Gtk.ListBox ();
@@ -588,18 +543,14 @@ namespace Dc {
                 sort_usages (usages);
                 populate_chat_usage_list (usages);
 
-                if (account_bytes > 0) {
-                    local_total_label.label =
-                        "%s local account data · %s downloaded message files · %s known attachment payload".printf (
-                            StorageQuota.format_mb (account_bytes),
-                            StorageQuota.format_mb (unique_local_file_bytes),
-                            StorageQuota.format_mb (known_attachment_bytes));
-                } else {
-                    local_total_label.label =
-                        "%s downloaded message files · %s known attachment payload".printf (
-                            StorageQuota.format_mb (unique_local_file_bytes),
-                            StorageQuota.format_mb (known_attachment_bytes));
-                }
+                string file_summary =
+                    "%s downloaded message files · %s known attachment payload".printf (
+                        StorageQuota.format_mb (unique_local_file_bytes),
+                        StorageQuota.format_mb (known_attachment_bytes));
+                local_total_label.label = account_bytes > 0
+                    ? "%s local account data · %s".printf (
+                        StorageQuota.format_mb (account_bytes), file_summary)
+                    : file_summary;
 
                 scan_status_label.label = usages.length == 0
                     ? "No downloaded message files found in conversations."
@@ -651,9 +602,8 @@ namespace Dc {
             var usage = new ChatStorageUsage (chat_id, name);
             var ids = yield rpc.get_message_ids_for (account_id, chat_id);
             if (ids == null) return usage;
-            usage.message_count = (int) ids.get_length ();
-
             int len = (int) ids.get_length ();
+            usage.message_count = len;
             for (int start = 0; start < len; start += 200) {
                 int end = start + 200;
                 if (end > len) end = len;
@@ -770,16 +720,12 @@ namespace Dc {
             top.append (amount);
             box.append (top);
 
-            var subtitle = new Gtk.Label (
+            var subtitle = dim_label (
                 "%s local · %s attached · %d files · %d messages".printf (
                     StorageQuota.format_mb (usage.local_bytes),
                     StorageQuota.format_mb (usage.remote_bytes),
                     usage.local_file_count,
                     usage.message_count));
-            subtitle.halign = Gtk.Align.START;
-            subtitle.xalign = 0;
-            subtitle.wrap = true;
-            subtitle.add_css_class ("dim-label");
             subtitle.add_css_class ("caption");
             box.append (subtitle);
 
@@ -834,21 +780,8 @@ namespace Dc {
             this.content_height = 560;
             this.can_close = true;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.append (new Adw.HeaderBar ());
-
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = 18;
-            content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-
             qr_view = new QrCodeView ("Preparing invite code…");
-            content.append (qr_view);
-
-            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            actions.halign = Gtk.Align.END;
-            actions.margin_top = 6;
+            var actions = setup_qr_dialog (this, qr_view);
 
             /* Group/channel invite links can be deactivated (withdrawn) and
                reactivated (revived) by their owner — see set_config_from_qr.
@@ -861,14 +794,7 @@ namespace Dc {
             }
 
             actions.append (qr_view.make_copy_button ("Copy Link"));
-
-            var close_btn = new Gtk.Button.with_label ("Close");
-            close_btn.clicked.connect (() => { this.close (); });
-            actions.append (close_btn);
-            content.append (actions);
-
-            box.append (content);
-            this.child = box;
+            actions.append (close_button (this));
 
             install_escape_close (this);
             this.closed.connect (() => { closing = true; });
@@ -906,11 +832,8 @@ namespace Dc {
                 var qr = yield rpc.check_qr (account_id, text);
                 if (closing || qr == null || !qr.has_member ("kind")) return;
                 string kind = qr.get_string_member ("kind");
-                if (kind.has_prefix ("withdraw")) {
-                    link_active = true;
-                    apply_link_state ();
-                } else if (kind.has_prefix ("revive")) {
-                    link_active = false;
+                if (kind.has_prefix ("withdraw") || kind.has_prefix ("revive")) {
+                    link_active = kind.has_prefix ("withdraw");
                     apply_link_state ();
                 } else {
                     /* Not a self-link state we can toggle — hide the control. */
@@ -982,31 +905,10 @@ namespace Dc {
             this.content_height = 560;
             this.can_close = true;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.append (new Adw.HeaderBar ());
-
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = 18;
-            content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-
             qr_view = new QrCodeView ("Preparing account…");
-            content.append (qr_view);
-
-            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            actions.halign = Gtk.Align.END;
-            actions.margin_top = 6;
-
+            var actions = setup_qr_dialog (this, qr_view);
             actions.append (qr_view.make_copy_button ("Copy Text"));
-
-            var close_btn = new Gtk.Button.with_label ("Close");
-            close_btn.clicked.connect (() => { this.close (); });
-            actions.append (close_btn);
-            content.append (actions);
-
-            box.append (content);
-            this.child = box;
+            actions.append (close_button (this));
 
             install_escape_close (this);
             this.closed.connect (on_closed);

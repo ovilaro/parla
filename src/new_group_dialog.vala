@@ -8,7 +8,6 @@ namespace Dc {
         private bool is_channel;
         private string kind_label;
         private Gtk.Entry name_entry;
-        /* member_entry removed — contact picker is used instead */
         private Gtk.ListBox member_listbox;
         private GenericArray<string> member_emails = new GenericArray<string> ();
         private string? avatar_path = null;

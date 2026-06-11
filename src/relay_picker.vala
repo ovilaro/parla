@@ -102,39 +102,20 @@ namespace Dc {
         }
 
         /**
-         * Returns true if `domain` is already present in the dropdown.
-         */
-        public bool has_domain (string domain) {
-            for (int i = 0; i < (int) domains.length; i++) {
-                if (domains[i] == domain) return true;
-            }
-            return false;
-        }
-
-        /**
          * Append a domain entry to the dropdown if it isn't already present.
          * `note` is shown in parentheses after the domain.
          * Returns true when a new entry was added.
          */
         public bool add_domain (string domain, string note) {
             if (domain.length == 0) return false;
-            if (has_domain (domain)) return false;
+            for (int i = 0; i < (int) domains.length; i++) {
+                if (domains[i] == domain) return false;
+            }
             model.append ("%s (%s)".printf (domain, note));
             domains.add (domain);
             return true;
         }
 
-        /**
-         * Select the first entry whose domain matches, if any.
-         */
-        public void select_domain (string domain) {
-            for (int i = 0; i < (int) domains.length; i++) {
-                if (domains[i] == domain) {
-                    dropdown.selected = i;
-                    return;
-                }
-            }
-        }
     }
 
     /**

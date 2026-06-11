@@ -10,13 +10,7 @@ namespace Dc {
         public static string? self_display_name = null;
 
         public int message_id { get; private set; }
-        public int64 timestamp { get; private set; }
         public bool is_outgoing { get; private set; }
-        public string? file_path { get; private set; }
-        public string? file_name { get; private set; }
-        public string? message_text { get; private set; }
-        public int quote_msg_id { get; private set; }
-        public bool is_image { get; private set; }
 
         public signal void quote_clicked (int quoted_msg_id);
 
@@ -33,12 +27,7 @@ namespace Dc {
                            bool is_image_continuation = false) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
-            this.timestamp = msg.timestamp;
             this.is_outgoing = msg.is_outgoing;
-            this.file_path = msg.file_path;
-            this.file_name = msg.file_name;
-            this.message_text = msg.text;
-            this.quote_msg_id = msg.quote_msg_id;
 
             /* Info messages (system notifications) get centered styling */
             if (msg.is_info) {
@@ -235,7 +224,6 @@ namespace Dc {
                                         GLib.GenericArray<Message>? trailing_images = null) {
             if (!msg.has_file) return;
             if (msg.has_local_file && msg.is_image_file ()) {
-                this.is_image = true;
                 if (irc) append_irc_images (box, msg, trailing_images);
                 else append_bubble_image (box, msg);
                 return;

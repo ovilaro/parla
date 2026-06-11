@@ -73,6 +73,41 @@ namespace Dc {
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
 
+        private bool can_show_account_modal () {
+            return rpc.account_id > 0 && active_modal == null;
+        }
+
+        private bool can_show_rpc_modal () {
+            if (active_modal != null) return false;
+            if (events != null) return true;
+            show_toast ("RPC not ready");
+            return false;
+        }
+
+        private void present_modal (Adw.Dialog dialog) {
+            active_modal = dialog;
+            dialog.closed.connect (() => { active_modal = null; });
+            dialog.present (this);
+        }
+
+        private void reset_chat_ui () {
+            discard_all_views ();
+            chat_store.remove_all ();
+            clear_listbox (chat_listbox);
+            search_entry.text = "";
+            content_title_label.label = "Select a chat";
+        }
+
+        private void show_empty_status (string icon_name, string title,
+                                        string description,
+                                        Gtk.Widget? child = null) {
+            empty_status.child = child;
+            empty_status.icon_name = icon_name;
+            empty_status.title = title;
+            empty_status.description = description;
+            content_stack.visible_child_name = "empty";
+        }
+
         /* An invite link received (via the system handler or an in-app click)
            before a profile was connected; opened once try_connect finishes. */
         private string? pending_invite_uri = null;
@@ -217,10 +252,6 @@ namespace Dc {
                 events.reconcile_desktop_notifications.begin ();
             }
         }
-
-        /* ================================================================
-         *  UI Construction
-         * ================================================================ */
 
         private void build_ui () {
             /* ---- Sidebar ---- */
@@ -438,18 +469,12 @@ namespace Dc {
             return popover;
         }
 
-        /* ================================================================
-         *  Connection & Profile Setup
-         * ================================================================ */
-
         private async void try_connect () {
             rpc = ((Dc.Application) this.application).rpc;
 
             /* Reset any error widget left from a previous failed attempt. */
-            empty_status.child = null;
-            empty_status.icon_name = "parla-welcome";
-            empty_status.title = "Welcome to Parla";
-            empty_status.description = "Select a chat to start messaging";
+            show_empty_status ("parla-welcome", "Welcome to Parla",
+                "Select a chat to start messaging");
 
             /* Find the RPC server binary. Auto mode uses Parla/distro-owned
                standalone servers; Desktop is an explicit compatibility mode. */
@@ -467,13 +492,11 @@ namespace Dc {
             string? data_dir = AccountFinder.get_data_dir (
                 settings.rpc_server_source == RpcServerSource.DESKTOP);
             if (data_dir == null) {
-                empty_status.icon_name = "dialog-error-symbolic";
-                empty_status.title = "Desktop accounts not found";
-                empty_status.description =
+                show_empty_status ("dialog-error-symbolic",
+                    "Desktop accounts not found",
                     "Delta Chat Desktop's account store was not found.\n" +
-                    "Open Settings to choose another server source.";
+                    "Open Settings to choose another server source.");
                 set_connection_status (false, "Desktop accounts not found");
-                content_stack.visible_child_name = "empty";
                 show_toast ("Delta Chat Desktop accounts not found");
                 return;
             }
@@ -539,17 +562,7 @@ namespace Dc {
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
             if (rpc.account_id > 0) {
-                try {
-                    rpc.self_email = yield rpc.get_config ("addr");
-                } catch (Error ce) {
-                    rpc.self_email = null;
-                }
-                try {
-                    rpc.self_display_name = yield rpc.get_config ("displayname");
-                } catch (Error ce) {
-                    rpc.self_display_name = null;
-                }
-                MessageRow.self_display_name = rpc.self_display_name;
+                yield load_self_identity ();
                 yield load_chats ();
                 yield load_profile_avatar ();
                 events.start.begin ();
@@ -565,6 +578,25 @@ namespace Dc {
             }
         }
 
+        private void clear_self_identity () {
+            rpc.self_email = null;
+            MessageRow.self_display_name = null;
+        }
+
+        private async void load_self_identity () {
+            try {
+                rpc.self_email = yield rpc.get_config ("addr", rpc.account_id);
+            } catch (Error e) {
+                rpc.self_email = null;
+            }
+            try {
+                MessageRow.self_display_name =
+                    yield rpc.get_config ("displayname", rpc.account_id);
+            } catch (Error e) {
+                MessageRow.self_display_name = null;
+            }
+        }
+
         private void show_rpc_not_found () {
             /* Whenever a prebuilt binary exists for this architecture we offer a
                one-click download — regardless of the configured source — and the
@@ -573,35 +605,36 @@ namespace Dc {
                text, but the download is the primary action. */
             bool can_download = RpcInstaller.can_auto_install ();
 
-            empty_status.icon_name = "dialog-error-symbolic";
-            empty_status.title = "RPC server not found";
-
+            string icon_name = "dialog-error-symbolic";
+            string title = "RPC server not found";
+            string description;
             if (settings.rpc_server_source == RpcServerSource.CUSTOM &&
                 settings.rpc_server_path.length > 0) {
-                empty_status.description =
+                description =
                     "Configured path is missing or not executable:\n" +
                     Markup.escape_text (settings.rpc_server_path) +
                     (can_download ? "\n\nDownload the engine to use it instead." : "");
             } else if (settings.rpc_server_source == RpcServerSource.DESKTOP) {
-                empty_status.description = can_download
+                description = can_download
                     ? "Delta Chat Desktop's bundled server was not found.\n" +
                       "Download Parla's own engine to get started."
                     : "Delta Chat Desktop's bundled server was not found.\n" +
                       "Open Settings to choose a standalone server.";
             } else if (can_download) {
-                empty_status.icon_name = "parla-welcome";
-                empty_status.title = "Welcome to Parla";
-                empty_status.description =
+                icon_name = "parla-welcome";
+                title = "Welcome to Parla";
+                description =
                     "Parla needs the Delta Chat engine to connect.\n" +
                     "Download it once to get started.";
             } else {
-                empty_status.title = "Delta Chat engine required";
-                empty_status.description =
+                title = "Delta Chat engine required";
+                description =
                     "No prebuilt deltachat-rpc-server is available for this\n" +
                     "architecture. Install it manually (see docs/rpc-server.md)\n" +
                     "or choose a binary in Settings.";
             }
 
+            Gtk.Widget child;
             if (can_download) {
                 var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
                 box.halign = Gtk.Align.CENTER;
@@ -619,18 +652,18 @@ namespace Dc {
                 settings_link.clicked.connect (show_settings_dialog);
                 box.append (settings_link);
 
-                empty_status.child = box;
+                child = box;
             } else {
                 var btn = new Gtk.Button.with_label ("Open Settings…");
                 btn.add_css_class ("suggested-action");
                 btn.add_css_class ("pill");
                 btn.halign = Gtk.Align.CENTER;
                 btn.clicked.connect (show_settings_dialog);
-                empty_status.child = btn;
+                child = btn;
                 show_toast ("deltachat-rpc-server not found");
             }
 
-            content_stack.visible_child_name = "empty";
+            show_empty_status (icon_name, title, description, child);
         }
 
         /* One-click onboarding: download the managed server, then reconnect. */
@@ -645,11 +678,8 @@ namespace Dc {
             label.add_css_class ("dim-label");
             box.append (label);
 
-            empty_status.icon_name = "folder-download-symbolic";
-            empty_status.title = "Setting up Parla";
-            empty_status.description = "";
-            empty_status.child = box;
-            content_stack.visible_child_name = "empty";
+            show_empty_status ("folder-download-symbolic", "Setting up Parla",
+                "", box);
 
             var installer = new RpcInstaller ();
             installer.progress.connect ((received, total) => {
@@ -728,27 +758,16 @@ namespace Dc {
             chat_menu = null;
             current_chat_id = 0;
 
-            discard_all_views ();
-            chat_store.remove_all ();
-            clear_listbox (chat_listbox);
-            search_entry.text = "";
-            content_title_label.label = "Select a chat";
-            if (profile_unread_badge != null) profile_unread_badge.visible = false;
+            reset_chat_ui ();
+            profile_unread_badge.visible = false;
 
-            empty_status.child = null;
-            empty_status.icon_name = "parla-welcome";
-            empty_status.title = "Connecting";
-            empty_status.description = "Starting Delta Chat engine…";
-            content_stack.visible_child_name = "empty";
+            show_empty_status ("parla-welcome", "Connecting",
+                "Starting Delta Chat engine…");
             set_connection_status (false, "Reconnecting…");
 
             yield try_connect ();
             reconnecting_rpc = false;
         }
-
-        /* ================================================================
-         *  Chat List
-         * ================================================================ */
 
         public void clear_chat_view () {
             current_chat_id = 0;
@@ -777,10 +796,11 @@ namespace Dc {
             if (rpc.account_id <= 0) return;
 
             try {
-                var entries = yield rpc.get_chatlist_entries ();
+                var entries = yield rpc.get_chatlist_entries_for (rpc.account_id);
                 if (entries == null) return;
 
-                var items = yield rpc.get_chatlist_items_by_entries (entries);
+                var items = yield rpc.get_chatlist_items_by_entries_for (
+                    rpc.account_id, entries);
 
                 chat_store.remove_all ();
                 clear_listbox (chat_listbox);
@@ -899,10 +919,6 @@ namespace Dc {
         /* ================================================================
          *  Attachments (save / image viewer)
          * ================================================================ */
-
-        public void show_image (string path) {
-            image_viewer.show (path);
-        }
 
         public void show_image_list (string[] paths, int start_index) {
             image_viewer.show_list (paths, start_index);
@@ -1134,6 +1150,13 @@ namespace Dc {
             switch_account.begin (acct_id);
         }
 
+        private const string[] ADD_PROFILE_METHODS = {
+            "contact-new-symbolic", "Create new profile", "Pick a chatmail relay and create a new account",
+            "phone-symbolic", "Add as secondary device", "Synchronize from another device on the same network",
+            "mail-message-new-symbolic", "Use classic email address", "Sign in with an existing email account",
+            "mail-attachment-symbolic", "Use invitation code", "Join via a dcaccount: link or QR code",
+        };
+
         private void on_add_account () {
             if (active_modal != null) return;
 
@@ -1158,22 +1181,10 @@ namespace Dc {
             list.margin_top = 8;
             list.margin_bottom = 12;
 
-            list.append (build_add_method_row (
-                "contact-new-symbolic",
-                "Create new profile",
-                "Pick a chatmail relay and create a new account"));
-            list.append (build_add_method_row (
-                "phone-symbolic",
-                "Add as secondary device",
-                "Synchronize from another device on the same network"));
-            list.append (build_add_method_row (
-                "mail-message-new-symbolic",
-                "Use classic email address",
-                "Sign in with an existing email account"));
-            list.append (build_add_method_row (
-                "mail-attachment-symbolic",
-                "Use invitation code",
-                "Join via a dcaccount: link or QR code"));
+            for (int i = 0; i + 2 < ADD_PROFILE_METHODS.length; i += 3) {
+                list.append (build_add_method_row (ADD_PROFILE_METHODS[i],
+                    ADD_PROFILE_METHODS[i + 1], ADD_PROFILE_METHODS[i + 2]));
+            }
 
             list.row_activated.connect ((row) => {
                 string method = row.get_data<string> ("add-method");
@@ -1183,9 +1194,7 @@ namespace Dc {
 
             box.append (list);
             dialog.child = box;
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         private Adw.ActionRow build_add_method_row (string icon_name,
@@ -1218,25 +1227,17 @@ namespace Dc {
                 show_create_profile_dialog ();
             } else if (method == "Use invitation code") {
                 show_invitation_code_profile_dialog ();
-            } else {
-                show_toast (method + ": not yet implemented");
             }
         }
 
         private void show_create_profile_dialog () {
-            if (active_modal != null) return;
-            if (events == null) {
-                show_toast ("RPC not ready");
-                return;
-            }
+            if (!can_show_rpc_modal ()) return;
 
             var dialog = new CreateProfileDialog (rpc, events);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
             dialog.account_created.connect ((new_id) => {
                 after_profile_created.begin (new_id);
             });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         private async void after_profile_created (int new_id) {
@@ -1244,19 +1245,13 @@ namespace Dc {
         }
 
         private void show_invitation_code_profile_dialog () {
-            if (active_modal != null) return;
-            if (events == null) {
-                show_toast ("RPC not ready");
-                return;
-            }
+            if (!can_show_rpc_modal ()) return;
 
             var dialog = new InvitationCodeProfileDialog (rpc, events);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
             dialog.account_created.connect ((new_id, chat_id) => {
                 after_invitation_profile_created.begin (new_id, chat_id);
             });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         private async void after_invitation_profile_created (int new_id,
@@ -1273,19 +1268,13 @@ namespace Dc {
         }
 
         private void show_secondary_device_dialog () {
-            if (active_modal != null) return;
-            if (events == null) {
-                show_toast ("RPC not ready");
-                return;
-            }
+            if (!can_show_rpc_modal ()) return;
 
             var dialog = new ReceiveBackupDialog (rpc, events);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
             dialog.account_imported.connect ((new_id) => {
                 after_secondary_device_imported.begin (new_id);
             });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         private async void after_secondary_device_imported (int new_id) {
@@ -1432,13 +1421,13 @@ namespace Dc {
 
         private async void load_profile_avatar () {
             if (rpc.account_id <= 0) {
-                if (profile_unread_badge != null) profile_unread_badge.visible = false;
+                profile_unread_badge.visible = false;
                 return;
             }
 
             try {
-                string? name = yield rpc.get_config ("displayname");
-                string? avatar = yield rpc.get_config ("selfavatar");
+                string? name = yield rpc.get_config ("displayname", rpc.account_id);
+                string? avatar = yield rpc.get_config ("selfavatar", rpc.account_id);
 
                 profile_avatar.text = name ?? "";
                 profile_avatar.custom_image = load_avatar (avatar);
@@ -1483,16 +1472,13 @@ namespace Dc {
         }
 
         private void on_new_chat () {
-            if (rpc.account_id <= 0) return;
-            if (active_modal != null) return;
+            if (!can_show_account_modal ()) return;
 
             var picker = new ContactPickerDialog (rpc);
-            active_modal = picker;
-            picker.closed.connect (() => { active_modal = null; });
             picker.contact_picked.connect ((contact_id, email) => {
                 create_chat_by_email.begin (email);
             });
-            picker.present (this);
+            present_modal (picker);
         }
 
         private async void create_chat_by_email (string email) {
@@ -1512,29 +1498,21 @@ namespace Dc {
         }
 
         private void on_new_group () {
-            if (rpc.account_id <= 0) return;
-            if (active_modal != null) return;
-
-            var dialog = new NewGroupDialog (rpc);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
-            dialog.group_created.connect ((chat_id) => {
-                after_group_created.begin (chat_id, false);
-            });
-            dialog.present (this);
+            show_group_dialog (false);
         }
 
         private void on_new_channel () {
-            if (rpc.account_id <= 0) return;
-            if (active_modal != null) return;
+            show_group_dialog (true);
+        }
 
-            var dialog = new NewGroupDialog (rpc, true);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
+        private void show_group_dialog (bool is_channel) {
+            if (!can_show_account_modal ()) return;
+
+            var dialog = new NewGroupDialog (rpc, is_channel);
             dialog.group_created.connect ((chat_id) => {
-                after_group_created.begin (chat_id, true);
+                after_group_created.begin (chat_id, is_channel);
             });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         private async void after_group_created (int chat_id, bool is_channel) {
@@ -1564,30 +1542,16 @@ namespace Dc {
             }
         }
 
-        /* ================================================================
-         *  App Menu (Settings / About)
-         * ================================================================ */
-
         private GLib.MenuModel build_app_menu () {
-            SimpleAction a;
-            a = new SimpleAction ("new-chat", null);
-            a.activate.connect (() => { on_new_chat (); }); add_action (a);
-            a = new SimpleAction ("new-group", null);
-            a.activate.connect (() => { on_new_group (); }); add_action (a);
-            a = new SimpleAction ("new-channel", null);
-            a.activate.connect (() => { on_new_channel (); }); add_action (a);
-            a = new SimpleAction ("use-invite-link", null);
-            a.activate.connect (() => { show_use_invite_link_dialog (); }); add_action (a);
-            a = new SimpleAction ("refresh", null);
-            a.activate.connect (() => { load_chats.begin (); }); add_action (a);
-            a = new SimpleAction ("settings", null);
-            a.activate.connect (() => { show_settings_dialog (); }); add_action (a);
-            a = new SimpleAction ("shortcuts", null);
-            a.activate.connect (() => { show_keyboard_shortcuts_dialog (); }); add_action (a);
-            a = new SimpleAction ("about", null);
-            a.activate.connect (() => { show_about_dialog (); }); add_action (a);
-            a = new SimpleAction ("quit", null);
-            a.activate.connect (() => { this.application.quit (); }); add_action (a);
+            window_action ("new-chat").activate.connect (() => { on_new_chat (); });
+            window_action ("new-group").activate.connect (() => { on_new_group (); });
+            window_action ("new-channel").activate.connect (() => { on_new_channel (); });
+            window_action ("use-invite-link").activate.connect (() => { show_use_invite_link_dialog (); });
+            window_action ("refresh").activate.connect (() => { load_chats.begin (); });
+            window_action ("settings").activate.connect (() => { show_settings_dialog (); });
+            window_action ("shortcuts").activate.connect (() => { show_keyboard_shortcuts_dialog (); });
+            window_action ("about").activate.connect (() => { show_about_dialog (); });
+            window_action ("quit").activate.connect (() => { this.application.quit (); });
 
             var s1 = new GLib.Menu ();
             s1.append ("New Chat", "win.new-chat");
@@ -1608,6 +1572,12 @@ namespace Dc {
             menu.append_section (null, s3);
             menu.append_section (null, s4);
             return menu;
+        }
+
+        private SimpleAction window_action (string name) {
+            var action = new SimpleAction (name, null);
+            add_action (action);
+            return action;
         }
 
         private void show_about_dialog () {
@@ -1712,9 +1682,7 @@ namespace Dc {
 
             box.append (content);
             dialog.child = box;
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
-            dialog.present (this);
+            present_modal (dialog);
 
             /* When the link came from a click or the system handler, drop it
                straight in so the user only has to confirm with "Add". */
@@ -1805,55 +1773,33 @@ namespace Dc {
             if (active_modal != null) return;
 
             var dialog = new SettingsDialog (this, rpc);
-            active_modal = dialog;
             dialog.closed.connect (() => {
-                active_modal = null;
                 if (!rpc.is_connected && settings.rpc_server_path.length > 0) {
                     try_connect.begin ();
                 }
             });
-            dialog.present (this);
+            present_modal (dialog);
         }
 
         public async void reload_active_account () {
-            discard_all_views ();
-            chat_store.remove_all ();
-            clear_listbox (chat_listbox);
-            search_entry.text = "";
-            content_title_label.label = "Select a chat";
-            empty_status.child = null;
+            reset_chat_ui ();
 
             if (rpc.account_id <= 0) {
-                rpc.self_email = null;
-                rpc.self_display_name = null;
+                clear_self_identity ();
                 profile_avatar.text = "";
                 profile_avatar.custom_image = null;
-                if (profile_unread_badge != null) profile_unread_badge.visible = false;
-                empty_status.icon_name = "avatar-default-symbolic";
-                empty_status.title = "No Profile Loaded";
-                empty_status.description =
-                    "Add or select a profile from the profile menu.";
-                content_stack.visible_child_name = "empty";
+                profile_unread_badge.visible = false;
+                show_empty_status ("avatar-default-symbolic",
+                    "No Profile Loaded",
+                    "Add or select a profile from the profile menu.");
                 current_chat_id = 0;
                 return;
             }
 
-            empty_status.icon_name = "parla-welcome";
-            empty_status.title = "Parla";
-            empty_status.description = "Select a chat to start messaging.";
-            try {
-                rpc.self_email = yield rpc.get_config ("addr");
-            } catch (Error e) {
-                rpc.self_email = null;
-            }
-            try {
-                rpc.self_display_name = yield rpc.get_config ("displayname");
-            } catch (Error e) {
-                rpc.self_display_name = null;
-            }
-            MessageRow.self_display_name = rpc.self_display_name;
+            show_empty_status ("parla-welcome", "Parla",
+                "Select a chat to start messaging.");
+            yield load_self_identity ();
             current_chat_id = 0;
-            content_stack.visible_child_name = "empty";
             yield load_chats ();
             yield load_profile_avatar ();
             if (events != null && !events.is_listening) {
@@ -1870,10 +1816,6 @@ namespace Dc {
             }
             views.remove_all ();
         }
-
-        /* ================================================================
-         *  Sidebar mode (Full / Compact / Hidden)
-         * ================================================================ */
 
         private void cycle_sidebar_mode () {
             /* On narrow widths the sidebar can be visually hidden by the
@@ -1896,9 +1838,9 @@ namespace Dc {
                 split_view.min_sidebar_width = 260;
                 split_view.max_sidebar_width = 340;
                 split_view.sidebar_width_fraction = 0.32;
-                if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
-                if (search_entry != null) search_entry.visible = true;
-                if (sidebar_title != null) sidebar_title.title = "Parla";
+                sidebar_box.remove_css_class ("sidebar-compact");
+                search_entry.visible = true;
+                sidebar_title.title = "Parla";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
                 sidebar_toggle_btn.tooltip_text = "Compact Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
@@ -1908,16 +1850,16 @@ namespace Dc {
                 split_view.min_sidebar_width = 72;
                 split_view.max_sidebar_width = 72;
                 split_view.sidebar_width_fraction = 0.0;
-                if (sidebar_box != null) sidebar_box.add_css_class ("sidebar-compact");
-                if (search_entry != null) search_entry.visible = false;
-                if (sidebar_title != null) sidebar_title.title = "";
+                sidebar_box.add_css_class ("sidebar-compact");
+                search_entry.visible = false;
+                sidebar_title.title = "";
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
                 sidebar_toggle_btn.tooltip_text = "Hide Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
                 break;
             case SidebarMode.HIDDEN:
                 split_view.show_sidebar = false;
-                if (sidebar_box != null) sidebar_box.remove_css_class ("sidebar-compact");
+                sidebar_box.remove_css_class ("sidebar-compact");
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
                 sidebar_toggle_btn.tooltip_text = "Show Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
@@ -1935,10 +1877,6 @@ namespace Dc {
                 idx++;
             }
         }
-
-        /* ================================================================
-         *  Keyboard Shortcuts
-         * ================================================================ */
 
         private bool on_window_key_pressed (uint keyval, uint keycode,
                                             Gdk.ModifierType state) {
@@ -2013,13 +1951,11 @@ namespace Dc {
                Ctrl normally, Command on macOS. */
             if (!Platform.has_primary_modifier (state)) return false;
 
-            switch (keyval) {
+            switch (Gdk.keyval_to_lower (keyval)) {
             case Gdk.Key.n:
-            case Gdk.Key.N:
                 on_new_chat ();
                 return true;
             case Gdk.Key.g:
-            case Gdk.Key.G:
                 if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
                     on_new_channel ();
                 } else {
@@ -2030,27 +1966,21 @@ namespace Dc {
                 show_settings_dialog ();
                 return true;
             case Gdk.Key.f:
-            case Gdk.Key.F:
                 toggle_message_search ();
                 return true;
             case Gdk.Key.k:
-            case Gdk.Key.K:
                 show_quick_switch_dialog ();
                 return true;
             case Gdk.Key.r:
-            case Gdk.Key.R:
                 refresh_current_chat ();
                 return true;
             case Gdk.Key.s:
-            case Gdk.Key.S:
                 cycle_sidebar_mode ();
                 return true;
             case Gdk.Key.w:
-            case Gdk.Key.W:
                 this.close ();
                 return true;
             case Gdk.Key.q:
-            case Gdk.Key.Q:
                 this.application.quit ();
                 return true;
             }
@@ -2116,17 +2046,14 @@ namespace Dc {
         }
 
         private void show_quick_switch_dialog () {
-            if (rpc.account_id <= 0) return;
+            if (!can_show_account_modal ()) return;
             if (chat_store.get_n_items () == 0) return;
-            if (active_modal != null) return;
 
             var dialog = new QuickSwitchDialog (chat_store);
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
             dialog.chat_selected.connect ((chat_id) => {
                 select_chat_by_id (chat_id);
             });
-            dialog.present (this);
+            present_modal (dialog);
             dialog.focus_entry ();
         }
 
@@ -2211,29 +2138,15 @@ namespace Dc {
             scroller.child = list;
             box.append (scroller);
             dialog.child = box;
-            active_modal = dialog;
-            dialog.closed.connect (() => { active_modal = null; });
-            dialog.present (this);
+            present_modal (dialog);
         }
-
-        /* ================================================================
-         *  Utilities
-         * ================================================================ */
 
         public void show_toast (string message) {
             var toast = new Adw.Toast (message);
             toast.timeout = 4;
-
-            /* Find or create toast overlay */
-            /* For simplicity, use the application window's built-in toast support */
             toast_overlay.add_toast (toast);
         }
 
-        /**
-         * Build the floating "disconnected" banner that slides in from the
-         * top when the RPC server can't be reached. Non-interactive so it
-         * never intercepts clicks meant for the chat below.
-         */
         private Gtk.Revealer build_connection_banner () {
             var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             box.add_css_class ("connection-banner");
@@ -2258,9 +2171,6 @@ namespace Dc {
             return connection_banner;
         }
 
-        /**
-         * Show/hide the floating network banner. Pass null reason to hide.
-         */
         public void set_connection_status (bool connected, string? reason = null) {
             if (connection_banner == null) return;
             if (connected) {

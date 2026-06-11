@@ -88,14 +88,6 @@ namespace Dc {
         return obj.get_boolean_member (key);
     }
 
-    public static int[] json_ints (Json.Array arr) {
-        int[] r = new int[arr.get_length ()];
-        for (uint i = 0; i < arr.get_length (); i++) {
-            r[i] = (int) arr.get_int_element (i);
-        }
-        return r;
-    }
-
     /* ---- Widget helpers ---- */
 
     public static void clear_listbox (Gtk.ListBox lb) {
@@ -149,24 +141,14 @@ namespace Dc {
         public int64 timestamp { get; set; default = 0; }
         public int unread_count { get; set; default = 0; }
         public string? avatar_path { get; set; default = null; }
-        public int chat_type { get; set; default = 0; }
         public bool is_muted { get; set; default = false; }
         public bool is_contact_request { get; set; default = false; }
-        public bool is_archived { get; set; default = false; }
         public bool is_pinned { get; set; default = false; }
     }
 
-    /**
-     * Delivery state of a message, matching deltachat-core MessageState.
-     * Only the values we render are named; everything else is UNKNOWN.
-     */
+    /* Delivery state values from deltachat-core that the UI renders. */
     public enum MessageState {
-        UNKNOWN       = 0,
-        IN_FRESH      = 10,
-        IN_NOTICED    = 13,
-        IN_SEEN       = 16,
         OUT_PREPARING = 18,
-        OUT_DRAFT     = 19,
         OUT_PENDING   = 20,
         OUT_FAILED    = 24,
         OUT_DELIVERED = 26,
@@ -185,7 +167,6 @@ namespace Dc {
         };
 
         public int id { get; set; default = 0; }
-        public int chat_id { get; set; default = 0; }
         public string? text { get; set; default = null; }
         public string? sender_address { get; set; default = null; }
         public string? sender_name { get; set; default = null; }

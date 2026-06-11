@@ -40,8 +40,9 @@ namespace Dc {
                 return is_executable (env_path) ? env_path : null;
             }
 
-            string? exe_dir = Platform.get_executable_dir ();
-            if (exe_dir != null) {
+            string? exe_path = Platform.get_executable_path ();
+            if (exe_path != null) {
+                string exe_dir = Path.get_dirname (exe_path);
                 string prefix = Path.get_dirname (exe_dir);
                 string[] packaged = {
                     Path.build_filename (exe_dir, RPC_BIN),

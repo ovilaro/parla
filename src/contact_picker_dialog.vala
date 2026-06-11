@@ -108,14 +108,14 @@ namespace Dc {
 
         private async void load_contacts () {
             try {
-                var ids = yield rpc.get_contact_ids (null);
+                var ids = yield rpc.get_contact_ids_for (rpc.account_id, null);
                 if (ids == null) return;
 
                 for (uint i = 0; i < ids.get_length (); i++) {
                     int cid = (int) ids.get_int_element (i);
                     if (cid <= 1) continue; /* skip self (1) and special IDs */
 
-                    var obj = yield rpc.get_contact (cid);
+                    var obj = yield rpc.get_contact_for (rpc.account_id, cid);
                     if (obj == null) continue;
 
                     var ci = RpcParsers.parse_contact (cid, obj);

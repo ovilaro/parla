@@ -21,11 +21,6 @@ namespace Dc.Platform {
         return platform_get_executable_path ();
     }
 
-    public string? get_executable_dir () {
-        string? exe_path = get_executable_path ();
-        return exe_path != null ? Path.get_dirname (exe_path) : null;
-    }
-
     public bool is_macos () {
         return platform_is_macos ();
     }
@@ -41,13 +36,10 @@ namespace Dc.Platform {
         platform_macos_install_file_drop_handler (widget, callback, user_data);
     }
 
-    public Gdk.ModifierType primary_modifier_mask () {
-        return is_macos () ? Gdk.ModifierType.META_MASK
-                           : Gdk.ModifierType.CONTROL_MASK;
-    }
-
     public bool has_primary_modifier (Gdk.ModifierType state) {
-        return (state & primary_modifier_mask ()) != 0;
+        var mask = is_macos () ? Gdk.ModifierType.META_MASK
+                               : Gdk.ModifierType.CONTROL_MASK;
+        return (state & mask) != 0;
     }
 
     public string primary_accelerator_prefix () {

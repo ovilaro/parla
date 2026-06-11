@@ -84,11 +84,6 @@ namespace Dc {
 
         public void set_window (Window w) { this.window = w; }
 
-        public void show (string path) {
-            string[] one = { path };
-            show_list (one, 0);
-        }
-
         public void show_list (string[] image_paths, int start_index) {
             if (image_paths.length == 0) return;
             if (start_index < 0 || start_index >= image_paths.length) start_index = 0;

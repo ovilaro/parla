@@ -38,8 +38,8 @@ namespace Dc {
         private bool messages_loaded = false;
         private int64 scroll_freeze_until_us = 0;
 
-        public PinnedMessagesManager pinned { get; private set; }
-        public MessageActions msg_actions { get; private set; }
+        private PinnedMessagesManager pinned;
+        private MessageActions msg_actions;
 
         public ConversationView (int chat_id, Window window, RpcClient rpc,
                                  SettingsManager settings) {
@@ -544,7 +544,8 @@ namespace Dc {
                     previous_scroll_value = message_scroll.vadjustment.value;
                 }
 
-                all_msg_ids = yield rpc.get_message_ids (chat_id);
+                all_msg_ids = yield rpc.get_message_ids_for (
+                    rpc.account_id, chat_id);
                 if (all_msg_ids == null) return;
 
                 loaded_start_index = all_msg_ids.get_length () > 30
@@ -587,7 +588,7 @@ namespace Dc {
             for (uint i = 0; i < count; i++) {
                 ids[i] = (int) all_msg_ids.get_int_element (start + i);
             }
-            var map = yield rpc.get_messages (ids);
+            var map = yield rpc.get_messages_for (rpc.account_id, ids);
             var result = new GLib.GenericArray<Message> ();
             if (map != null) {
                 foreach (int mid in ids) {
