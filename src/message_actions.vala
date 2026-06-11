@@ -9,7 +9,6 @@ namespace Dc {
         private unowned ComposeBar compose_bar;
         private unowned SettingsManager settings;
 
-
         public MessageActions (Window window, RpcClient rpc,
                                GLib.ListStore message_store,
                                PinnedMessagesManager pinned,
@@ -43,10 +42,6 @@ namespace Dc {
                 emojis += "…";
             }
             var msg = find_message (message_store, msg_id);
-            string[] my_emojis = {};
-            if (msg != null && msg.my_reactions != null) {
-                my_emojis = msg.my_reactions.split (",");
-            }
             var emoji_row1 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             var emoji_row2 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             for (int i = 0; i < emojis.length; i++) {
@@ -61,11 +56,7 @@ namespace Dc {
                         show_emoji_picker (msg_id, parent, x, y);
                     });
                 } else {
-                    bool already_used = false;
-                    foreach (string me in my_emojis) {
-                        if (me == emoji) { already_used = true; break; }
-                    }
-                    if (already_used) btn.add_css_class ("suggested-action");
+                    if (has_my_reaction (msg, emoji)) btn.add_css_class ("suggested-action");
                     btn.clicked.connect (() => {
                         popover.popdown ();
                         send_reaction.begin (msg_id, emoji);
@@ -83,68 +74,43 @@ namespace Dc {
             var reply_forward_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             reply_forward_row.homogeneous = true;
 
-            var reply_btn = new Gtk.Button.with_label ("Reply");
-            reply_btn.add_css_class ("flat");
-            reply_btn.hexpand = true;
-            reply_btn.clicked.connect (() => {
-                popover.popdown ();
+            reply_forward_row.append (menu_button (popover, "Reply", () => {
                 start_replying (msg_id);
-            });
-            reply_forward_row.append (reply_btn);
+            }, true));
 
-            var forward_btn = new Gtk.Button.with_label ("Forward\u2026");
-            forward_btn.add_css_class ("flat");
-            forward_btn.hexpand = true;
-            forward_btn.clicked.connect (() => {
-                popover.popdown ();
+            reply_forward_row.append (menu_button (popover, "Forward\u2026", () => {
                 start_forwarding (msg_id);
-            });
-            reply_forward_row.append (forward_btn);
+            }, true));
 
             vbox.append (reply_forward_row);
 
             /* Pin / Unpin */
             bool msg_is_pinned = pinned.is_pinned (msg_id);
-            var pin_btn = new Gtk.Button.with_label (
-                msg_is_pinned ? "Unpin from conversation"
-                              : "Pin in conversation");
-            pin_btn.add_css_class ("flat");
-            pin_btn.clicked.connect (() => {
-                popover.popdown ();
-                pinned.toggle_pin (msg_id);
-            });
-            vbox.append (pin_btn);
+            vbox.append (menu_button (popover,
+                msg_is_pinned ? "Unpin from conversation" : "Pin in conversation",
+                () => {
+                    pinned.toggle_pin (msg_id);
+                }));
 
             /* Save file (for messages with attachments) */
             if (msg != null && msg.file_path != null &&
                 msg.file_path.length > 0) {
                 string fpath = msg.file_path;
                 string? fname = msg.file_name;
-                var save_btn = new Gtk.Button.with_label ("Save file");
-                save_btn.add_css_class ("flat");
-                save_btn.clicked.connect (() => {
-                    popover.popdown ();
+                vbox.append (menu_button (popover, "Save file", () => {
                     window.save_attachment.begin (fpath, fname);
-                });
-                vbox.append (save_btn);
+                }));
             }
 
             if (msg != null && msg.can_edit_text) {
-                var edit_btn = new Gtk.Button.with_label ("Edit");
-                edit_btn.add_css_class ("flat");
-                edit_btn.clicked.connect (() => {
-                    popover.popdown ();
+                vbox.append (menu_button (popover, "Edit", () => {
                     start_editing (msg_id);
-                });
-                vbox.append (edit_btn);
+                }));
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            var del_btn = new Gtk.Button.with_label ("Delete…");
-            del_btn.add_css_class ("flat");
-            del_btn.clicked.connect (() => {
-                popover.popdown ();
+            vbox.append (menu_button (popover, "Delete…", () => {
                 if (is_outgoing) {
                     confirm_delete_options (window, "Delete Message?",
                         "Delete this message from your device only, or from all participants? This cannot be undone.",
@@ -156,45 +122,62 @@ namespace Dc {
                         () => { delete_message.begin (msg_id, false); },
                         null);
                 }
-            });
-            vbox.append (del_btn);
+            }));
 
             popover.child = vbox;
             popover.set_parent (parent);
             popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
 
+            preserve_scroll_until_closed (popover, true);
+            popover.popup ();
+        }
+
+        private Gtk.Button menu_button (Gtk.Popover popover, string label,
+                                        owned VoidFunc action,
+                                        bool hexpand = false) {
+            var btn = new Gtk.Button.with_label (label);
+            btn.add_css_class ("flat");
+            btn.hexpand = hexpand;
+            btn.clicked.connect (() => {
+                popover.popdown ();
+                action ();
+            });
+            return btn;
+        }
+
+        private void preserve_scroll_until_closed (Gtk.Popover popover,
+                                                   bool idle_unparent = false) {
             var view = window.current_view ();
             double saved_scroll = view != null ? view.get_scroll_value () : 0;
             if (view != null) view.freeze_scroll_handler (1500);
-
             popover.closed.connect (() => {
                 if (view != null) {
-                    /* popdown() emits "closed" and only then grabs focus back
-                       into the listview, which scrolls the focused row into
-                       view. A synchronous restore here runs too early and is
-                       overwritten, so re-assert on the next frame as well. */
                     view.restore_scroll_value (saved_scroll);
                     view.restore_scroll_value_deferred (saved_scroll);
+                }
+                if (!idle_unparent) {
+                    popover.unparent ();
+                    return;
                 }
                 Idle.add (() => {
                     popover.unparent ();
                     return Source.REMOVE;
                 });
             });
+        }
 
-            popover.popup ();
+        private bool has_my_reaction (Message? msg, string emoji) {
+            if (msg == null || msg.my_reactions == null) return false;
+            foreach (string me in msg.my_reactions.split (",")) {
+                if (me == emoji) return true;
+            }
+            return false;
         }
 
         public async void send_reaction (int msg_id, string emoji) {
             try {
                 var current = find_message (message_store, msg_id);
-                bool already_used = false;
-                if (current != null && current.my_reactions != null) {
-                    foreach (string me in current.my_reactions.split (",")) {
-                        if (me == emoji) { already_used = true; break; }
-                    }
-                }
-                if (already_used) {
+                if (has_my_reaction (current, emoji)) {
                     yield rpc.send_reaction (msg_id, new string[] {});
                 } else {
                     yield rpc.send_reaction (msg_id, new string[] { emoji });
@@ -218,17 +201,7 @@ namespace Dc {
             chooser.set_parent (parent);
             chooser.set_pointing_to ({ (int) x, (int) y, 1, 1 });
 
-            var view = window.current_view ();
-            double saved_scroll = view != null ? view.get_scroll_value () : 0;
-            if (view != null) view.freeze_scroll_handler (1500);
-
-            chooser.closed.connect (() => {
-                if (view != null) {
-                    view.restore_scroll_value (saved_scroll);
-                    view.restore_scroll_value_deferred (saved_scroll);
-                }
-                chooser.unparent ();
-            });
+            preserve_scroll_until_closed (chooser);
             chooser.popup ();
         }
 
