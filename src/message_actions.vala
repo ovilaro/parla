@@ -129,22 +129,14 @@ namespace Dc {
                 vbox.append (save_btn);
             }
 
-            if (is_outgoing) {
-                /* Allow editing only if the message has text */
-                bool has_text = false;
-                if (msg != null) {
-                    has_text = (msg.text != null &&
-                                msg.text.strip ().length > 0);
-                }
-                if (has_text) {
-                    var edit_btn = new Gtk.Button.with_label ("Edit");
-                    edit_btn.add_css_class ("flat");
-                    edit_btn.clicked.connect (() => {
-                        popover.popdown ();
-                        start_editing (msg_id);
-                    });
-                    vbox.append (edit_btn);
-                }
+            if (msg != null && msg.can_edit_text) {
+                var edit_btn = new Gtk.Button.with_label ("Edit");
+                edit_btn.add_css_class ("flat");
+                edit_btn.clicked.connect (() => {
+                    popover.popdown ();
+                    start_editing (msg_id);
+                });
+                vbox.append (edit_btn);
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -256,9 +248,16 @@ namespace Dc {
 
         public void start_editing (int msg_id) {
             var m = find_message (message_store, msg_id);
-            if (m != null) {
-                compose_bar.begin_edit (msg_id, m.text ?? "");
-            }
+            if (m != null) start_editing_message (m);
+        }
+
+        public void start_editing_last () {
+            var m = find_last_editable_text_message (message_store);
+            if (m != null) start_editing_message (m);
+        }
+
+        private void start_editing_message (Message m) {
+            compose_bar.begin_edit (m.id, m.text ?? "");
         }
 
         public void start_replying (int msg_id) {

@@ -12,6 +12,7 @@ namespace Dc {
 
         public signal void send_message (string text, string? file_path, string? file_name, int quote_msg_id);
         public signal void edit_message (int msg_id, string new_text);
+        public signal void edit_last_requested ();
 
         private Gtk.TextView text_view;
         private Gtk.Label placeholder_label;
@@ -562,6 +563,16 @@ namespace Dc {
             if (is_plain_colon_key (keyval, state) && previous_char_is_colon ()) {
                 open_emoji_picker_after_typed_colon ();
                 return false;
+            }
+
+            if ((keyval == Gdk.Key.Up || keyval == Gdk.Key.KP_Up)
+                && (state & (Gdk.ModifierType.SHIFT_MASK
+                             | Gdk.ModifierType.CONTROL_MASK
+                             | Gdk.ModifierType.ALT_MASK)) == 0
+                && text_view.buffer.get_char_count () == 0
+                && !has_active_mode ()) {
+                edit_last_requested ();
+                return true;
             }
 
             bool shift = (state & Gdk.ModifierType.SHIFT_MASK) != 0;

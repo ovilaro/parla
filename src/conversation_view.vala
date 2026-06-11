@@ -276,6 +276,9 @@ namespace Dc {
             compose_bar.edit_message.connect ((msg_id, new_text) => {
                 msg_actions.edit_message.begin (msg_id, new_text);
             });
+            compose_bar.edit_last_requested.connect (() => {
+                msg_actions.start_editing_last ();
+            });
             append (compose_bar);
 
             /* For contact-request chats the compose bar is hidden and this

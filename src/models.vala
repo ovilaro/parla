@@ -225,6 +225,12 @@ namespace Dc {
         public bool is_failed {
             get { return state == MessageState.OUT_FAILED; }
         }
+        public bool has_text {
+            get { return text != null && text.strip ().length > 0; }
+        }
+        public bool can_edit_text {
+            get { return is_outgoing && !is_info && has_text; }
+        }
     }
 
     public class Contact : Object {
@@ -258,5 +264,13 @@ namespace Dc {
             if (m.id == msg_id) return (int) i;
         }
         return -1;
+    }
+
+    public Message? find_last_editable_text_message (GLib.ListStore store) {
+        for (uint i = store.get_n_items (); i > 0; i--) {
+            var m = (Message) store.get_item (i - 1);
+            if (m.can_edit_text) return m;
+        }
+        return null;
     }
 }
