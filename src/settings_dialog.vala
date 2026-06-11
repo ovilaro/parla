@@ -63,24 +63,20 @@ namespace Dc {
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
-            /* Auto is always the default: a fresh install self-onboards the
-               engine, and the source is only Custom/Desktop when explicitly
-               chosen (those writes always persist the rpc_server_source key). */
-            int source = kf_int (kf, "rpc_server_source", (int) RpcServerSource.AUTO);
-            if (source < 0 || source > 2) source = (int) RpcServerSource.AUTO;
+            int source = kf_enum (kf, "rpc_server_source",
+                                  (int) RpcServerSource.AUTO, 2);
             rpc_server_source = (RpcServerSource) source;
             rpc_check_updates_on_startup =
                 kf_bool (kf, "rpc_check_updates_on_startup", true);
-            int sb = kf_int (kf, "sidebar_mode", (int) SidebarMode.FULL);
-            if (sb < 0 || sb > 2) sb = (int) SidebarMode.FULL;
+            int sb = kf_enum (kf, "sidebar_mode", (int) SidebarMode.FULL, 2);
             sidebar_mode = (SidebarMode) sb;
             default_account_addr = kf_str (kf, "default_account_addr", "");
-            int ms = kf_int (kf, "message_style", (int) MessageStyle.BUBBLES);
-            if (ms < 0 || ms > 1) ms = (int) MessageStyle.BUBBLES;
+            int ms = kf_enum (kf, "message_style",
+                              (int) MessageStyle.BUBBLES, 1);
             message_style = (MessageStyle) ms;
             accent_color = kf_str (kf, "accent_color", "");
-            int bm = kf_int (kf, "background_mode", (int) BackgroundMode.SYSTEM);
-            if (bm < 0 || bm > 2) bm = (int) BackgroundMode.SYSTEM;
+            int bm = kf_enum (kf, "background_mode",
+                              (int) BackgroundMode.SYSTEM, 2);
             background_mode = (BackgroundMode) bm;
             background_color = kf_str (kf, "background_color", "");
         }
@@ -97,77 +93,70 @@ namespace Dc {
             try { return kf.get_string ("General", k); } catch { return d; }
         }
 
+        private static int kf_enum (KeyFile kf, string k, int d, int max) {
+            int v = kf_int (kf, k, d);
+            return v >= 0 && v <= max ? v : d;
+        }
+
         public void save_double_click_action (int v) {
             double_click_action = v;
-            save_to_file ((kf) => { kf.set_integer ("General", "double_click_action", v); });
+            save_int ("double_click_action", v);
         }
 
         public void save_markdown_rendering (bool v) {
             markdown_rendering = v; Markdown.enabled = v;
-            save_to_file ((kf) => { kf.set_boolean ("General", "markdown_rendering", v); });
+            save_bool ("markdown_rendering", v);
         }
 
         public void save_shift_enter_sends (bool v) {
             shift_enter_sends = v;
-            save_to_file ((kf) => { kf.set_boolean ("General", "shift_enter_sends", v); });
+            save_bool ("shift_enter_sends", v);
         }
 
         public void save_notifications_enabled (bool v) {
             notifications_enabled = v;
-            save_to_file ((kf) => { kf.set_boolean ("General", "notifications_enabled", v); });
+            save_bool ("notifications_enabled", v);
         }
 
         public void save_minimize_to_tray (bool v) {
             minimize_to_tray = v;
-            save_to_file ((kf) => { kf.set_boolean ("General", "minimize_to_tray", v); });
+            save_bool ("minimize_to_tray", v);
         }
 
         public void save_rpc_server_path (string v) {
             rpc_server_path = v;
-            save_to_file ((kf) => { kf.set_string ("General", "rpc_server_path", v); });
+            save_string ("rpc_server_path", v);
         }
 
         public void save_rpc_server_source (RpcServerSource v) {
             rpc_server_source = v;
-            save_to_file ((kf) => {
-                kf.set_integer ("General", "rpc_server_source", (int) v);
-            });
+            save_int ("rpc_server_source", (int) v);
         }
 
         public void save_rpc_check_updates_on_startup (bool v) {
             rpc_check_updates_on_startup = v;
-            save_to_file ((kf) => {
-                kf.set_boolean ("General", "rpc_check_updates_on_startup", v);
-            });
+            save_bool ("rpc_check_updates_on_startup", v);
         }
 
         public void save_sidebar_mode (SidebarMode v) {
             sidebar_mode = v;
-            save_to_file ((kf) => {
-                kf.set_integer ("General", "sidebar_mode", (int) v);
-            });
+            save_int ("sidebar_mode", (int) v);
         }
 
         public void save_default_account_addr (string v) {
             default_account_addr = v;
-            save_to_file ((kf) => {
-                kf.set_string ("General", "default_account_addr", v);
-            });
+            save_string ("default_account_addr", v);
         }
 
         public void save_message_style (MessageStyle v) {
             message_style = v;
-            save_to_file ((kf) => {
-                kf.set_integer ("General", "message_style", (int) v);
-            });
+            save_int ("message_style", (int) v);
             appearance_changed ();
         }
 
         public void save_accent_color (string v) {
             accent_color = v;
-            save_to_file ((kf) => {
-                kf.set_string ("General", "accent_color", v);
-            });
+            save_string ("accent_color", v);
             appearance_changed ();
         }
 
@@ -177,16 +166,24 @@ namespace Dc {
            avoiding a needless rebuild of every conversation view. */
         public void save_background_mode (BackgroundMode v) {
             background_mode = v;
-            save_to_file ((kf) => {
-                kf.set_integer ("General", "background_mode", (int) v);
-            });
+            save_int ("background_mode", (int) v);
         }
 
         public void save_background_color (string v) {
             background_color = v;
-            save_to_file ((kf) => {
-                kf.set_string ("General", "background_color", v);
-            });
+            save_string ("background_color", v);
+        }
+
+        private void save_int (string key, int value) {
+            save_to_file ((kf) => { kf.set_integer ("General", key, value); });
+        }
+
+        private void save_bool (string key, bool value) {
+            save_to_file ((kf) => { kf.set_boolean ("General", key, value); });
+        }
+
+        private void save_string (string key, string value) {
+            save_to_file ((kf) => { kf.set_string ("General", key, value); });
         }
 
         public void save_to_file (SettingWriter writer) {
@@ -248,19 +245,11 @@ namespace Dc {
             content.margin_top = 12;
             content.margin_bottom = 16;
 
-            /* Behavior section */
-            var behavior_label = new Gtk.Label ("Behavior");
-            behavior_label.add_css_class ("title-3");
-            behavior_label.halign = Gtk.Align.START;
-            content.append (behavior_label);
+            var behavior_list = settings_list ("Behavior");
 
-            var behavior_list = new Gtk.ListBox ();
-            behavior_list.selection_mode = Gtk.SelectionMode.NONE;
-            behavior_list.add_css_class ("boxed-list");
-
-            var dblclick_row = new Adw.ActionRow ();
-            dblclick_row.title = "Double-click on message";
-            dblclick_row.subtitle = "Action when a message is double-clicked";
+            var dblclick_row = action_row (
+                "Double-click on message",
+                "Action when a message is double-clicked");
 
             string[] dblclick_labels = {
                 "Reply to message",
@@ -270,124 +259,87 @@ namespace Dc {
                 "Do nothing"
             };
 
-            var dblclick_combo = new Gtk.DropDown.from_strings (dblclick_labels);
-            dblclick_combo.selected = app_window.settings.double_click_action;
-            dblclick_combo.valign = Gtk.Align.CENTER;
+            var dblclick_combo = row_dropdown (dblclick_row, dblclick_labels,
+                (uint) app_window.settings.double_click_action);
             dblclick_combo.notify["selected"].connect (() => {
                 app_window.settings.save_double_click_action ((int) dblclick_combo.selected);
             });
-            dblclick_row.add_suffix (dblclick_combo);
-            dblclick_row.activatable_widget = dblclick_combo;
 
             behavior_list.append (dblclick_row);
 
-            var md_row = new Adw.ActionRow ();
-            md_row.title = "Markdown rendering";
-            md_row.subtitle = "Format bold, italic, code and headings";
-
-            var md_switch = new Gtk.Switch ();
-            md_switch.active = Markdown.enabled;
-            md_switch.valign = Gtk.Align.CENTER;
+            var md_row = action_row (
+                "Markdown rendering",
+                "Format bold, italic, code and headings");
+            var md_switch = row_switch (md_row, Markdown.enabled);
             md_switch.notify["active"].connect (() => {
                 app_window.settings.save_markdown_rendering (md_switch.active);
             });
-            md_row.add_suffix (md_switch);
-            md_row.activatable_widget = md_switch;
 
             behavior_list.append (md_row);
 
-            var shift_row = new Adw.ActionRow ();
-            shift_row.title = "Shift+Return sends message";
-            shift_row.subtitle = "When on, Return inserts a newline and Shift+Return sends";
-
-            var shift_switch = new Gtk.Switch ();
-            shift_switch.active = app_window.settings.shift_enter_sends;
-            shift_switch.valign = Gtk.Align.CENTER;
+            var shift_row = action_row (
+                "Shift+Return sends message",
+                "When on, Return inserts a newline and Shift+Return sends");
+            var shift_switch = row_switch (
+                shift_row, app_window.settings.shift_enter_sends);
             shift_switch.notify["active"].connect (() => {
                 app_window.settings.save_shift_enter_sends (shift_switch.active);
             });
-            shift_row.add_suffix (shift_switch);
-            shift_row.activatable_widget = shift_switch;
 
             behavior_list.append (shift_row);
 
-            var notif_row = new Adw.ActionRow ();
-            notif_row.title = "Desktop notifications";
-            notif_row.subtitle = "Notify on incoming messages when the window is not focused";
-
-            var notif_switch = new Gtk.Switch ();
-            notif_switch.active = app_window.settings.notifications_enabled;
-            notif_switch.valign = Gtk.Align.CENTER;
+            var notif_row = action_row (
+                "Desktop notifications",
+                "Notify on incoming messages when the window is not focused");
+            var notif_switch = row_switch (
+                notif_row, app_window.settings.notifications_enabled);
             notif_switch.notify["active"].connect (() => {
                 app_window.set_notifications_enabled (notif_switch.active);
             });
-            notif_row.add_suffix (notif_switch);
-            notif_row.activatable_widget = notif_switch;
 
             behavior_list.append (notif_row);
 
             /* The tray is a StatusNotifierItem exported over the session
-               D-Bus — a freedesktop protocol with no watcher on macOS, so
-               the option is Linux-only. */
+               D-Bus with no watcher on macOS, so the option is Linux-only. */
             if (!Platform.is_macos ()) {
-                var tray_row = new Adw.ActionRow ();
-                tray_row.title = "Minimize to status bar";
-                tray_row.subtitle =
+                var tray_row = action_row (
+                    "Minimize to status bar",
                     "Closing the window keeps Parla running in the status bar; "
-                    + "notifications still appear";
-
-                var tray_switch = new Gtk.Switch ();
-                tray_switch.active = app_window.settings.minimize_to_tray;
-                tray_switch.valign = Gtk.Align.CENTER;
+                    + "notifications still appear");
+                var tray_switch = row_switch (
+                    tray_row, app_window.settings.minimize_to_tray);
                 tray_switch.notify["active"].connect (() => {
                     app_window.settings.save_minimize_to_tray (tray_switch.active);
                 });
-                tray_row.add_suffix (tray_switch);
-                tray_row.activatable_widget = tray_switch;
 
                 behavior_list.append (tray_row);
             }
-            content.append (behavior_list);
 
-            /* Appearance section */
-            var appearance_label = new Gtk.Label ("Appearance");
-            appearance_label.add_css_class ("title-3");
-            appearance_label.halign = Gtk.Align.START;
-            content.append (appearance_label);
+            var appearance_list = settings_list ("Appearance");
 
-            var appearance_list = new Gtk.ListBox ();
-            appearance_list.selection_mode = Gtk.SelectionMode.NONE;
-            appearance_list.add_css_class ("boxed-list");
-
-            var style_row = new Adw.ActionRow ();
-            style_row.title = "Message style";
-            style_row.subtitle = "Use chat bubbles or compact IRC-style lines";
+            var style_row = action_row (
+                "Message style",
+                "Use chat bubbles or compact IRC-style lines");
 
             string[] style_labels = { "Bubbles", "IRC" };
-            var style_combo = new Gtk.DropDown.from_strings (style_labels);
-            style_combo.selected = (uint) app_window.settings.message_style;
-            style_combo.valign = Gtk.Align.CENTER;
+            var style_combo = row_dropdown (style_row, style_labels,
+                (uint) app_window.settings.message_style);
             style_combo.notify["selected"].connect (() => {
                 app_window.settings.save_message_style (
                     (MessageStyle) style_combo.selected);
             });
-            style_row.add_suffix (style_combo);
-            style_row.activatable_widget = style_combo;
             appearance_list.append (style_row);
 
-            var accent_row = new Adw.ActionRow ();
-            accent_row.title = "Accent color";
-            accent_row.subtitle = "Override the system accent color";
+            var accent_row = action_row (
+                "Accent color",
+                "Override the system accent color");
 
             var accent_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
             accent_btn.valign = Gtk.Align.CENTER;
             apply_hex_to_button (accent_btn, app_window.settings.accent_color);
             accent_btn.notify["rgba"].connect (() => {
-                Gdk.RGBA c = accent_btn.get_rgba ();
-                string hex = "#%02x%02x%02x".printf (
-                    (uint) (c.red * 255), (uint) (c.green * 255),
-                    (uint) (c.blue * 255));
-                app_window.settings.save_accent_color (hex);
+                app_window.settings.save_accent_color (
+                    hex_from_rgba (accent_btn.get_rgba ()));
             });
 
             var accent_reset_btn = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
@@ -403,15 +355,13 @@ namespace Dc {
             accent_row.add_suffix (accent_reset_btn);
             appearance_list.append (accent_row);
 
-            var bg_row = new Adw.ActionRow ();
-            bg_row.title = "Background color";
-            bg_row.subtitle =
-                "Tint the window background with a solid color or a gradient";
+            var bg_row = action_row (
+                "Background color",
+                "Tint the window background with a solid color or a gradient");
 
             string[] bg_mode_labels = { "System", "Solid", "Gradient" };
-            var bg_mode_combo = new Gtk.DropDown.from_strings (bg_mode_labels);
-            bg_mode_combo.selected = (uint) app_window.settings.background_mode;
-            bg_mode_combo.valign = Gtk.Align.CENTER;
+            var bg_mode_combo = row_dropdown (bg_row, bg_mode_labels,
+                (uint) app_window.settings.background_mode);
 
             var bg_color_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
             bg_color_btn.valign = Gtk.Align.CENTER;
@@ -427,47 +377,28 @@ namespace Dc {
                 apply_background ();
             });
             bg_color_btn.notify["rgba"].connect (() => {
-                Gdk.RGBA c = bg_color_btn.get_rgba ();
-                string hex = "#%02x%02x%02x".printf (
-                    (uint) (c.red * 255), (uint) (c.green * 255),
-                    (uint) (c.blue * 255));
-                app_window.settings.save_background_color (hex);
+                app_window.settings.save_background_color (
+                    hex_from_rgba (bg_color_btn.get_rgba ()));
                 apply_background ();
             });
 
-            bg_row.add_suffix (bg_mode_combo);
             bg_row.add_suffix (bg_color_btn);
             appearance_list.append (bg_row);
 
-            content.append (appearance_list);
+            var network_list = settings_list ("Network");
 
-            /* Network section */
-            var network_label = new Gtk.Label ("Network");
-            network_label.add_css_class ("title-3");
-            network_label.halign = Gtk.Align.START;
-            content.append (network_label);
-
-            var network_list = new Gtk.ListBox ();
-            network_list.selection_mode = Gtk.SelectionMode.NONE;
-            network_list.add_css_class ("boxed-list");
-
-            proxy_switch_row = new Adw.ActionRow ();
-            proxy_switch_row.title = "Use Proxy";
-            proxy_switch_row.subtitle =
-                "Route this profile through the configured proxy";
-
-            proxy_switch = new Gtk.Switch ();
-            proxy_switch.valign = Gtk.Align.CENTER;
+            proxy_switch_row = action_row (
+                "Use Proxy",
+                "Route this profile through the configured proxy");
+            proxy_switch = row_switch (proxy_switch_row, false);
             proxy_switch.notify["active"].connect (() => {
                 if (!loading_proxy) save_proxy_settings.begin ();
             });
-            proxy_switch_row.add_suffix (proxy_switch);
-            proxy_switch_row.activatable_widget = proxy_switch;
             network_list.append (proxy_switch_row);
 
-            proxy_url_row = new Adw.ActionRow ();
-            proxy_url_row.title = "Proxy URL";
-            proxy_url_row.subtitle = "socks5://, http://, https://, or ss://";
+            proxy_url_row = action_row (
+                "Proxy URL",
+                "socks5://, http://, https://, or ss://");
 
             proxy_entry = new Gtk.Entry ();
             proxy_entry.placeholder_text = "socks5://127.0.0.1:9050";
@@ -482,33 +413,16 @@ namespace Dc {
             proxy_url_row.activatable_widget = proxy_entry;
             network_list.append (proxy_url_row);
 
-            content.append (network_list);
             load_proxy_settings.begin ();
 
-            /* Advanced section */
-            var advanced_label = new Gtk.Label ("Advanced");
-            advanced_label.add_css_class ("title-3");
-            advanced_label.halign = Gtk.Align.START;
-            content.append (advanced_label);
+            var advanced_list = settings_list ("Advanced");
 
-            var advanced_list = new Gtk.ListBox ();
-            advanced_list.selection_mode = Gtk.SelectionMode.NONE;
-            advanced_list.add_css_class ("boxed-list");
+            rpc_row = action_row ("RPC server");
 
-            rpc_row = new Adw.ActionRow ();
-            rpc_row.title = "RPC server";
-
-            string[] rpc_source_labels = {
-                "Auto",
-                "Custom",
-                "Desktop"
-            };
-            rpc_source_dropdown = new Gtk.DropDown.from_strings (rpc_source_labels);
-            rpc_source_dropdown.selected = (uint) app_window.settings.rpc_server_source;
-            rpc_source_dropdown.valign = Gtk.Align.CENTER;
+            string[] rpc_source_labels = { "Auto", "Custom", "Desktop" };
+            rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
+                (uint) app_window.settings.rpc_server_source);
             rpc_source_dropdown.notify["selected"].connect (on_rpc_source_changed);
-            rpc_row.add_suffix (rpc_source_dropdown);
-            rpc_row.activatable_widget = rpc_source_dropdown;
 
             rpc_choose_btn = new Gtk.Button.with_label ("Choose");
             rpc_choose_btn.valign = Gtk.Align.CENTER;
@@ -527,9 +441,7 @@ namespace Dc {
 
             advanced_list.append (rpc_row);
 
-            rpc_version_row = new Adw.ActionRow ();
-            rpc_version_row.title = "RPC server version";
-            rpc_version_row.subtitle = "Checking...";
+            rpc_version_row = action_row ("RPC server version", "Checking...");
             rpc_update_btn = new Gtk.Button.with_label ("Check");
             rpc_update_btn.valign = Gtk.Align.CENTER;
             rpc_update_btn.add_css_class ("flat");
@@ -538,23 +450,18 @@ namespace Dc {
             rpc_version_row.add_suffix (rpc_update_btn);
             advanced_list.append (rpc_version_row);
 
-            var rpc_autocheck_row = new Adw.ActionRow ();
-            rpc_autocheck_row.title = "Check for engine updates on startup";
-            rpc_autocheck_row.subtitle =
-                "Notify when a newer deltachat-rpc-server is available";
-            var autocheck_switch = new Gtk.Switch ();
-            autocheck_switch.active =
-                app_window.settings.rpc_check_updates_on_startup;
-            autocheck_switch.valign = Gtk.Align.CENTER;
+            var rpc_autocheck_row = action_row (
+                "Check for engine updates on startup",
+                "Notify when a newer deltachat-rpc-server is available");
+            var autocheck_switch = row_switch (
+                rpc_autocheck_row,
+                app_window.settings.rpc_check_updates_on_startup);
             autocheck_switch.notify["active"].connect (() => {
                 app_window.settings.save_rpc_check_updates_on_startup (
                     autocheck_switch.active);
             });
-            rpc_autocheck_row.add_suffix (autocheck_switch);
-            rpc_autocheck_row.activatable_widget = autocheck_switch;
             advanced_list.append (rpc_autocheck_row);
 
-            content.append (advanced_list);
             update_rpc_row ();
 
             var reset_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
@@ -580,6 +487,52 @@ namespace Dc {
             box.append (scroll);
 
             this.child = box;
+        }
+
+        private Gtk.ListBox settings_list (string title) {
+            var label = new Gtk.Label (title);
+            label.add_css_class ("title-3");
+            label.halign = Gtk.Align.START;
+            content.append (label);
+
+            var list = new Gtk.ListBox ();
+            list.selection_mode = Gtk.SelectionMode.NONE;
+            list.add_css_class ("boxed-list");
+            content.append (list);
+            return list;
+        }
+
+        private static Adw.ActionRow action_row (string title,
+                                                 string? subtitle = null) {
+            var row = new Adw.ActionRow ();
+            row.title = title;
+            if (subtitle != null) row.subtitle = subtitle;
+            return row;
+        }
+
+        private static Gtk.Switch row_switch (Adw.ActionRow row, bool active) {
+            var sw = new Gtk.Switch ();
+            sw.active = active;
+            sw.valign = Gtk.Align.CENTER;
+            row.add_suffix (sw);
+            row.activatable_widget = sw;
+            return sw;
+        }
+
+        private static Gtk.DropDown row_dropdown (Adw.ActionRow row, string[] labels,
+                                                  uint selected) {
+            var dropdown = new Gtk.DropDown.from_strings (labels);
+            dropdown.selected = selected;
+            dropdown.valign = Gtk.Align.CENTER;
+            row.add_suffix (dropdown);
+            row.activatable_widget = dropdown;
+            return dropdown;
+        }
+
+        private static string hex_from_rgba (Gdk.RGBA c) {
+            return "#%02x%02x%02x".printf (
+                (uint) (c.red * 255), (uint) (c.green * 255),
+                (uint) (c.blue * 255));
         }
 
         private async void load_proxy_settings () {
