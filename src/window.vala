@@ -43,6 +43,12 @@ namespace Dc {
         private Gtk.Box profile_unread_badge;
         private Gtk.Popover account_popover;
         private Gtk.ListBox account_menu_list;
+        /* Signature of the data last rendered in the account menu plus a
+           generation counter, so overlapping reloads can't fight: stale
+           runs bail out and no-change runs never touch the widgets
+           (sync-event bursts used to make the open menu flash). */
+        private string? account_menu_state = null;
+        private int account_menu_load_gen = 0;
 
         /* State */
         private unowned RpcClient rpc;
@@ -476,7 +482,6 @@ namespace Dc {
             events.set_app (this.application);
             events.chats_reload_fired.connect (() => {
                 load_chats.begin ();
-                update_profile_unread_badge.begin ();
             });
             events.messages_reload_fired.connect (() => {
                 var v = current_view ();
@@ -486,8 +491,7 @@ namespace Dc {
                 on_incoming_msg.begin (acct_id, chat_id, msg_id);
             });
             events.account_unread_changed.connect ((acct_id) => {
-                update_profile_unread_badge.begin ();
-                refresh_account_menu_if_open ();
+                update_unread_indicators.begin ();
             });
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
@@ -872,12 +876,11 @@ namespace Dc {
             if (acct_id != rpc.account_id) {
                 /* Message for a background account: its chats aren't on screen,
                    so always notify (subject to the global toggle) and refresh
-                   the account list badge if the menu happens to be open. */
+                   the unread indicators. */
                 if (settings.notifications_enabled) {
                     yield events.send_notification (acct_id, chat_id, msg_id);
                 }
-                update_profile_unread_badge.begin ();
-                refresh_account_menu_if_open ();
+                update_unread_indicators.begin ();
                 return;
             }
 
@@ -891,20 +894,14 @@ namespace Dc {
             request_reload_chats ();
         }
 
-        private void refresh_account_menu_if_open () {
-            if (account_popover != null && account_popover.get_visible ()) {
-                load_account_menu.begin ();
-            }
-        }
-
         /* ================================================================
          *  Actions
          * ================================================================ */
 
         private async void load_account_menu () {
-            clear_listbox (account_menu_list);
-
             if (rpc == null || !rpc.is_connected) {
+                account_menu_state = null;
+                clear_listbox (account_menu_list);
                 var row = new Adw.ActionRow ();
                 row.title = "Not connected";
                 row.subtitle = "Open Settings to configure the RPC server";
@@ -912,21 +909,30 @@ namespace Dc {
                 return;
             }
 
+            int gen = ++account_menu_load_gen;
             try {
                 var accounts_node = yield rpc.get_all_accounts ();
-                clear_listbox (account_menu_list);
-
                 if (accounts_node == null) return;
                 var accounts = accounts_node.get_array ();
 
+                /* Build the rows off-screen, then swap them in synchronously
+                   and only when something visible changed, so the open menu
+                   never flashes. */
+                var state = new StringBuilder ();
+                Adw.ActionRow[] rows = {};
                 for (uint i = 0; i < accounts.get_length (); i++) {
                     var acct = accounts.get_object_element (i);
                     int id = (int) acct.get_int_member ("id");
-                    account_menu_list.append (yield build_account_menu_row_for_id (
-                        id, id == rpc.account_id));
+                    rows += yield build_account_menu_row_for_id (
+                        id, id == rpc.account_id, state);
                 }
+                if (gen != account_menu_load_gen) return; /* superseded */
+                if (account_menu_state == state.str) return;
+                account_menu_state = state.str;
 
-                if (accounts.get_length () == 0) {
+                clear_listbox (account_menu_list);
+                foreach (var row in rows) account_menu_list.append (row);
+                if (rows.length == 0) {
                     var empty = new Adw.ActionRow ();
                     empty.title = "No accounts";
                     empty.subtitle = "Add an account to get started";
@@ -934,6 +940,8 @@ namespace Dc {
                 }
                 account_menu_list.append (build_add_account_row ());
             } catch (Error e) {
+                if (gen != account_menu_load_gen) return;
+                account_menu_state = null;
                 clear_listbox (account_menu_list);
                 var err_row = new Adw.ActionRow ();
                 err_row.use_markup = false;
@@ -957,7 +965,8 @@ namespace Dc {
         }
 
         private async Adw.ActionRow build_account_menu_row_for_id (int id,
-                                                                   bool current) throws Error {
+                                                                   bool current,
+                                                                   StringBuilder state) throws Error {
             bool configured = yield rpc.is_configured (id);
 
             string? email = null;
@@ -972,6 +981,9 @@ namespace Dc {
                     unread = yield rpc.get_fresh_msg_count (id);
                 } catch (Error ce) { /* ignore */ }
             }
+            state.append_printf ("%d|%d|%d|%s|%s|%s|%d\n", id,
+                configured ? 1 : 0, current ? 1 : 0, email ?? "",
+                display_name ?? "", avatar ?? "", unread);
 
             return build_account_menu_row (id, configured, current,
                 email, display_name, avatar, unread);
@@ -1054,7 +1066,7 @@ namespace Dc {
             if (!action_row.activatable || acct_id <= 0 || acct_id == rpc.account_id) return;
 
             account_popover.popdown ();
-            switch_account_from_menu.begin (acct_id);
+            switch_account.begin (acct_id);
         }
 
         private void on_add_account () {
@@ -1163,11 +1175,7 @@ namespace Dc {
         }
 
         private async void after_profile_created (int new_id) {
-            bool changed = yield switch_account (new_id);
-            if (changed) {
-                show_toast ("Profile created");
-                yield load_account_menu ();
-            }
+            if (yield switch_account (new_id)) show_toast ("Profile created");
         }
 
         private void show_invitation_code_profile_dialog () {
@@ -1188,9 +1196,7 @@ namespace Dc {
 
         private async void after_invitation_profile_created (int new_id,
                                                             int chat_id) {
-            bool changed = yield switch_account (new_id);
-            if (changed) {
-                yield load_account_menu ();
+            if (yield switch_account (new_id)) {
                 if (chat_id > 0) {
                     yield load_chats ();
                     select_chat_by_id (chat_id);
@@ -1218,11 +1224,7 @@ namespace Dc {
         }
 
         private async void after_secondary_device_imported (int new_id) {
-            bool changed = yield switch_account (new_id);
-            if (changed) {
-                show_toast ("Profile imported");
-                yield load_account_menu ();
-            }
+            if (yield switch_account (new_id)) show_toast ("Profile imported");
         }
 
         private void show_classic_email_dialog () {
@@ -1277,15 +1279,9 @@ namespace Dc {
                 yield rpc.start_io_for_all_accounts ();
                 rpc.account_id = acct_id;
                 yield reload_active_account ();
-                yield load_account_menu ();
             } catch (Error e) {
                 show_error (this, e.message);
             }
-        }
-
-        private async void switch_account_from_menu (int acct_id) {
-            bool changed = yield switch_account (acct_id);
-            if (changed) yield load_account_menu ();
         }
 
         public async bool switch_account (int acct_id) {
@@ -1316,7 +1312,6 @@ namespace Dc {
                 if (edits_current_account) {
                     load_profile_avatar.begin ();
                 }
-                load_account_menu.begin ();
             });
             dialog.account_deleted.connect ((deleted_id) => {
                 after_profile_deleted.begin (deleted_id, edits_current_account);
@@ -1337,7 +1332,7 @@ namespace Dc {
                 }
             }
 
-            yield load_account_menu ();
+            yield update_unread_indicators ();
             show_toast (switched_account
                 ? "Profile deleted; switched profile"
                 : "Profile deleted");
@@ -1385,15 +1380,16 @@ namespace Dc {
             } catch (Error e) {
                 /* ignore */
             }
-            yield update_profile_unread_badge ();
+            yield update_unread_indicators ();
         }
 
-        /* Toggle the red circle on the header avatar. It flags that *another*
-           account has notification-worthy unread messages, so the user knows to
-           open the account menu and switch — it stays put regardless of window
-           focus and isn't cleared by reading the current account (whose own
-           unread is already shown in the chat list). */
-        private async void update_profile_unread_badge () {
+        /* Toggle the red circle on the header avatar and, while the avatar
+           menu is open, refresh its per-account counters. The circle flags
+           that *another* account has notification-worthy unread messages, so
+           the user knows to open the account menu and switch — it stays put
+           regardless of window focus and isn't cleared by reading the current
+           account (whose own unread is already shown in the chat list). */
+        private async void update_unread_indicators () {
             if (profile_unread_badge == null) return;
             bool other_unread = false;
             if (rpc != null && rpc.is_connected && rpc.account_id > 0) {
@@ -1416,6 +1412,9 @@ namespace Dc {
                 }
             }
             profile_unread_badge.visible = other_unread;
+            if (account_popover != null && account_popover.get_visible ()) {
+                yield load_account_menu ();
+            }
         }
 
         private void on_new_chat () {
