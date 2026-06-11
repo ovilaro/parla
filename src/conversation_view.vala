@@ -115,10 +115,9 @@ namespace Dc {
 
                 GLib.GenericArray<Message>? trailing = null;
                 bool is_img_continuation = false;
-                if (settings.message_style == MessageStyle.IRC
-                    && MessageRow.is_image_only_message (msg)) {
+                if (settings.message_style == MessageStyle.IRC && msg.is_image_only) {
                     if (prev != null
-                        && MessageRow.is_image_only_message (prev)
+                        && prev.is_image_only
                         && MessageRow.same_irc_sender (prev, msg)) {
                         is_img_continuation = true;
                     } else {
@@ -127,7 +126,7 @@ namespace Dc {
                         uint n = filtered_message_store.get_n_items ();
                         while (i < n && trailing.length < 5) {
                             var next = (Message) filtered_message_store.get_item (i);
-                            if (!MessageRow.is_image_only_message (next)) break;
+                            if (next == null || !next.is_image_only) break;
                             if (!MessageRow.same_irc_sender (msg, next)) break;
                             trailing.add (next);
                             i++;
@@ -844,19 +843,19 @@ namespace Dc {
         }
 
         private void on_message_activated (Message msg) {
-            if (msg.file_path == null || msg.file_path.length == 0) return;
-            if (!FileUtils.test (msg.file_path, FileTest.EXISTS)) {
+            if (!msg.has_file) return;
+            if (!msg.has_local_file) {
                 window.show_toast ("File not available");
                 return;
             }
-            if (MessageRow.is_image_file (msg)) {
+            if (msg.is_image_file ()) {
                 string[] paths;
                 int start;
                 collect_image_paths (msg.file_path, out paths, out start);
                 window.show_image_list (paths, start);
-            } else if (MessageRow.is_video_file (msg)) {
+            } else if (msg.is_video_file ()) {
                 window.show_video (msg.file_path, msg.file_name);
-            } else if (MessageRow.is_audio_file (msg)) {
+            } else if (msg.is_audio_file ()) {
                 /* Audio plays inline via its own play/pause button. */
             } else {
                 window.save_attachment.begin (msg.file_path, msg.file_name);
@@ -872,9 +871,7 @@ namespace Dc {
             for (uint i = 0; i < n; i++) {
                 var m = (Message) message_store.get_item (i);
                 if (m == null) continue;
-                if (m.file_path == null || m.file_path.length == 0) continue;
-                if (!MessageRow.is_image_file (m)) continue;
-                if (!FileUtils.test (m.file_path, FileTest.EXISTS)) continue;
+                if (!m.has_local_file || !m.is_image_file ()) continue;
                 if (m.file_path == current_path) found = (int) list.length;
                 list.add (m.file_path);
             }

@@ -174,6 +174,16 @@ namespace Dc {
     }
 
     public class Message : Object {
+        private const string[] IMAGE_EXTENSIONS = {
+            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"
+        };
+        private const string[] VIDEO_EXTENSIONS = {
+            ".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".ogv", ".3gp", ".wmv", ".flv"
+        };
+        private const string[] AUDIO_EXTENSIONS = {
+            ".mp3", ".ogg", ".oga", ".opus", ".wav", ".m4a", ".aac", ".flac", ".weba", ".amr"
+        };
+
         public int id { get; set; default = 0; }
         public int chat_id { get; set; default = 0; }
         public string? text { get; set; default = null; }
@@ -230,6 +240,60 @@ namespace Dc {
         }
         public bool can_edit_text {
             get { return is_outgoing && !is_info && has_text; }
+        }
+        public bool has_file {
+            get { return has_value (file_name) || has_value (file_path); }
+        }
+        public bool has_local_file {
+            get { return has_value (file_path) && FileUtils.test (file_path, FileTest.EXISTS); }
+        }
+        public bool is_image_only {
+            get { return !is_info && !has_text && has_value (file_path) && is_image_file (); }
+        }
+
+        public bool is_image_file () {
+            return has_mime ("image/")
+                || view_type_is ("image", "gif", "sticker")
+                || path_has_suffix (IMAGE_EXTENSIONS);
+        }
+
+        public bool is_video_file () {
+            return has_mime ("video/")
+                || view_type_is ("video")
+                || path_has_suffix (VIDEO_EXTENSIONS);
+        }
+
+        public bool is_audio_file () {
+            return has_mime ("audio/")
+                || view_type_is ("audio", "voice")
+                || path_has_suffix (AUDIO_EXTENSIONS);
+        }
+
+        public string display_file_name (string fallback = "file") {
+            return has_value (file_name) ? file_name : fallback;
+        }
+
+        private bool has_value (string? value) {
+            return value != null && value.length > 0;
+        }
+
+        private bool has_mime (string prefix) {
+            return file_mime != null && file_mime.has_prefix (prefix);
+        }
+
+        private bool view_type_is (string a, string? b = null, string? c = null) {
+            if (view_type == null) return false;
+            string vt = view_type.down ();
+            return vt == a || (b != null && vt == b) || (c != null && vt == c);
+        }
+
+        private bool path_has_suffix (string[] suffixes) {
+            if (file_path == null) return false;
+            string lower = file_path.down ();
+            foreach (string suffix in suffixes) {
+                if (lower.has_suffix (suffix)) return true;
+            }
+            return false;
         }
     }
 

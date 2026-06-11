@@ -88,25 +88,7 @@ namespace Dc {
                 bubble.append (build_quote_block (msg, 40, 2));
             }
 
-            /* File attachment */
-            bool has_file = (msg.file_name != null && msg.file_name.length > 0)
-                         || (msg.file_path != null && msg.file_path.length > 0);
-            if (has_file) {
-                if (msg.file_path != null
-                    && FileUtils.test (msg.file_path, FileTest.EXISTS)
-                    && is_image_file (msg)) {
-                    this.is_image = true;
-                    var image = load_picture (msg.file_path, 400, 400, 260, 0);
-                    if (image == null) bubble.append (build_file_indicator (msg));
-                    else bubble.append (image);
-                } else if (is_video_file (msg)) {
-                    bubble.append (build_video_preview (msg));
-                } else if (is_audio_file (msg)) {
-                    bubble.append (build_audio_player (msg));
-                } else {
-                    bubble.append (build_file_indicator (msg));
-                }
-            }
+            append_attachment (bubble, msg, false);
 
             /* Message text */
             if (msg.text != null && msg.text.length > 0) {
@@ -213,45 +195,7 @@ namespace Dc {
                 body.append (build_quote_block (msg, 60, 1));
             }
 
-            /* File attachment / image */
-            bool has_file = (msg.file_name != null && msg.file_name.length > 0)
-                         || (msg.file_path != null && msg.file_path.length > 0);
-            bool image_shown = false;
-            bool is_img = has_file && msg.file_path != null
-                          && FileUtils.test (msg.file_path, FileTest.EXISTS)
-                          && is_image_file (msg);
-
-            if (is_img && trailing_images != null && trailing_images.length > 0) {
-                /* Multi-image strip: pack this image and the trailing
-                   consecutive same-sender image messages side by side. */
-                this.is_image = true;
-                var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-                strip.halign = Gtk.Align.START;
-                append_irc_image (strip, msg);
-                for (uint i = 0; i < trailing_images.length; i++) {
-                    append_irc_image (strip, trailing_images[i]);
-                }
-                body.append (strip);
-                image_shown = true;
-            } else if (is_img) {
-                this.is_image = true;
-                var single = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
-                single.halign = Gtk.Align.START;
-                append_irc_image (single, msg);
-                body.append (single);
-                image_shown = true;
-            } else if (has_file && is_video_file (msg)) {
-                body.append (build_video_preview (msg));
-                image_shown = true;
-            } else if (has_file && is_audio_file (msg)) {
-                body.append (build_audio_player (msg));
-                image_shown = true;
-            }
-            if (has_file && !image_shown) {
-                var fi = build_file_indicator (msg);
-                fi.halign = Gtk.Align.START;
-                body.append (fi);
-            }
+            append_attachment (body, msg, true, trailing_images);
 
             if (msg.text != null && msg.text.length > 0) {
                 body.append (build_text_label (msg, -1));
@@ -287,6 +231,48 @@ namespace Dc {
             }
         }
 
+        private void append_attachment (Gtk.Box box, Message msg, bool irc,
+                                        GLib.GenericArray<Message>? trailing_images = null) {
+            if (!msg.has_file) return;
+            if (msg.has_local_file && msg.is_image_file ()) {
+                this.is_image = true;
+                if (irc) append_irc_images (box, msg, trailing_images);
+                else append_bubble_image (box, msg);
+                return;
+            }
+            if (msg.is_video_file ()) {
+                box.append (build_video_preview (msg));
+                return;
+            }
+            if (msg.is_audio_file ()) {
+                box.append (build_audio_player (msg));
+                return;
+            }
+            var fi = build_file_indicator (msg);
+            if (irc) fi.halign = Gtk.Align.START;
+            box.append (fi);
+        }
+
+        private static void append_bubble_image (Gtk.Box bubble, Message msg) {
+            var image = load_picture (msg.file_path, 400, 400, 260, 0);
+            if (image == null) bubble.append (build_file_indicator (msg));
+            else bubble.append (image);
+        }
+
+        private static void append_irc_images (Gtk.Box body, Message msg,
+                                               GLib.GenericArray<Message>? trailing_images) {
+            var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL,
+                trailing_images != null && trailing_images.length > 0 ? 4 : 0);
+            strip.halign = Gtk.Align.START;
+            append_irc_image (strip, msg);
+            if (trailing_images != null) {
+                for (uint i = 0; i < trailing_images.length; i++) {
+                    append_irc_image (strip, trailing_images[i]);
+                }
+            }
+            body.append (strip);
+        }
+
         private static void append_irc_image (Gtk.Box strip, Message m) {
             var picture = load_picture (m.file_path, 260, 200, 0, 180);
             if (picture != null) {
@@ -295,7 +281,7 @@ namespace Dc {
                 picture.valign = Gtk.Align.START;
                 strip.append (picture);
             } else {
-                var fi = new Gtk.Label (m.file_name ?? "image");
+                var fi = new Gtk.Label (m.display_file_name ("image"));
                 fi.add_css_class ("dim-label");
                 strip.append (fi);
             }
@@ -348,13 +334,6 @@ namespace Dc {
                 stderr.printf ("  -> Image load failed: %s\n", e.message);
                 return null;
             }
-        }
-
-        public static bool is_image_only_message (Message m) {
-            if (m == null || m.is_info) return false;
-            if (m.text != null && m.text.strip ().length > 0) return false;
-            if (m.file_path == null || m.file_path.length == 0) return false;
-            return is_image_file (m);
         }
 
         public static bool same_irc_sender (Message a, Message b) {
@@ -435,68 +414,6 @@ namespace Dc {
             this.append (label);
         }
 
-        public static bool is_image_file (Message msg) {
-            if (msg.file_mime != null && msg.file_mime.has_prefix ("image/"))
-                return true;
-            if (msg.view_type != null) {
-                var vt = msg.view_type.down ();
-                if (vt == "image" || vt == "gif" || vt == "sticker")
-                    return true;
-            }
-            if (msg.file_path != null) {
-                var lower = msg.file_path.down ();
-                if (lower.has_suffix (".jpg") || lower.has_suffix (".jpeg") ||
-                    lower.has_suffix (".png") || lower.has_suffix (".webp") ||
-                    lower.has_suffix (".gif") || lower.has_suffix (".bmp") ||
-                    lower.has_suffix (".svg"))
-                    return true;
-            }
-            return false;
-        }
-
-        public static bool is_video_file (Message msg) {
-            if (msg.file_mime != null && msg.file_mime.has_prefix ("video/"))
-                return true;
-            if (msg.view_type != null && msg.view_type.down () == "video")
-                return true;
-            if (msg.file_path != null) {
-                var lower = msg.file_path.down ();
-                if (lower.has_suffix (".mp4") || lower.has_suffix (".m4v") ||
-                    lower.has_suffix (".webm") || lower.has_suffix (".mkv") ||
-                    lower.has_suffix (".mov") || lower.has_suffix (".avi") ||
-                    lower.has_suffix (".ogv") || lower.has_suffix (".3gp") ||
-                    lower.has_suffix (".wmv") || lower.has_suffix (".flv"))
-                    return true;
-            }
-            return false;
-        }
-
-        public static bool is_audio_file (Message msg) {
-            if (msg.file_mime != null && msg.file_mime.has_prefix ("audio/"))
-                return true;
-            if (msg.view_type != null) {
-                var vt = msg.view_type.down ();
-                if (vt == "audio" || vt == "voice")
-                    return true;
-            }
-            if (msg.file_path != null) {
-                var lower = msg.file_path.down ();
-                if (lower.has_suffix (".mp3") || lower.has_suffix (".ogg") ||
-                    lower.has_suffix (".oga") || lower.has_suffix (".opus") ||
-                    lower.has_suffix (".wav") || lower.has_suffix (".m4a") ||
-                    lower.has_suffix (".aac") || lower.has_suffix (".flac") ||
-                    lower.has_suffix (".weba") || lower.has_suffix (".amr"))
-                    return true;
-            }
-            return false;
-        }
-
-        /**
-         * Inline preview for a video attachment: a dark thumbnail-sized card
-         * with a centered play glyph and the file name. Purely visual — the
-         * click is handled by the conversation view, which opens the
-         * fullscreen player (mirrors how images open the image viewer).
-         */
         private static Gtk.Widget build_video_preview (Message msg) {
             var overlay = new Gtk.Overlay ();
             overlay.halign = Gtk.Align.START;
@@ -533,19 +450,8 @@ namespace Dc {
             return overlay;
         }
 
-        /**
-         * Inline player for an audio attachment: a play/pause button and the
-         * file name. Playback is self-contained — the captured media stream is
-         * created lazily on first press and lives as long as the row.
-         */
-        /**
-         * Inline player for an audio attachment: a compact play/stop button
-         * (see AudioPlayer). Falls back to a plain attachment row when the
-         * file hasn't been downloaded yet.
-         */
         private static Gtk.Widget build_audio_player (Message msg) {
-            if (msg.file_path == null
-                || !FileUtils.test (msg.file_path, FileTest.EXISTS))
+            if (!msg.has_local_file)
                 return build_file_indicator (msg);
             return new AudioPlayer (msg.file_path, msg.file_name);
         }
@@ -558,7 +464,7 @@ namespace Dc {
             icon.pixel_size = 16;
             file_box.append (icon);
 
-            var fname = new Gtk.Label (msg.file_name ?? "file");
+            var fname = new Gtk.Label (msg.display_file_name ());
             fname.add_css_class ("dim-label");
             fname.ellipsize = Pango.EllipsizeMode.MIDDLE;
             fname.max_width_chars = 28;
