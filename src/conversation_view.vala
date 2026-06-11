@@ -30,6 +30,7 @@ namespace Dc {
         private FileDropTarget? file_drop_target;
 
         private bool stick_to_bottom = true;
+        private int[] pending_seen_ids = {};
         private Json.Array? all_msg_ids = null;
         private uint loaded_start_index = 0;
         private bool loading_more = false;
@@ -408,10 +409,30 @@ namespace Dc {
                 insert_message_sorted (msg);
                 if (is_current && window.is_active) {
                     yield rpc.mark_seen_msgs (new int[] { msg_id });
+                } else if (is_current) {
+                    /* On screen but the window is unfocused: defer the seen
+                       mark until the user actually looks at the chat. */
+                    pending_seen_ids += msg_id;
                 }
             } catch (Error e) {
                 warning ("handle_incoming_msg: %s", e.message);
             }
+        }
+
+        /* Send the deferred seen-marks for messages that arrived while the
+           window was unfocused. Called when the user is looking at this chat
+           again (window refocused or chat re-entered). */
+        public void flush_pending_seen () {
+            if (pending_seen_ids.length == 0) return;
+            int[] ids = pending_seen_ids;
+            pending_seen_ids = {};
+            rpc.mark_seen_msgs.begin (ids, (o, res) => {
+                try {
+                    rpc.mark_seen_msgs.end (res);
+                } catch (Error e) {
+                    /* non-critical */
+                }
+            });
         }
 
         public void toggle_search () {

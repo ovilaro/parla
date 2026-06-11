@@ -128,6 +128,13 @@ namespace Dc {
 
             close_request.connect (on_close_request);
 
+            /* Regaining focus with a chat on screen means the user has now
+               seen its pending messages: reset the chat's unread badge and
+               send the deferred seen-marks. */
+            this.notify["is-active"].connect (() => {
+                if (this.is_active) on_window_focused ();
+            });
+
             /* The tray icon stays up the whole time "minimize to status bar"
                is on (like Discord/Telegram), not just while minimized. */
             settings.notify["minimize-to-tray"].connect (sync_tray);
@@ -805,7 +812,11 @@ namespace Dc {
             if (chat_id == current_chat_id) {
                 if (suppress_reselect_scroll) return;
                 var v = current_view ();
-                if (v != null) v.on_reselected ();
+                if (v != null) {
+                    v.on_reselected ();
+                    if (this.is_active) v.flush_pending_seen ();
+                }
+                notice_chat.begin (chat_id);
                 return;
             }
 
@@ -821,6 +832,7 @@ namespace Dc {
 
             content_stack.visible_child_name = "chat_%d".printf (chat_id);
             view.on_activated ();
+            if (this.is_active) view.flush_pending_seen ();
 
             notice_chat.begin (current_chat_id);
 
@@ -836,6 +848,16 @@ namespace Dc {
             } catch (Error e) {
                 /* non-critical */
             }
+        }
+
+        private void on_window_focused () {
+            if (current_chat_id <= 0) return;
+            /* In collapsed (mobile) mode with the sidebar shown the user is
+               looking at the chat list, not the conversation. */
+            if (split_view.collapsed && split_view.show_sidebar) return;
+            var v = current_view ();
+            if (v != null) v.flush_pending_seen ();
+            notice_chat.begin (current_chat_id);
         }
 
         /* ================================================================
