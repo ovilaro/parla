@@ -163,16 +163,7 @@ namespace Dc {
                 var chat = (ChatEntry) chat_store.get_item (i);
                 if (q.length > 0 && !chat.name.down ().contains (q)) continue;
 
-                var row = new Adw.ActionRow ();
-                row.title = chat.name;
-                if (chat.last_message != null && chat.last_message.length > 0)
-                    row.subtitle = chat.last_message;
-                row.name = chat.id.to_string ();
-                row.activatable = true;
-                var avatar = new Adw.Avatar (32, chat.name, true);
-                avatar.custom_image = load_avatar (chat.avatar_path);
-                row.add_prefix (avatar);
-                chat_listbox.append (row);
+                chat_listbox.append (chat_pick_row (chat));
                 any = true;
             }
 

@@ -42,16 +42,7 @@ namespace Dc {
             /* Populate with all chats */
             for (uint i = 0; i < chat_store.get_n_items (); i++) {
                 var chat = (ChatEntry) chat_store.get_item (i);
-                var row = new Adw.ActionRow ();
-                row.title = chat.name;
-                if (chat.last_message != null && chat.last_message.length > 0)
-                    row.subtitle = chat.last_message;
-                row.name = chat.id.to_string ();
-                row.activatable = true;
-                var avatar = new Adw.Avatar (32, chat.name, true);
-                avatar.custom_image = load_avatar (chat.avatar_path);
-                row.add_prefix (avatar);
-                listbox.append (row);
+                listbox.append (chat_pick_row (chat));
             }
 
             /* Filter */

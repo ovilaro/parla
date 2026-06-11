@@ -133,6 +133,21 @@ namespace Dc {
         return row;
     }
 
+    public static Adw.ActionRow chat_pick_row (ChatEntry chat) {
+        var row = new Adw.ActionRow ();
+        row.title = chat.name;
+        if (chat.last_message != null && chat.last_message.length > 0) {
+            row.subtitle = chat.last_message;
+        }
+        row.name = chat.id.to_string ();
+        row.activatable = true;
+
+        var avatar = new Adw.Avatar (32, chat.name, true);
+        avatar.custom_image = load_avatar (chat.avatar_path);
+        row.add_prefix (avatar);
+        return row;
+    }
+
     public class ChatEntry : Object {
         public int id { get; set; default = 0; }
         public string name { get; set; default = ""; }

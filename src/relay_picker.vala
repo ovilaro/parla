@@ -211,13 +211,7 @@ namespace Dc {
         }
 
         private async void refresh_list () {
-            /* Clear current rows */
-            Gtk.Widget? row = list_box.get_first_child ();
-            while (row != null) {
-                Gtk.Widget? next = row.get_next_sibling ();
-                list_box.remove (row);
-                row = next;
-            }
+            clear_listbox (list_box);
 
             Json.Node? result = null;
             try {

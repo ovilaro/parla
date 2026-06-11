@@ -243,43 +243,25 @@ namespace Dc {
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             box.add_css_class ("menu");
 
-            var pin_btn = make_menu_button (is_pinned ? "Unpin" : "Pin");
-            pin_btn.clicked.connect (() => {
-                popover.popdown ();
-                toggle_pin.begin (chat_id, is_pinned);
-            });
-            box.append (pin_btn);
-
-            var info_btn = make_menu_button ("Chat Info");
-            info_btn.clicked.connect (() => {
-                popover.popdown ();
-                show_info.begin (chat_id);
-            });
-            box.append (info_btn);
+            append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
+                () => { toggle_pin.begin (chat_id, is_pinned); });
+            append_menu_button (box, popover, "Chat Info",
+                () => { show_info.begin (chat_id); });
 
             if (dm_contact != null) {
                 Contact contact = dm_contact;
-                var block_btn = make_menu_button (contact.is_blocked
-                    ? "Unblock contact"
-                    : "Block contact…");
-                if (!contact.is_blocked) block_btn.add_css_class ("destructive-action");
-                block_btn.clicked.connect (() => {
-                    popover.popdown ();
+                append_menu_button (box, popover, contact.is_blocked
+                    ? "Unblock contact" : "Block contact…", () => {
                     if (contact.is_blocked) {
                         unblock_contact.begin (chat_id, contact.id);
                     } else {
                         confirm_block_contact (chat_id, contact);
                     }
-                });
-                box.append (block_btn);
+                }, !contact.is_blocked);
             }
 
-            var del_btn = make_menu_button ("Delete…");
-            del_btn.clicked.connect (() => {
-                popover.popdown ();
-                confirm_delete.begin (chat_id);
-            });
-            box.append (del_btn);
+            append_menu_button (box, popover, "Delete…",
+                () => { confirm_delete.begin (chat_id); });
 
             popover.child = box;
             popover.closed.connect (() => { popover.unparent (); });
@@ -321,6 +303,20 @@ namespace Dc {
             ((Gtk.Label) btn.child).xalign = 0;
             ((Gtk.Label) btn.child).halign = Gtk.Align.START;
             return btn;
+        }
+
+        private static void append_menu_button (Gtk.Box box,
+                                                Gtk.Popover popover,
+                                                string label,
+                                                owned VoidFunc action,
+                                                bool destructive = false) {
+            var btn = make_menu_button (label);
+            if (destructive) btn.add_css_class ("destructive-action");
+            btn.clicked.connect (() => {
+                popover.popdown ();
+                action ();
+            });
+            box.append (btn);
         }
 
         private async void toggle_pin (int chat_id, bool currently_pinned) {
