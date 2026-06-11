@@ -120,9 +120,15 @@ namespace Dc {
                 }
                 break;
 
+            case "MsgsNoticed":
+                int noticed_chat = (int) event.get_int_member ("chatId");
+                clear_notifications_for_chat (rpc.account_id, noticed_chat);
+                account_unread_changed (rpc.account_id);
+                schedule_chats_reload ();
+                break;
+
             case "ChatlistChanged":
             case "ChatlistItemChanged":
-            case "MsgsNoticed":
             case "ChatModified":
             case "ChatDeleted":
                 schedule_chats_reload ();
@@ -145,9 +151,14 @@ namespace Dc {
                 incoming_msg_received (acct_id, chat_id, msg_id);
                 break;
 
+            case "MsgsNoticed":
+                int noticed_chat = (int) event.get_int_member ("chatId");
+                clear_notifications_for_chat (acct_id, noticed_chat);
+                account_unread_changed (acct_id);
+                break;
+
             case "ChatlistChanged":
             case "ChatlistItemChanged":
-            case "MsgsNoticed":
             case "ChatModified":
                 account_unread_changed (acct_id);
                 break;
@@ -201,9 +212,67 @@ namespace Dc {
                    chat the message belongs to (see Application.startup). */
                 n.set_default_action_and_target_value ("app.open-chat",
                     new Variant ("(ii)", acct_id, chat_id));
-                app.send_notification ("dc-msg-%d-%d".printf (acct_id, msg_id), n);
+                string id = notification_id (acct_id, chat_id);
+                app.send_notification (id, n);
             } catch (Error e) {
                 warning ("Failed to send notification: %s", e.message);
+            }
+        }
+
+        public void clear_notifications_for_chat (int acct_id, int chat_id) {
+            if (acct_id <= 0 || chat_id <= 0) return;
+            withdraw_notification_id (notification_id (acct_id, chat_id));
+        }
+
+        public async void reconcile_desktop_notifications () {
+            if (app == null || !rpc.is_connected) return;
+            try {
+                var accounts_node = yield rpc.get_all_accounts ();
+                if (accounts_node == null) return;
+                var accounts = accounts_node.get_array ();
+                for (uint i = 0; i < accounts.get_length (); i++) {
+                    int acct_id = (int) accounts.get_object_element (i).get_int_member ("id");
+                    if (acct_id <= 0) continue;
+                    try { yield reconcile_account_notifications (acct_id); }
+                    catch (Error e) { /* unconfigured/removed account */ }
+                }
+            } catch (Error e) {
+                warning ("Failed to reconcile desktop notifications: %s", e.message);
+            }
+        }
+
+        private static string notification_id (int acct_id, int chat_id) {
+            return "dc-chat-%d-%d".printf (acct_id, chat_id);
+        }
+
+        private static string legacy_notification_id (int acct_id, int msg_id) {
+            return "dc-msg-%d-%d".printf (acct_id, msg_id);
+        }
+
+        private void withdraw_notification_id (string id) {
+            if (app == null || id.length == 0) return;
+            app.withdraw_notification (id);
+        }
+
+        private async void reconcile_account_notifications (int acct_id) throws Error {
+            var entries = yield rpc.get_chatlist_entries_for (acct_id);
+            if (entries == null) return;
+
+            for (uint i = 0; i < entries.get_length (); i++) {
+                int chat_id = (int) entries.get_int_element (i);
+                clear_notifications_for_chat (acct_id, chat_id);
+                yield withdraw_legacy_notifications_for_chat (acct_id, chat_id);
+            }
+        }
+
+        private async void withdraw_legacy_notifications_for_chat (
+                int acct_id, int chat_id) throws Error {
+            var msg_ids = yield rpc.get_message_ids_for (acct_id, chat_id);
+            if (msg_ids == null) return;
+            for (uint i = 0; i < msg_ids.get_length (); i++) {
+                int msg_id = (int) msg_ids.get_int_element (i);
+                if (msg_id <= 0) continue;
+                withdraw_notification_id (legacy_notification_id (acct_id, msg_id));
             }
         }
 

@@ -319,7 +319,7 @@ namespace Dc {
             notif_switch.active = app_window.settings.notifications_enabled;
             notif_switch.valign = Gtk.Align.CENTER;
             notif_switch.notify["active"].connect (() => {
-                app_window.settings.save_notifications_enabled (notif_switch.active);
+                app_window.set_notifications_enabled (notif_switch.active);
             });
             notif_row.add_suffix (notif_switch);
             notif_row.activatable_widget = notif_switch;

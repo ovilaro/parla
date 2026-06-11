@@ -193,8 +193,7 @@ namespace Dc {
                     this.application.quit ();
                 });
                 tray.notifications_toggle_requested.connect ((enabled) => {
-                    settings.save_notifications_enabled (enabled);
-                    tray.set_notifications_enabled (enabled);
+                    set_notifications_enabled (enabled);
                 });
             }
             if (tray == null) return;
@@ -209,6 +208,14 @@ namespace Dc {
                 this.application.release ();
             }
             this.present ();
+        }
+
+        public void set_notifications_enabled (bool enabled) {
+            settings.save_notifications_enabled (enabled);
+            if (tray != null) tray.set_notifications_enabled (enabled);
+            if (!enabled && events != null) {
+                events.reconcile_desktop_notifications.begin ();
+            }
         }
 
         /* ================================================================
@@ -546,6 +553,7 @@ namespace Dc {
                 yield load_chats ();
                 yield load_profile_avatar ();
                 events.start.begin ();
+                events.reconcile_desktop_notifications.begin ();
 
                 /* A link that arrived before the profile was ready (e.g. the
                    app was cold-started by clicking it) waited here. */
@@ -872,6 +880,9 @@ namespace Dc {
                 yield rpc.marknoticed_chat (chat_id);
             } catch (Error e) {
                 /* non-critical */
+            }
+            if (events != null) {
+                events.clear_notifications_for_chat (rpc.account_id, chat_id);
             }
         }
 
