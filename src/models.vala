@@ -314,7 +314,7 @@ namespace Dc {
         return null;
     }
 
-    public Message? find_message (GLib.ListStore store, int msg_id) {
+    public Message? find_message (GLib.ListModel store, int msg_id) {
         for (uint i = 0; i < store.get_n_items (); i++) {
             var m = (Message) store.get_item (i);
             if (m.id == msg_id) return m;
@@ -322,7 +322,7 @@ namespace Dc {
         return null;
     }
 
-    public int find_message_index (GLib.ListStore store, int msg_id) {
+    public int find_message_index (GLib.ListModel store, int msg_id) {
         for (uint i = 0; i < store.get_n_items (); i++) {
             var m = (Message) store.get_item (i);
             if (m.id == msg_id) return (int) i;

@@ -74,16 +74,8 @@ namespace Dc {
             message_scroll.vexpand = true;
             message_scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
 
-            message_scroll.vadjustment.notify["upper"].connect (() => {
-                if (loading_chat) return;
-                maybe_autoscroll ();
-                scroll_down_btn.visible = !is_near_bottom ();
-            });
-            message_scroll.vadjustment.notify["page-size"].connect (() => {
-                if (loading_chat) return;
-                maybe_autoscroll ();
-                scroll_down_btn.visible = !is_near_bottom ();
-            });
+            message_scroll.vadjustment.notify["upper"].connect (on_scroll_bounds_changed);
+            message_scroll.vadjustment.notify["page-size"].connect (on_scroll_bounds_changed);
             message_scroll.vadjustment.notify["value"].connect (() => {
                 if (loading_chat) return;
                 if (GLib.get_monotonic_time () < scroll_freeze_until_us) return;
@@ -113,26 +105,9 @@ namespace Dc {
                     prev = (Message) filtered_message_store.get_item (pos - 1);
                 }
 
-                GLib.GenericArray<Message>? trailing = null;
-                bool is_img_continuation = false;
-                if (settings.message_style == MessageStyle.IRC && msg.is_image_only) {
-                    if (prev != null
-                        && prev.is_image_only
-                        && MessageRow.same_irc_sender (prev, msg)) {
-                        is_img_continuation = true;
-                    } else {
-                        trailing = new GLib.GenericArray<Message> ();
-                        uint i = pos + 1;
-                        uint n = filtered_message_store.get_n_items ();
-                        while (i < n && trailing.length < 5) {
-                            var next = (Message) filtered_message_store.get_item (i);
-                            if (next == null || !next.is_image_only) break;
-                            if (!MessageRow.same_irc_sender (msg, next)) break;
-                            trailing.add (next);
-                            i++;
-                        }
-                    }
-                }
+                bool is_img_continuation;
+                var trailing = collect_trailing_irc_images (
+                    msg, prev, pos, out is_img_continuation);
 
                 var row = new MessageRow (msg, prev, trailing, is_img_continuation);
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
@@ -141,14 +116,7 @@ namespace Dc {
                     row.highlight ();
                 }
                 li.child = row;
-                /* Keep the list row from grabbing focus on click. A focused
-                   list item makes GtkListView scroll it into view (an
-                   immediate re-anchor), which yanks the viewport whenever the
-                   clicked row is partially clipped at a viewport edge — the
-                   main source of the random scroll jumps on interaction.
-                   Under the NoSelection model these two flags have no other
-                   visible effect; the click handler bails out before its
-                   grab_focus when both are false. */
+                /* Avoid focus-driven GtkListView re-anchoring on row clicks. */
                 li.selectable = false;
                 li.activatable = false;
             });
@@ -287,6 +255,32 @@ namespace Dc {
             append (request_bar);
 
             install_file_drop_target ();
+        }
+
+        private void on_scroll_bounds_changed () {
+            if (loading_chat) return;
+            maybe_autoscroll ();
+            scroll_down_btn.visible = !is_near_bottom ();
+        }
+
+        private GLib.GenericArray<Message>? collect_trailing_irc_images (
+                Message msg, Message? prev, uint pos, out bool is_continuation) {
+            is_continuation = false;
+            if (settings.message_style != MessageStyle.IRC || !msg.is_image_only) return null;
+            if (prev != null && prev.is_image_only && MessageRow.same_irc_sender (prev, msg)) {
+                is_continuation = true;
+                return null;
+            }
+
+            var trailing = new GLib.GenericArray<Message> ();
+            for (uint i = pos + 1, n = filtered_message_store.get_n_items ();
+                    i < n && trailing.length < 5; i++) {
+                var next = (Message) filtered_message_store.get_item (i);
+                if (next == null || !next.is_image_only ||
+                    !MessageRow.same_irc_sender (msg, next)) break;
+                trailing.add (next);
+            }
+            return trailing;
         }
 
         /* Bottom bar shown instead of the compose box while the chat is an
@@ -446,19 +440,12 @@ namespace Dc {
             search_toggling = true;
             bool was_active = message_search_revealer.reveal_child;
             message_search_revealer.reveal_child = !was_active;
-            if (!was_active) {
-                Idle.add (() => {
-                    message_search_entry.grab_focus ();
-                    search_toggling = false;
-                    return Source.REMOVE;
-                });
-            } else {
-                message_search_entry.text = "";
-                Idle.add (() => {
-                    search_toggling = false;
-                    return Source.REMOVE;
-                });
-            }
+            if (was_active) message_search_entry.text = "";
+            Idle.add (() => {
+                if (!was_active) message_search_entry.grab_focus ();
+                search_toggling = false;
+                return Source.REMOVE;
+            });
         }
 
         /**
@@ -480,17 +467,9 @@ namespace Dc {
             Object[] replacements = { new_msg };
             message_store.splice (idx, 1, replacements);
 
-            /* Restore on the frame clock, not a bare Idle: the replaced row
-               changes height (e.g. a reaction badge appears), and the new
-               adj.upper is only valid after the size-allocate pass. A
-               default-priority Idle can run before that relayout and clamp
-               against a stale upper; a tick callback runs after layout. */
+            /* Wait for row height changes to update the scroll range. */
             message_listview.add_tick_callback ((w, clock) => {
-                var a = message_scroll.vadjustment;
-                double max_value = a.upper - a.page_size;
-                if (max_value < 0) max_value = 0;
-                double target = was_at_bottom ? max_value : saved_value;
-                a.value = target > max_value ? max_value : target;
+                restore_scroll_value (was_at_bottom ? max_scroll_value () : saved_value);
                 loading_chat = was_loading;
                 stick_to_bottom = was_at_bottom;
                 scroll_down_btn.visible = !is_near_bottom ();
@@ -515,22 +494,11 @@ namespace Dc {
 
         public void restore_scroll_value (double v) {
             var a = message_scroll.vadjustment;
-            double max_value = a.upper - a.page_size;
-            if (max_value < 0) max_value = 0;
-            if (v > max_value) v = max_value;
+            v = double.min (v, max_scroll_value ());
             if (Math.fabs (a.value - v) > 0.5) a.value = v;
         }
 
-        /**
-         * Re-assert a scroll position on the next frame, after any
-         * focus-driven scroll-to-item has been applied. GtkListView scrolls a
-         * newly focused row into view immediately (a synchronous re-anchor),
-         * so a synchronous restore loses the race; a tick callback runs in the
-         * frame-clock update phase — after the focus scroll, before paint —
-         * and re-pins the viewport with no visible flicker. The freeze keeps
-         * the value-notify handler from mistaking these moves for the user
-         * scrolling away from the bottom.
-         */
+        /* Re-assert position after GtkListView's focus scroll has run. */
         public void restore_scroll_value_deferred (double v) {
             freeze_scroll_handler (250);
             message_listview.add_tick_callback ((w, clock) => {
@@ -539,12 +507,7 @@ namespace Dc {
             });
         }
 
-        /* Clicking a message grabs focus to its selectable text label, and
-           GtkListView reacts by scrolling that row fully into view — jolting
-           the viewport when the user has scrolled up to read history. Snapshot
-           the position before the focus lands and re-assert it next frame.
-           When pinned to the bottom the focused row is already fully visible,
-           so there is nothing to hold. */
+        /* Hold position when a row click would otherwise focus-scroll. */
         private void hold_scroll_on_focus_shift () {
             if (stick_to_bottom) return;
             restore_scroll_value_deferred (message_scroll.vadjustment.value);
@@ -558,11 +521,7 @@ namespace Dc {
         }
 
         public void scroll_to_message (int msg_id) {
-            int pos = -1;
-            for (uint i = 0; i < filtered_message_store.get_n_items (); i++) {
-                var m = (Message) filtered_message_store.get_item (i);
-                if (m.id == msg_id) { pos = (int) i; break; }
-            }
+            int pos = find_message_index (filtered_message_store, msg_id);
             if (pos < 0) return;
             var msg = (Message) filtered_message_store.get_item (pos);
             msg.highlighted = true;
@@ -599,23 +558,15 @@ namespace Dc {
                 loading_chat = true;
                 stick_to_bottom = preserve_scroll ? was_near_bottom : true;
 
-                var batch = new GLib.Object[messages.length];
-                for (uint i = 0; i < messages.length; i++) {
-                    messages[i].is_pinned = pinned.is_pinned (messages[i].id);
-                    batch[i] = messages[i];
-                }
-                message_store.splice (0, message_store.get_n_items (), batch);
+                message_store.splice (0, message_store.get_n_items (),
+                    pinned_message_batch (messages));
                 loading_chat = false;
                 if (messages.length > 0) {
                     if (!preserve_scroll || was_near_bottom) {
                         scroll_to_bottom ();
                     } else {
                         Idle.add (() => {
-                            var adj = message_scroll.vadjustment;
-                            double max_value = adj.upper - adj.page_size;
-                            if (max_value < 0) max_value = 0;
-                            adj.value = previous_scroll_value > max_value
-                                ? max_value : previous_scroll_value;
+                            restore_scroll_value (previous_scroll_value);
                             stick_to_bottom = false;
                             scroll_down_btn.visible = !is_near_bottom ();
                             return Source.REMOVE;
@@ -650,6 +601,15 @@ namespace Dc {
             return result;
         }
 
+        private GLib.Object[] pinned_message_batch (GLib.GenericArray<Message> messages) {
+            var batch = new GLib.Object[messages.length];
+            for (uint i = 0; i < messages.length; i++) {
+                messages[i].is_pinned = pinned.is_pinned (messages[i].id);
+                batch[i] = messages[i];
+            }
+            return batch;
+        }
+
         private async void load_earlier_messages () {
             if (loading_more || all_msg_ids == null || loaded_start_index == 0) return;
             loading_more = true;
@@ -665,19 +625,8 @@ namespace Dc {
                 double old_upper = adj.upper;
                 double old_value = adj.value;
 
-                /* Prepend the whole page in ONE splice rather than N inserts.
-                   A per-item insert loop emits items-changed once per message,
-                   forcing the filter model to re-filter and the ListView to
-                   re-bind/relayout on every iteration — an O(N) signal storm
-                   on the main thread that visibly stalls the UI. A single
-                   splice collapses that into one filter pass and one relayout,
-                   matching how load_messages() builds its initial batch. */
-                var batch = new GLib.Object[messages.length];
-                for (uint i = 0; i < messages.length; i++) {
-                    messages[i].is_pinned = pinned.is_pinned (messages[i].id);
-                    batch[i] = messages[i];
-                }
-                message_store.splice (0, 0, batch);
+                /* One splice avoids a per-row ListView relayout storm. */
+                message_store.splice (0, 0, pinned_message_batch (messages));
 
                 loaded_start_index = new_start;
 
@@ -717,12 +666,15 @@ namespace Dc {
             return adj.value < 80;
         }
 
+        private double max_scroll_value () {
+            var adj = message_scroll.vadjustment;
+            double value = adj.upper - adj.page_size;
+            return value > 0 ? value : 0;
+        }
+
         private void maybe_autoscroll () {
             if (!stick_to_bottom) return;
-            var adj = message_scroll.vadjustment;
-            if (adj.upper > adj.page_size) {
-                adj.value = adj.upper - adj.page_size;
-            }
+            message_scroll.vadjustment.value = max_scroll_value ();
         }
 
         public void scroll_to_bottom () {
