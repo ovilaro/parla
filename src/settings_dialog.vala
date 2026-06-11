@@ -326,22 +326,27 @@ namespace Dc {
 
             behavior_list.append (notif_row);
 
-            var tray_row = new Adw.ActionRow ();
-            tray_row.title = "Minimize to status bar";
-            tray_row.subtitle =
-                "Closing the window keeps Parla running in the status bar; "
-                + "notifications still appear";
+            /* The tray is a StatusNotifierItem exported over the session
+               D-Bus — a freedesktop protocol with no watcher on macOS, so
+               the option is Linux-only. */
+            if (!Platform.is_macos ()) {
+                var tray_row = new Adw.ActionRow ();
+                tray_row.title = "Minimize to status bar";
+                tray_row.subtitle =
+                    "Closing the window keeps Parla running in the status bar; "
+                    + "notifications still appear";
 
-            var tray_switch = new Gtk.Switch ();
-            tray_switch.active = app_window.settings.minimize_to_tray;
-            tray_switch.valign = Gtk.Align.CENTER;
-            tray_switch.notify["active"].connect (() => {
-                app_window.settings.save_minimize_to_tray (tray_switch.active);
-            });
-            tray_row.add_suffix (tray_switch);
-            tray_row.activatable_widget = tray_switch;
+                var tray_switch = new Gtk.Switch ();
+                tray_switch.active = app_window.settings.minimize_to_tray;
+                tray_switch.valign = Gtk.Align.CENTER;
+                tray_switch.notify["active"].connect (() => {
+                    app_window.settings.save_minimize_to_tray (tray_switch.active);
+                });
+                tray_row.add_suffix (tray_switch);
+                tray_row.activatable_widget = tray_switch;
 
-            behavior_list.append (tray_row);
+                behavior_list.append (tray_row);
+            }
             content.append (behavior_list);
 
             /* Appearance section */

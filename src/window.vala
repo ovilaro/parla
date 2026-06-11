@@ -150,6 +150,10 @@ namespace Dc {
         }
 
         private bool on_close_request () {
+            /* No tray on macOS (see sync_tray) — hiding the window with the
+               app held would leave it running with no way back and crashes
+               the GTK macOS backend, so always do a normal close there. */
+            if (Platform.is_macos ()) return false;
             if (!settings.minimize_to_tray) return false;
             this.set_visible (false);
             this.application.hold ();
@@ -169,6 +173,9 @@ namespace Dc {
         /* Single source of truth for the tray icon: create it on first need,
            then show/hide it to track the setting. */
         private void sync_tray () {
+            /* StatusNotifierItem is a freedesktop/D-Bus protocol with no
+               watcher on macOS — the icon can never show up there. */
+            if (Platform.is_macos ()) return;
             if (tray == null && settings.minimize_to_tray) {
                 var conn = this.application.get_dbus_connection ();
                 if (conn == null) return;
