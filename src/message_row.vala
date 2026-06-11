@@ -120,6 +120,9 @@ namespace Dc {
                 pin_icon.add_css_class ("message-time");
                 footer.append (pin_icon);
             }
+            if (msg.is_edited) {
+                footer.append (build_edited_indicator ("Edited"));
+            }
             var time_str = format_timestamp (msg.timestamp);
             var time_lbl = new Gtk.Label (time_str);
             time_lbl.add_css_class ("message-time");
@@ -260,6 +263,12 @@ namespace Dc {
 
             this.append (body);
 
+            if (msg.is_edited) {
+                var edited = build_edited_indicator ("(edited)");
+                edited.valign = Gtk.Align.START;
+                this.append (edited);
+            }
+
             /* Outgoing tick indicator at the end */
             if (msg.is_outgoing) {
                 var tick = build_tick_indicator (msg);
@@ -383,6 +392,13 @@ namespace Dc {
                 && msg.sender_address.length > 0) {
                 lbl.tooltip_text = msg.sender_address;
             }
+            return lbl;
+        }
+
+        private static Gtk.Label build_edited_indicator (string text) {
+            var lbl = new Gtk.Label (text);
+            lbl.add_css_class ("message-edited");
+            lbl.tooltip_text = "This message was edited";
             return lbl;
         }
 

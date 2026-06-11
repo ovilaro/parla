@@ -181,6 +181,8 @@ namespace Dc {
         public string? sender_name { get; set; default = null; }
         /* True when the message was forwarded into this chat. */
         public bool is_forwarded { get; set; default = false; }
+        /* True when the message text was edited after sending. */
+        public bool is_edited { get; set; default = false; }
         /* Overridden author name (mailing lists, bots, non-group senders);
            shown with a leading "~" by convention. */
         public string? override_sender_name { get; set; default = null; }

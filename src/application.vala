@@ -253,6 +253,12 @@ namespace Dc {
                 font-style: italic;
                 opacity: 0.7;
             }
+            .message-edited {
+                font-size: x-small;
+                font-style: italic;
+                opacity: 0.55;
+                margin-top: 2px;
+            }
             .message-big-emoji {
                 font-size: 500%;
             }
