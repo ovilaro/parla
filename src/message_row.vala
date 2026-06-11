@@ -333,6 +333,14 @@ namespace Dc {
                 var picture = new Gtk.Picture.for_paintable (texture);
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
                 picture.can_shrink = true;
+                /* Bubble images need a nonzero minimum allocation so a valid
+                   paintable cannot collapse to an empty bubble, but keep it
+                   capped at min_w so portrait/mobile layouts still fit. */
+                if (min_w > 0) {
+                    int req_w = int.min (dw, min_w);
+                    int req_h = int.max (1, (int) (((int64) dh * req_w + dw / 2) / dw));
+                    picture.set_size_request (int.max (1, req_w), req_h);
+                }
                 picture.halign = Gtk.Align.START;
                 picture.add_css_class ("message-image");
                 return picture;
