@@ -99,11 +99,6 @@ jobs:
             adwaita-icon-theme \
             create-dmg
 
-      - name: Install RPC backend
-        run: |
-          python3 -m pip install --user deltachat-rpc-server
-          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
-
       - name: Build
         run: scripts/macos/build.sh
 
