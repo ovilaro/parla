@@ -81,6 +81,7 @@ sources = files(
   'src/tray_icon.vala',
   'src/storage_quota.vala',
   'src/profile_dialog.vala',
+  'src/qr_code_view.vala',
   'src/pinned_messages_manager.vala',
   'src/quick_switch_dialog.vala',
   'src/event_handler.vala',

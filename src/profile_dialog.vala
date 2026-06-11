@@ -865,13 +865,8 @@ namespace Dc {
         private RpcClient rpc;
         private int account_id;
         private int chat_id;
-        private Gtk.Label status_label;
-        private Gtk.Picture qr_picture;
-        private Gtk.TextView qr_text_view;
-        private Gtk.ScrolledWindow qr_text_scroll;
-        private Gtk.Button copy_btn;
+        private QrCodeView qr_view;
         private Gtk.Button? toggle_btn = null;
-        private string? invite_text = null;
         private bool closing = false;
         private bool link_active = true;
         private bool toggle_busy = false;
@@ -894,31 +889,8 @@ namespace Dc {
             content.margin_top = 12;
             content.margin_bottom = 18;
 
-            status_label = new Gtk.Label ("Preparing invite code…");
-            status_label.wrap = true;
-            status_label.xalign = 0;
-            content.append (status_label);
-
-            qr_picture = new Gtk.Picture ();
-            qr_picture.content_fit = Gtk.ContentFit.CONTAIN;
-            qr_picture.can_shrink = true;
-            qr_picture.halign = Gtk.Align.CENTER;
-            qr_picture.set_size_request (280, 280);
-            qr_picture.visible = false;
-            content.append (qr_picture);
-
-            qr_text_view = new Gtk.TextView ();
-            qr_text_view.editable = false;
-            qr_text_view.cursor_visible = false;
-            qr_text_view.monospace = true;
-            qr_text_view.wrap_mode = Gtk.WrapMode.CHAR;
-
-            qr_text_scroll = new Gtk.ScrolledWindow ();
-            qr_text_scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
-            qr_text_scroll.min_content_height = 96;
-            qr_text_scroll.child = qr_text_view;
-            qr_text_scroll.visible = false;
-            content.append (qr_text_scroll);
+            qr_view = new QrCodeView ("Preparing invite code…");
+            content.append (qr_view);
 
             var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             actions.halign = Gtk.Align.END;
@@ -934,10 +906,7 @@ namespace Dc {
                 actions.append (toggle_btn);
             }
 
-            copy_btn = new Gtk.Button.with_label ("Copy Link");
-            copy_btn.sensitive = false;
-            copy_btn.clicked.connect (copy_invite_text);
-            actions.append (copy_btn);
+            actions.append (qr_view.make_copy_button ("Copy Link"));
 
             var close_btn = new Gtk.Button.with_label ("Close");
             close_btn.clicked.connect (() => { this.close (); });
@@ -963,21 +932,11 @@ namespace Dc {
         }
 
         private void show_qr (string text, string svg) {
-            invite_text = text;
-            status_label.label = chat_id > 0
+            string ready_status = chat_id > 0
                 ? "Share this QR code or invite link to let others join."
                 : "Share this QR code with another user, or copy the invite link below.";
-            qr_text_view.buffer.text = text;
-            qr_text_scroll.visible = true;
-            copy_btn.sensitive = true;
-
-            try {
-                var bytes = new Bytes (svg.data);
-                qr_picture.paintable = Gdk.Texture.from_bytes (bytes);
-                qr_picture.visible = true;
-            } catch (Error e) {
-                status_label.label = "Invite link is ready, but the QR image could not be rendered: " + e.message;
-            }
+            qr_view.show_code (text, svg, ready_status,
+                "Invite link is ready, but the QR image could not be rendered: ");
 
             if (chat_id > 0) refresh_link_state.begin ();
         }
@@ -987,9 +946,10 @@ namespace Dc {
            once it has been withdrawn, so the prefix tells us which way the
            toggle should act. */
         private async void refresh_link_state () {
-            if (invite_text == null || toggle_btn == null) return;
+            string text = qr_view.code_text ?? "";
+            if (text.length == 0 || toggle_btn == null) return;
             try {
-                var qr = yield rpc.check_qr (account_id, invite_text);
+                var qr = yield rpc.check_qr (account_id, text);
                 if (closing || qr == null || !qr.has_member ("kind")) return;
                 string kind = qr.get_string_member ("kind");
                 if (kind.has_prefix ("withdraw")) {
@@ -1013,30 +973,31 @@ namespace Dc {
             if (link_active) {
                 toggle_btn.label = "Deactivate Link";
                 toggle_btn.remove_css_class ("suggested-action");
-                qr_picture.opacity = 1.0;
-                status_label.label =
-                    "Share this QR code or invite link to let others join.";
+                qr_view.set_qr_opacity (1.0);
+                qr_view.set_status (
+                    "Share this QR code or invite link to let others join.");
             } else {
                 toggle_btn.label = "Activate Link";
                 toggle_btn.add_css_class ("suggested-action");
-                qr_picture.opacity = 0.35;
-                status_label.label =
-                    "This invite link is deactivated — activate it to let others join.";
+                qr_view.set_qr_opacity (0.35);
+                qr_view.set_status (
+                    "This invite link is deactivated — activate it to let others join.");
             }
         }
 
         private async void toggle_link () {
-            if (invite_text == null || toggle_btn == null || toggle_busy) return;
+            string text = qr_view.code_text ?? "";
+            if (text.length == 0 || toggle_btn == null || toggle_busy) return;
             toggle_busy = true;
             toggle_btn.sensitive = false;
             toggle_btn.label = link_active ? "Deactivating…" : "Activating…";
             try {
-                yield rpc.set_config_from_qr (account_id, invite_text);
+                yield rpc.set_config_from_qr (account_id, text);
                 yield refresh_link_state ();
             } catch (Error e) {
                 if (!closing) {
-                    status_label.label =
-                        "Could not update the invite link: " + e.message;
+                    qr_view.set_status (
+                        "Could not update the invite link: " + e.message);
                     apply_link_state ();
                 }
             } finally {
@@ -1045,14 +1006,9 @@ namespace Dc {
         }
 
         private void show_invite_error (string message) {
-            status_label.label = "Invite code creation failed: " + message;
-            copy_btn.sensitive = false;
+            qr_view.set_status ("Invite code creation failed: " + message);
+            qr_view.set_copy_sensitive (false);
             if (toggle_btn != null) toggle_btn.visible = false;
-        }
-
-        private void copy_invite_text () {
-            if (invite_text == null || invite_text.length == 0) return;
-            this.get_display ().get_clipboard ().set_text (invite_text);
         }
     }
 
@@ -1060,12 +1016,7 @@ namespace Dc {
 
         private RpcClient rpc;
         private int account_id;
-        private Gtk.Label status_label;
-        private Gtk.Picture qr_picture;
-        private Gtk.TextView qr_text_view;
-        private Gtk.ScrolledWindow qr_text_scroll;
-        private Gtk.Button copy_btn;
-        private string? qr_text = null;
+        private QrCodeView qr_view;
         private bool closing = false;
         private bool provider_running = false;
 
@@ -1086,40 +1037,14 @@ namespace Dc {
             content.margin_top = 12;
             content.margin_bottom = 18;
 
-            status_label = new Gtk.Label ("Preparing account…");
-            status_label.wrap = true;
-            status_label.xalign = 0;
-            content.append (status_label);
-
-            qr_picture = new Gtk.Picture ();
-            qr_picture.content_fit = Gtk.ContentFit.CONTAIN;
-            qr_picture.can_shrink = true;
-            qr_picture.halign = Gtk.Align.CENTER;
-            qr_picture.set_size_request (280, 280);
-            qr_picture.visible = false;
-            content.append (qr_picture);
-
-            qr_text_view = new Gtk.TextView ();
-            qr_text_view.editable = false;
-            qr_text_view.cursor_visible = false;
-            qr_text_view.monospace = true;
-            qr_text_view.wrap_mode = Gtk.WrapMode.CHAR;
-
-            qr_text_scroll = new Gtk.ScrolledWindow ();
-            qr_text_scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
-            qr_text_scroll.min_content_height = 96;
-            qr_text_scroll.child = qr_text_view;
-            qr_text_scroll.visible = false;
-            content.append (qr_text_scroll);
+            qr_view = new QrCodeView ("Preparing account…");
+            content.append (qr_view);
 
             var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             actions.halign = Gtk.Align.END;
             actions.margin_top = 6;
 
-            copy_btn = new Gtk.Button.with_label ("Copy Text");
-            copy_btn.sensitive = false;
-            copy_btn.clicked.connect (copy_qr_text);
-            actions.append (copy_btn);
+            actions.append (qr_view.make_copy_button ("Copy Text"));
 
             var close_btn = new Gtk.Button.with_label ("Close");
             close_btn.clicked.connect (() => { this.close (); });
@@ -1159,29 +1084,14 @@ namespace Dc {
         }
 
         private void show_qr (string text, string svg) {
-            qr_text = text;
-            status_label.label = "Scan this QR code with the second device, or copy the text below.";
-            qr_text_view.buffer.text = text;
-            qr_text_scroll.visible = true;
-            copy_btn.sensitive = true;
-
-            try {
-                var bytes = new Bytes (svg.data);
-                qr_picture.paintable = Gdk.Texture.from_bytes (bytes);
-                qr_picture.visible = true;
-            } catch (Error e) {
-                status_label.label = "QR text is ready, but the image could not be rendered: " + e.message;
-            }
+            qr_view.show_code (text, svg,
+                "Scan this QR code with the second device, or copy the text below.",
+                "QR text is ready, but the image could not be rendered: ");
         }
 
         private void show_transfer_error (string message) {
-            status_label.label = "Second-device setup failed: " + message;
-            copy_btn.sensitive = false;
-        }
-
-        private void copy_qr_text () {
-            if (qr_text == null || qr_text.length == 0) return;
-            this.get_display ().get_clipboard ().set_text (qr_text);
+            qr_view.set_status ("Second-device setup failed: " + message);
+            qr_view.set_copy_sensitive (false);
         }
 
         private void on_closed () {
