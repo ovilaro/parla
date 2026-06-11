@@ -174,6 +174,21 @@ namespace Dc {
             register_icons ();
             Gtk.Window.set_default_icon_name ("io.github.trufae.Parla");
 
+            /* Clicking a message notification activates this action (see
+               EventHandler.send_notification) with the account and chat the
+               message belongs to. */
+            var open_chat = new SimpleAction (
+                "open-chat", new VariantType ("(ii)"));
+            open_chat.activate.connect ((param) => {
+                if (param == null) return;
+                int acct_id = 0, chat_id = 0;
+                param.get ("(ii)", out acct_id, out chat_id);
+                var window = get_or_create_window ();
+                window.restore_from_tray ();
+                window.open_chat_from_notification.begin (acct_id, chat_id);
+            });
+            add_action (open_chat);
+
             var primary = Platform.primary_accelerator_prefix ();
             set_accels_for_action ("win.new-chat", { primary + "n" });
             set_accels_for_action ("win.refresh", { primary + "r" });

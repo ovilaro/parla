@@ -197,6 +197,10 @@ namespace Dc {
                 var n = new GLib.Notification (title);
                 n.set_body (body);
                 n.set_priority (GLib.NotificationPriority.NORMAL);
+                /* Clicking the notification raises the window and opens the
+                   chat the message belongs to (see Application.startup). */
+                n.set_default_action_and_target_value ("app.open-chat",
+                    new Variant ("(ii)", acct_id, chat_id));
                 app.send_notification ("dc-msg-%d-%d".printf (acct_id, msg_id), n);
             } catch (Error e) {
                 warning ("Failed to send notification: %s", e.message);

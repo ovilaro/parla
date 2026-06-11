@@ -1483,6 +1483,22 @@ namespace Dc {
             if (v != null) v.scroll_to_message (msg_id);
         }
 
+        /* Entry point for the "app.open-chat" action fired when the user
+           clicks a message notification: bring the owning account forward
+           (it may be a background one) and open the chat. */
+        public async void open_chat_from_notification (int acct_id, int chat_id) {
+            if (acct_id > 0 && acct_id != rpc.account_id) {
+                if (!yield switch_account (acct_id)) return;
+            }
+            if (chat_id <= 0) return;
+            if (!select_chat_by_id (chat_id)) {
+                /* The chat may not be in the sidebar yet (fresh contact
+                   request, stale list) — reload and try once more. */
+                yield load_chats ();
+                select_chat_by_id (chat_id);
+            }
+        }
+
         /* ================================================================
          *  App Menu (Settings / About)
          * ================================================================ */
@@ -2045,7 +2061,7 @@ namespace Dc {
             dialog.focus_entry ();
         }
 
-        public void select_chat_by_id (int chat_id) {
+        public bool select_chat_by_id (int chat_id) {
             int idx = 0;
             Gtk.ListBoxRow? row;
             while ((row = chat_listbox.get_row_at_index (idx)) != null) {
@@ -2053,10 +2069,11 @@ namespace Dc {
                 if (chat_row != null && chat_row.chat_id == chat_id) {
                     chat_listbox.select_row (row);
                     on_chat_selected (row);
-                    return;
+                    return true;
                 }
                 idx++;
             }
+            return false;
         }
 
         private const string[] SHORTCUTS = {
