@@ -17,14 +17,12 @@ namespace Dc {
         private Gtk.TextView text_view;
         private Gtk.Label placeholder_label;
         private string placeholder_default = "Type a message…";
-        private Gtk.Button send_button;
         private Gtk.Button attach_button;
         private Gtk.MenuButton emoji_button;
         private const string EMOJI_TRIGGER_START_MARK = "parla-emoji-trigger-start";
         private const string EMOJI_TRIGGER_END_MARK = "parla-emoji-trigger-end";
         private Gtk.Button cancel_attach_button;
         private Gtk.Button cancel_edit_button;
-        private Gtk.Button cancel_reply_button;
         private Gtk.Label reply_label;
         private Gtk.Box reply_bar;
         private Gtk.Box attachment_bar;
@@ -32,7 +30,6 @@ namespace Dc {
         private Gtk.Image attachment_icon;
         private Gtk.Label attachment_name_label;
         private Gtk.Label attachment_meta_label;
-        private Gtk.Button attachment_close_button;
         private string? pending_file = null;
         private string? pending_file_name = null;
         private bool pending_file_is_temp = false;
@@ -50,7 +47,6 @@ namespace Dc {
             margin_top = 6;
             margin_bottom = 6;
 
-            /* Reply indicator bar (hidden by default) */
             reply_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
             reply_bar.add_css_class ("reply-bar");
             reply_bar.visible = false;
@@ -67,19 +63,11 @@ namespace Dc {
             reply_label.ellipsize = Pango.EllipsizeMode.END;
             reply_bar.append (reply_label);
 
-            cancel_reply_button = new Gtk.Button.from_icon_name ("window-close-symbolic");
-            cancel_reply_button.add_css_class ("flat");
-            cancel_reply_button.add_css_class ("circular");
-            cancel_reply_button.tooltip_text = "Cancel reply";
-            cancel_reply_button.valign = Gtk.Align.CENTER;
-            cancel_reply_button.clicked.connect (cancel_reply);
-            reply_bar.append (cancel_reply_button);
+            reply_bar.append (flat_icon_button (
+                "window-close-symbolic", "Cancel reply", cancel_reply, true));
 
             append (reply_bar);
 
-            /* Attachment preview bar (hidden by default). Shows either an
-               image preview (when the attached file is an image) or a
-               generic icon + filename + mimetype row. */
             attachment_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             attachment_bar.add_css_class ("attachment-bar");
             attachment_bar.visible = false;
@@ -119,28 +107,17 @@ namespace Dc {
 
             attachment_bar.append (attachment_info);
 
-            attachment_close_button = new Gtk.Button.from_icon_name ("window-close-symbolic");
-            attachment_close_button.add_css_class ("flat");
-            attachment_close_button.add_css_class ("circular");
-            attachment_close_button.tooltip_text = "Remove attachment";
-            attachment_close_button.valign = Gtk.Align.CENTER;
-            attachment_close_button.clicked.connect (clear_attachment);
-            attachment_bar.append (attachment_close_button);
+            attachment_bar.append (flat_icon_button (
+                "window-close-symbolic", "Remove attachment", clear_attachment, true));
 
             append (attachment_bar);
 
-            /* Input row */
             var input_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
 
-            /* Attach button */
-            attach_button = new Gtk.Button.from_icon_name ("mail-attachment-symbolic");
-            attach_button.add_css_class ("flat");
-            attach_button.tooltip_text = "Attach file";
-            attach_button.valign = Gtk.Align.CENTER;
-            attach_button.clicked.connect (on_attach_clicked);
+            attach_button = flat_icon_button (
+                "mail-attachment-symbolic", "Attach file", on_attach_clicked);
             input_row.append (attach_button);
 
-            /* Emoji picker button */
             emoji_button = new Gtk.MenuButton ();
             emoji_button.icon_name = "face-smile-symbolic";
             emoji_button.add_css_class ("flat");
@@ -162,28 +139,16 @@ namespace Dc {
             }
             input_row.append (emoji_button);
 
-            /* Cancel attachment button (hidden by default) */
-            cancel_attach_button = new Gtk.Button.from_icon_name ("edit-clear-symbolic");
-            cancel_attach_button.add_css_class ("flat");
-            cancel_attach_button.tooltip_text = "Remove attachment";
-            cancel_attach_button.valign = Gtk.Align.CENTER;
+            cancel_attach_button = flat_icon_button (
+                "edit-clear-symbolic", "Remove attachment", clear_attachment);
             cancel_attach_button.visible = false;
-            cancel_attach_button.clicked.connect (clear_attachment);
             input_row.append (cancel_attach_button);
 
-            /* Cancel edit button (hidden by default) */
-            cancel_edit_button = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
-            cancel_edit_button.add_css_class ("flat");
-            cancel_edit_button.tooltip_text = "Cancel editing";
-            cancel_edit_button.valign = Gtk.Align.CENTER;
+            cancel_edit_button = flat_icon_button (
+                "edit-undo-symbolic", "Cancel editing", cancel_edit);
             cancel_edit_button.visible = false;
-            cancel_edit_button.clicked.connect (cancel_edit);
             input_row.append (cancel_edit_button);
 
-            /* Multi-line text view with paste handler.
-               Wrapped in a ScrolledWindow that grows up to a max height,
-               and overlaid with a manual placeholder label since
-               Gtk.TextView has no built-in placeholder support. */
             text_view = new Gtk.TextView ();
             text_view.wrap_mode = Gtk.WrapMode.WORD_CHAR;
             text_view.accepts_tab = false;
@@ -247,8 +212,7 @@ namespace Dc {
             text_view.add_controller (key_ctrl);
             input_row.append (entry_overlay);
 
-            /* Send button */
-            send_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
+            var send_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
             send_button.add_css_class ("suggested-action");
             send_button.add_css_class ("circular");
             send_button.tooltip_text = "Send message";
@@ -257,6 +221,18 @@ namespace Dc {
             input_row.append (send_button);
 
             append (input_row);
+        }
+
+        private Gtk.Button flat_icon_button (string icon_name, string tooltip,
+                                             owned VoidFunc on_click,
+                                             bool circular = false) {
+            var button = new Gtk.Button.from_icon_name (icon_name);
+            button.add_css_class ("flat");
+            if (circular) button.add_css_class ("circular");
+            button.tooltip_text = tooltip;
+            button.valign = Gtk.Align.CENTER;
+            button.clicked.connect (() => { on_click (); });
+            return button;
         }
 
         public void grab_entry_focus () {
@@ -280,19 +256,10 @@ namespace Dc {
             if (open_emoji) open_emoji_picker_after_typed_colon ();
         }
 
-        public void clear () {
-            text_view.buffer.text = "";
-            clear_attachment ();
-        }
-
         private string get_text () {
             Gtk.TextIter start, end;
             text_view.buffer.get_bounds (out start, out end);
             return text_view.buffer.get_text (start, end, false);
-        }
-
-        private void set_placeholder (string s) {
-            placeholder_label.label = s;
         }
 
         private void update_placeholder () {
@@ -418,7 +385,7 @@ namespace Dc {
             attachment_picture.paintable = null;
             attachment_name_label.label = "";
             attachment_meta_label.label = "";
-            set_placeholder (placeholder_default);
+            placeholder_label.label = placeholder_default;
         }
 
         private void on_send () {
@@ -435,7 +402,8 @@ namespace Dc {
             cancel_reply ();
             /* Hand temp-file ownership to the in-flight async RPC. */
             pending_file_is_temp = false;
-            clear ();
+            text_view.buffer.text = "";
+            clear_attachment ();
         }
 
         public void begin_reply (int msg_id, string sender_name, string preview) {
@@ -475,12 +443,11 @@ namespace Dc {
         }
 
         public void begin_edit (int msg_id, string current_text) {
-            cancel_edit ();
             cancel_reply ();
             clear_attachment ();
             editing_msg_id = msg_id;
             text_view.buffer.text = current_text;
-            set_placeholder ("Edit message…");
+            placeholder_label.label = "Edit message…";
             cancel_edit_button.visible = true;
             attach_button.sensitive = false;
             text_view.grab_focus ();
@@ -500,18 +467,16 @@ namespace Dc {
             if (editing_msg_id == 0) return;
             editing_msg_id = 0;
             text_view.buffer.text = "";
-            set_placeholder (placeholder_default);
+            placeholder_label.label = placeholder_default;
             cancel_edit_button.visible = false;
             attach_button.sensitive = true;
         }
 
-        /* True while a reply, edit or pending attachment is staged. */
         public bool has_active_mode () {
             return editing_msg_id != 0 || replying_msg_id != 0
                 || pending_file != null;
         }
 
-        /* True when keyboard focus is in the message entry. */
         public bool entry_has_focus () {
             var root = get_root () as Gtk.Window;
             if (root == null) return false;
@@ -520,9 +485,6 @@ namespace Dc {
                 && (fw == text_view || fw.is_ancestor (text_view));
         }
 
-        /* Drop whichever of reply/edit/attachment is active and return to
-           the plain input prompt. Each helper guards itself, so calling
-           all three only clears what is actually set. */
         public void cancel_active_mode () {
             cancel_edit ();
             cancel_reply ();
