@@ -13,6 +13,148 @@ namespace Dc {
      *   - Use classic email address (lives in window.vala for now)
      */
 
+    private static Gtk.Box account_setup_content () {
+        var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        content.margin_start = content.margin_end = 18;
+        content.margin_top = 12;
+        content.margin_bottom = 18;
+        return content;
+    }
+
+    private static Gtk.Label account_setup_intro (string text) {
+        var intro = new Gtk.Label (text);
+        intro.wrap = true;
+        intro.xalign = 0;
+        intro.add_css_class ("dim-label");
+        return intro;
+    }
+
+    private static Gtk.Label account_setup_heading (string text) {
+        var label = new Gtk.Label (text);
+        label.add_css_class ("heading");
+        label.xalign = 0;
+        return label;
+    }
+
+    private static Gtk.Box account_setup_action_row (bool with_margin = true) {
+        var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+        row.halign = Gtk.Align.END;
+        if (with_margin) row.margin_top = 6;
+        return row;
+    }
+
+    private static Gtk.Stack account_setup_stack (Gtk.Widget input_page,
+                                                   Gtk.Widget progress_page) {
+        var stack = new Gtk.Stack ();
+        stack.transition_type = Gtk.StackTransitionType.CROSSFADE;
+        stack.transition_duration = 180;
+        stack.vexpand = true;
+        stack.add_named (input_page, "input");
+        stack.add_named (progress_page, "progress");
+        return stack;
+    }
+
+    private static Gtk.Box account_setup_shell (Gtk.Stack stack) {
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        box.append (new Adw.HeaderBar ());
+        box.append (stack);
+        return box;
+    }
+
+    private static void disconnect_progress_handler (EventHandler events,
+                                                     ref ulong handler_id) {
+        if (handler_id == 0) return;
+        events.disconnect (handler_id);
+        handler_id = 0;
+    }
+
+    private static void stop_ongoing_account (RpcClient rpc, int account_id) {
+        if (account_id <= 0) return;
+        rpc.stop_ongoing_process.begin (account_id, (obj, res) => {
+            try { rpc.stop_ongoing_process.end (res); }
+            catch (Error e) { /* ignore */ }
+        });
+    }
+
+    private static async void cleanup_pending_account (RpcClient rpc,
+                                                       int account_id,
+                                                       bool stop_first) {
+        if (account_id <= 0) return;
+        if (stop_first) {
+            try { yield rpc.stop_ongoing_process (account_id); }
+            catch (Error e) { /* ignore */ }
+        }
+        try { yield rpc.remove_account (account_id); }
+        catch (Error e) { /* ignore */ }
+    }
+
+    private class AccountProgressPage : Gtk.Box {
+        private Gtk.ProgressBar progress_bar;
+        private Gtk.Label progress_label;
+        private Gtk.Label status_label;
+
+        public signal void cancel_requested ();
+
+        public AccountProgressPage (string initial_status,
+                                    bool wrap_status = false) {
+            Object (
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 12
+            );
+            margin_start = margin_end = 18;
+            margin_top = 12;
+            margin_bottom = 18;
+            valign = Gtk.Align.CENTER;
+
+            status_label = new Gtk.Label (initial_status);
+            status_label.xalign = 0;
+            status_label.wrap = wrap_status;
+            append (status_label);
+
+            progress_bar = new Gtk.ProgressBar ();
+            progress_bar.fraction = 0.0;
+            progress_bar.show_text = false;
+            append (progress_bar);
+
+            progress_label = new Gtk.Label ("0 %");
+            progress_label.xalign = 0;
+            progress_label.add_css_class ("dim-label");
+            append (progress_label);
+
+            var actions = account_setup_action_row ();
+            var cancel_btn = new Gtk.Button.with_label ("Cancel");
+            cancel_btn.add_css_class ("destructive-action");
+            cancel_btn.clicked.connect (() => { cancel_requested (); });
+            actions.append (cancel_btn);
+            append (actions);
+        }
+
+        public void set_status (string status) {
+            status_label.label = status;
+        }
+
+        public void set_permille (int progress, string? comment = null,
+                                  string? active_status = null) {
+            if (progress == 0) {
+                set_status (comment ?? "Failed");
+                return;
+            }
+
+            double fraction = ((double) progress) / 1000.0;
+            if (fraction > 1.0) fraction = 1.0;
+            progress_bar.fraction = fraction;
+            progress_label.label = "%d %%".printf ((int) (fraction * 100));
+
+            if (comment != null && comment.length > 0) {
+                set_status (comment);
+            } else if (progress >= 1000) {
+                set_status ("Finishing…");
+            } else if (active_status != null) {
+                set_status (active_status);
+            }
+        }
+    }
+
     /**
      * Creates a fresh chatmail profile on the relay chosen by the user.
      * Server-side picks an address, returns credentials, and the rpc
@@ -30,9 +172,7 @@ namespace Dc {
         private Gtk.Entry name_entry;
         private RelayPicker relay_picker;
         private Gtk.Button create_btn;
-        private Gtk.ProgressBar progress_bar;
-        private Gtk.Label progress_label;
-        private Gtk.Label status_label;
+        private AccountProgressPage progress_page;
 
         private int new_account_id = 0;
         private bool create_running = false;
@@ -48,19 +188,9 @@ namespace Dc {
             this.content_width = 480;
             this.can_close = true;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.append (new Adw.HeaderBar ());
-
-            stack = new Gtk.Stack ();
-            stack.transition_type = Gtk.StackTransitionType.CROSSFADE;
-            stack.transition_duration = 180;
-            stack.vexpand = true;
-
-            stack.add_named (build_input_page (), "input");
-            stack.add_named (build_progress_page (), "progress");
-
-            box.append (stack);
-            this.child = box;
+            stack = account_setup_stack (
+                build_input_page (), build_progress_page ());
+            this.child = account_setup_shell (stack);
 
             install_escape_close (this);
             this.closed.connect (on_dialog_closed);
@@ -69,34 +199,20 @@ namespace Dc {
         /* ---- UI ---- */
 
         private Gtk.Widget build_input_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-
-            var intro = new Gtk.Label (
+            var content = account_setup_content ();
+            content.append (account_setup_intro (
                 "Pick a chatmail relay or enter a custom server. The server will assign you an email " +
                 "address and password automatically — encryption keys are " +
-                "generated on this device.");
-            intro.wrap = true;
-            intro.xalign = 0;
-            intro.add_css_class ("dim-label");
-            content.append (intro);
+                "generated on this device."));
 
-            var name_label = new Gtk.Label ("Display Name");
-            name_label.add_css_class ("heading");
-            name_label.xalign = 0;
-            content.append (name_label);
+            content.append (account_setup_heading ("Display Name"));
 
             name_entry = new Gtk.Entry ();
             name_entry.placeholder_text = "Your name";
             name_entry.activates_default = true;
             content.append (name_entry);
 
-            var relay_label = new Gtk.Label ("Server");
-            relay_label.add_css_class ("heading");
-            relay_label.xalign = 0;
-            content.append (relay_label);
+            content.append (account_setup_heading ("Server"));
 
             relay_picker = new RelayPicker ();
             content.append (relay_picker);
@@ -111,10 +227,7 @@ namespace Dc {
                 "chatmail.at/relays</a> for the full list.";
             content.append (hint);
 
-            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            row.halign = Gtk.Align.END;
-            row.margin_top = 6;
-
+            var row = account_setup_action_row ();
             create_btn = new Gtk.Button.with_label ("Create Profile");
             create_btn.add_css_class ("suggested-action");
             create_btn.clicked.connect (() => { do_create.begin (); });
@@ -126,36 +239,9 @@ namespace Dc {
         }
 
         private Gtk.Widget build_progress_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-            content.valign = Gtk.Align.CENTER;
-
-            status_label = new Gtk.Label ("Contacting server…");
-            status_label.xalign = 0;
-            content.append (status_label);
-
-            progress_bar = new Gtk.ProgressBar ();
-            progress_bar.fraction = 0.0;
-            progress_bar.show_text = false;
-            content.append (progress_bar);
-
-            progress_label = new Gtk.Label ("0 %");
-            progress_label.xalign = 0;
-            progress_label.add_css_class ("dim-label");
-            content.append (progress_label);
-
-            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            actions.halign = Gtk.Align.END;
-            actions.margin_top = 6;
-            var cancel_btn = new Gtk.Button.with_label ("Cancel");
-            cancel_btn.add_css_class ("destructive-action");
-            cancel_btn.clicked.connect (cancel_create);
-            actions.append (cancel_btn);
-            content.append (actions);
-
-            return content;
+            progress_page = new AccountProgressPage ("Contacting server…");
+            progress_page.cancel_requested.connect (cancel_create);
+            return progress_page;
         }
 
         /* ---- Flow ---- */
@@ -169,7 +255,7 @@ namespace Dc {
 
             create_running = true;
             stack.visible_child_name = "progress";
-            status_label.label = "Creating profile on %s…".printf (domain);
+            progress_page.set_status ("Creating profile on %s…".printf (domain));
 
             progress_handler_id = events.configure_progress.connect (
                 on_configure_progress);
@@ -215,10 +301,7 @@ namespace Dc {
                 if (cancelled) return;
                 int aid = new_account_id;
                 new_account_id = 0;
-                if (aid > 0) {
-                    try { yield rpc.remove_account (aid); }
-                    catch (Error re) { /* ignore */ }
-                }
+                yield cleanup_pending_account (rpc, aid, false);
                 show_error (this, "Profile creation failed: " + e.message);
                 this.close ();
                 return;
@@ -237,26 +320,11 @@ namespace Dc {
         private void on_configure_progress (int ctx, int progress,
                                               string? comment) {
             if (ctx != new_account_id) return;
-            if (progress == 0) {
-                status_label.label = comment ?? "Failed";
-                return;
-            }
-            double frac = ((double) progress) / 1000.0;
-            if (frac > 1.0) frac = 1.0;
-            progress_bar.fraction = frac;
-            progress_label.label = "%d %%".printf ((int) (frac * 100));
-            if (comment != null && comment.length > 0) {
-                status_label.label = comment;
-            } else if (progress >= 1000) {
-                status_label.label = "Finishing…";
-            }
+            progress_page.set_permille (progress, comment);
         }
 
         private void cleanup_signal () {
-            if (progress_handler_id != 0) {
-                events.disconnect (progress_handler_id);
-                progress_handler_id = 0;
-            }
+            disconnect_progress_handler (events, ref progress_handler_id);
         }
 
         private void cancel_create () {
@@ -276,12 +344,7 @@ namespace Dc {
             if (!create_finished && new_account_id > 0) {
                 int aid = new_account_id;
                 new_account_id = 0;
-                rpc.stop_ongoing_process.begin (aid, (obj, res) => {
-                    try { rpc.stop_ongoing_process.end (res); } catch (Error e) {}
-                    rpc.remove_account.begin (aid, (obj2, res2) => {
-                        try { rpc.remove_account.end (res2); } catch (Error e) {}
-                    });
-                });
+                cleanup_pending_account.begin (rpc, aid, true);
             }
         }
     }
@@ -304,9 +367,7 @@ namespace Dc {
         private Gtk.Stack stack;
         private Gtk.Entry invite_entry;
         private Gtk.Button start_btn;
-        private Gtk.ProgressBar progress_bar;
-        private Gtk.Label progress_label;
-        private Gtk.Label status_label;
+        private AccountProgressPage progress_page;
 
         private int new_account_id = 0;
         private bool create_running = false;
@@ -321,38 +382,20 @@ namespace Dc {
             this.content_width = 480;
             this.can_close = true;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.append (new Adw.HeaderBar ());
-
-            stack = new Gtk.Stack ();
-            stack.transition_type = Gtk.StackTransitionType.CROSSFADE;
-            stack.transition_duration = 180;
-            stack.vexpand = true;
-
-            stack.add_named (build_input_page (), "input");
-            stack.add_named (build_progress_page (), "progress");
-
-            box.append (stack);
-            this.child = box;
+            stack = account_setup_stack (
+                build_input_page (), build_progress_page ());
+            this.child = account_setup_shell (stack);
 
             install_escape_close (this);
             this.closed.connect (on_dialog_closed);
         }
 
         private Gtk.Widget build_input_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-
-            var intro = new Gtk.Label (
+            var content = account_setup_content ();
+            content.append (account_setup_intro (
                 "Paste a Delta Chat account or invitation link. Account links " +
                 "use the linked server; contact and group invites create a new " +
-                "chatmail profile first.");
-            intro.wrap = true;
-            intro.xalign = 0;
-            intro.add_css_class ("dim-label");
-            content.append (intro);
+                "chatmail profile first."));
 
             invite_entry = new Gtk.Entry ();
             invite_entry.placeholder_text = "dcaccount:example.org or https://i.delta.chat/#...";
@@ -362,9 +405,7 @@ namespace Dc {
             invite_entry.changed.connect (update_start_sensitivity);
             content.append (invite_entry);
 
-            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            row.halign = Gtk.Align.END;
-
+            var row = account_setup_action_row (false);
             start_btn = new Gtk.Button.with_label ("Create Profile");
             start_btn.add_css_class ("suggested-action");
             start_btn.sensitive = false;
@@ -378,37 +419,9 @@ namespace Dc {
         }
 
         private Gtk.Widget build_progress_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-            content.valign = Gtk.Align.CENTER;
-
-            status_label = new Gtk.Label ("Checking invitation…");
-            status_label.xalign = 0;
-            status_label.wrap = true;
-            content.append (status_label);
-
-            progress_bar = new Gtk.ProgressBar ();
-            progress_bar.fraction = 0.0;
-            progress_bar.show_text = false;
-            content.append (progress_bar);
-
-            progress_label = new Gtk.Label ("0 %");
-            progress_label.xalign = 0;
-            progress_label.add_css_class ("dim-label");
-            content.append (progress_label);
-
-            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            actions.halign = Gtk.Align.END;
-            actions.margin_top = 6;
-            var cancel_btn = new Gtk.Button.with_label ("Cancel");
-            cancel_btn.add_css_class ("destructive-action");
-            cancel_btn.clicked.connect (cancel_create);
-            actions.append (cancel_btn);
-            content.append (actions);
-
-            return content;
+            progress_page = new AccountProgressPage ("Checking invitation…", true);
+            progress_page.cancel_requested.connect (cancel_create);
+            return progress_page;
         }
 
         private void update_start_sensitivity () {
@@ -423,7 +436,7 @@ namespace Dc {
 
             create_running = true;
             stack.visible_child_name = "progress";
-            status_label.label = "Checking invitation…";
+            progress_page.set_status ("Checking invitation…");
 
             progress_handler_id = events.configure_progress.connect (
                 on_configure_progress);
@@ -455,7 +468,7 @@ namespace Dc {
             int chat_id = 0;
 
             if (kind == "account" || kind == "login") {
-                status_label.label = "Creating profile…";
+                progress_page.set_status ("Creating profile…");
                 try {
                     yield rpc.add_transport_from_qr (new_account_id, invite_link);
                 } catch (Error e) {
@@ -465,12 +478,12 @@ namespace Dc {
             } else if (kind == "askVerifyContact" ||
                        kind == "askVerifyGroup" ||
                        kind == "askJoinBroadcast") {
-                status_label.label = "Creating profile…";
+                progress_page.set_status ("Creating profile…");
                 try {
                     yield rpc.add_transport_from_qr (
                         new_account_id,
                         build_chatmail_qr (CHATMAIL_RELAYS[0].domain));
-                    status_label.label = "Accepting invitation…";
+                    progress_page.set_status ("Accepting invitation…");
                     chat_id = yield rpc.secure_join (new_account_id, invite_link);
                 } catch (Error e) {
                     yield fail_new_account ("Invitation failed: " + e.message);
@@ -497,12 +510,7 @@ namespace Dc {
             if (new_account_id > 0) {
                 int aid = new_account_id;
                 new_account_id = 0;
-                try {
-                    yield rpc.stop_ongoing_process (aid);
-                } catch (Error e) { /* ignore */ }
-                try {
-                    yield rpc.remove_account (aid);
-                } catch (Error e) { /* ignore */ }
+                yield cleanup_pending_account (rpc, aid, true);
             }
             show_error (this, message);
             this.close ();
@@ -511,26 +519,11 @@ namespace Dc {
         private void on_configure_progress (int ctx, int progress,
                                               string? comment) {
             if (ctx != new_account_id) return;
-            if (progress == 0) {
-                status_label.label = comment ?? "Failed";
-                return;
-            }
-            double frac = ((double) progress) / 1000.0;
-            if (frac > 1.0) frac = 1.0;
-            progress_bar.fraction = frac;
-            progress_label.label = "%d %%".printf ((int) (frac * 100));
-            if (comment != null && comment.length > 0) {
-                status_label.label = comment;
-            } else if (progress >= 1000) {
-                status_label.label = "Finishing…";
-            }
+            progress_page.set_permille (progress, comment);
         }
 
         private void cleanup_signal () {
-            if (progress_handler_id != 0) {
-                events.disconnect (progress_handler_id);
-                progress_handler_id = 0;
-            }
+            disconnect_progress_handler (events, ref progress_handler_id);
         }
 
         private void cancel_create () {
@@ -539,10 +532,7 @@ namespace Dc {
                 return;
             }
             if (new_account_id > 0) {
-                rpc.stop_ongoing_process.begin (new_account_id, (obj, res) => {
-                    try { rpc.stop_ongoing_process.end (res); }
-                    catch (Error e) { /* ignore */ }
-                });
+                stop_ongoing_account (rpc, new_account_id);
             }
         }
 
@@ -551,12 +541,7 @@ namespace Dc {
             if (!create_finished && new_account_id > 0) {
                 int aid = new_account_id;
                 new_account_id = 0;
-                rpc.stop_ongoing_process.begin (aid, (obj, res) => {
-                    try { rpc.stop_ongoing_process.end (res); } catch (Error e) {}
-                    rpc.remove_account.begin (aid, (obj2, res2) => {
-                        try { rpc.remove_account.end (res2); } catch (Error e) {}
-                    });
-                });
+                cleanup_pending_account.begin (rpc, aid, true);
             }
         }
     }
@@ -579,9 +564,7 @@ namespace Dc {
         private Gtk.Stack stack;
         private Gtk.Entry url_entry;
         private Gtk.Button start_btn;
-        private Gtk.ProgressBar progress_bar;
-        private Gtk.Label progress_label;
-        private Gtk.Label status_label;
+        private AccountProgressPage progress_page;
 
         private int new_account_id = 0;
         private bool import_running = false;
@@ -596,19 +579,9 @@ namespace Dc {
             this.content_width = 480;
             this.can_close = true;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.append (new Adw.HeaderBar ());
-
-            stack = new Gtk.Stack ();
-            stack.transition_type = Gtk.StackTransitionType.CROSSFADE;
-            stack.transition_duration = 180;
-            stack.vexpand = true;
-
-            stack.add_named (build_input_page (), "input");
-            stack.add_named (build_progress_page (), "progress");
-
-            box.append (stack);
-            this.child = box;
+            stack = account_setup_stack (
+                build_input_page (), build_progress_page ());
+            this.child = account_setup_shell (stack);
 
             install_escape_close (this);
             this.closed.connect (on_dialog_closed);
@@ -617,19 +590,11 @@ namespace Dc {
         /* ---- UI ---- */
 
         private Gtk.Widget build_input_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-
-            var intro = new Gtk.Label (
+            var content = account_setup_content ();
+            content.append (account_setup_intro (
                 "On your existing device, open Settings → " +
                 "“Add Second Device” and copy the setup code shown there. " +
-                "Paste it below.");
-            intro.wrap = true;
-            intro.xalign = 0;
-            intro.add_css_class ("dim-label");
-            content.append (intro);
+                "Paste it below."));
 
             url_entry = new Gtk.Entry ();
             url_entry.placeholder_text = "DCBACKUP2:…";
@@ -638,9 +603,7 @@ namespace Dc {
             url_entry.changed.connect (update_start_sensitivity);
             content.append (url_entry);
 
-            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            row.halign = Gtk.Align.END;
-
+            var row = account_setup_action_row (false);
             start_btn = new Gtk.Button.with_label ("Start Import");
             start_btn.add_css_class ("suggested-action");
             start_btn.sensitive = false;
@@ -654,36 +617,9 @@ namespace Dc {
         }
 
         private Gtk.Widget build_progress_page () {
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
-            content.margin_start = content.margin_end = 18;
-            content.margin_top = 12;
-            content.margin_bottom = 18;
-            content.valign = Gtk.Align.CENTER;
-
-            status_label = new Gtk.Label ("Connecting…");
-            status_label.xalign = 0;
-            content.append (status_label);
-
-            progress_bar = new Gtk.ProgressBar ();
-            progress_bar.fraction = 0.0;
-            progress_bar.show_text = false;
-            content.append (progress_bar);
-
-            progress_label = new Gtk.Label ("0 %");
-            progress_label.xalign = 0;
-            progress_label.add_css_class ("dim-label");
-            content.append (progress_label);
-
-            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            actions.halign = Gtk.Align.END;
-            actions.margin_top = 6;
-            var cancel_btn = new Gtk.Button.with_label ("Cancel");
-            cancel_btn.add_css_class ("destructive-action");
-            cancel_btn.clicked.connect (cancel_import);
-            actions.append (cancel_btn);
-            content.append (actions);
-
-            return content;
+            progress_page = new AccountProgressPage ("Connecting…");
+            progress_page.cancel_requested.connect (cancel_import);
+            return progress_page;
         }
 
         /* ---- Helpers ---- */
@@ -691,10 +627,6 @@ namespace Dc {
         private void update_start_sensitivity () {
             string t = url_entry.text.strip ();
             start_btn.sensitive = t.length > 0;
-        }
-
-        private void show_progress (string msg) {
-            status_label.label = msg;
         }
 
         /* ---- Import flow ---- */
@@ -728,9 +660,7 @@ namespace Dc {
                 import_running = false;
                 /* Drop the half-imported account so the user can retry */
                 if (new_account_id > 0) {
-                    try {
-                        yield rpc.remove_account (new_account_id);
-                    } catch (Error re) { /* ignore */ }
+                    yield cleanup_pending_account (rpc, new_account_id, false);
                     new_account_id = 0;
                 }
                 show_error (this, "Import failed: " + e.message);
@@ -751,26 +681,11 @@ namespace Dc {
         private void on_imex_progress (int ctx, int progress) {
             if (ctx != new_account_id) return;
             /* progress: 0=error, 1-999=permille, 1000=done */
-            if (progress == 0) {
-                show_progress ("Failed");
-                return;
-            }
-            double frac = ((double) progress) / 1000.0;
-            if (frac > 1.0) frac = 1.0;
-            progress_bar.fraction = frac;
-            progress_label.label = "%d %%".printf ((int) (frac * 100));
-            if (progress >= 1000) {
-                show_progress ("Finishing…");
-            } else {
-                show_progress (frac > 0.0 ? "Transferring…" : "Connecting…");
-            }
+            progress_page.set_permille (progress, null, "Transferring…");
         }
 
         private void cleanup_signal () {
-            if (progress_handler_id != 0) {
-                events.disconnect (progress_handler_id);
-                progress_handler_id = 0;
-            }
+            disconnect_progress_handler (events, ref progress_handler_id);
         }
 
         private void cancel_import () {
@@ -779,11 +694,7 @@ namespace Dc {
                 return;
             }
             if (new_account_id > 0) {
-                rpc.stop_ongoing_process.begin (new_account_id, (obj, res) => {
-                    try {
-                        rpc.stop_ongoing_process.end (res);
-                    } catch (Error e) { /* ignore */ }
-                });
+                stop_ongoing_account (rpc, new_account_id);
             }
             /* The pending get_backup() will return with an error and
                the cleanup path in start_import() will remove the account. */
@@ -795,12 +706,7 @@ namespace Dc {
             if (!import_finished && new_account_id > 0) {
                 int aid = new_account_id;
                 new_account_id = 0;
-                rpc.stop_ongoing_process.begin (aid, (obj, res) => {
-                    try { rpc.stop_ongoing_process.end (res); } catch (Error e) {}
-                    rpc.remove_account.begin (aid, (obj2, res2) => {
-                        try { rpc.remove_account.end (res2); } catch (Error e) {}
-                    });
-                });
+                cleanup_pending_account.begin (rpc, aid, true);
             }
         }
     }
