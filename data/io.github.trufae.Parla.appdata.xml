@@ -29,6 +29,25 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.5.0" date="2026-06-11">
+      <description>
+        <ul>
+          <li>Reduce UI refresh when syncing messages</li>
+          <li>Network proxy settings</li>
+          <li>Single emoji messages are displayed 5x larger</li>
+          <li>Edit contact names, and permit block/unblock</li>
+          <li>Fix some glitches in the multiline composer</li>
+          <li>Visual indicator for edited messages</li>
+          <li>Open chat when clicking in notifications</li>
+          <li>Improvements in the jsonrpc download/update</li>
+          <li>Fix shrink window for portrait mobile UX</li>
+          <li>Up arrow edits last message</li>
+          <li>Double colon raise the emoji picker</li>
+          <li>Incoming chat requests get accept/block buttons</li>
+          <li>Fix chat notification dismissal and display</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-06-03">
       <description>
         <ul>
