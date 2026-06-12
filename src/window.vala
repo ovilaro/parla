@@ -559,6 +559,9 @@ namespace Dc {
             events.account_unread_changed.connect ((acct_id) => {
                 update_unread_indicators.begin ();
             });
+            events.sync_finished.connect ((acct_id) => {
+                on_sync_finished.begin (acct_id);
+            });
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
             if (rpc.account_id > 0) {
@@ -973,6 +976,22 @@ namespace Dc {
                 yield events.send_notification (acct_id, chat_id, msg_id);
             }
             request_reload_chats ();
+        }
+
+        private async void on_sync_finished (int acct_id) {
+            if (acct_id == rpc.account_id) {
+                yield load_chats ();
+                var v = current_view ();
+                if (v != null) yield v.reload_messages ();
+                if (this.is_active && current_chat_id > 0) {
+                    notice_chat.begin (current_chat_id);
+                }
+            }
+            update_unread_indicators.begin ();
+            if (settings.notifications_enabled &&
+                (acct_id != rpc.account_id || !this.is_active)) {
+                yield events.send_sync_notification (acct_id);
+            }
         }
 
         /* ================================================================
