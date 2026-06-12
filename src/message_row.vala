@@ -1,10 +1,10 @@
 namespace Dc {
 
-    internal class VideoPreviewFrame : Gtk.Widget {
-        private const int NATURAL_WIDTH = 260;
-        private const int NATURAL_HEIGHT = 150;
-
+    internal class ScaledPreviewFrame : Gtk.Widget {
+        private int natural_width;
+        private int natural_height;
         private Gtk.Widget? _child = null;
+
         public Gtk.Widget? child {
             get { return _child; }
             set {
@@ -15,9 +15,13 @@ namespace Dc {
             }
         }
 
-        construct {
+        public ScaledPreviewFrame (int natural_width, int natural_height,
+                                   string? css_class = null) {
+            Object ();
+            this.natural_width = int.max (1, natural_width);
+            this.natural_height = int.max (1, natural_height);
             overflow = Gtk.Overflow.HIDDEN;
-            add_css_class ("message-video-frame");
+            if (css_class != null) add_css_class (css_class);
         }
 
         public override void dispose () {
@@ -37,20 +41,21 @@ namespace Dc {
                                       out int minimum_baseline,
                                       out int natural_baseline) {
             minimum_baseline = natural_baseline = -1;
+            int width = MessageRow.media_size (natural_width);
+            int height = MessageRow.media_size (natural_height);
             if (orientation == Gtk.Orientation.HORIZONTAL) {
                 minimum = 1;
-                natural = NATURAL_WIDTH;
+                natural = width;
                 return;
             }
 
             if (for_size > 0) {
                 int h = int.max (1,
-                    (int) (((int64) NATURAL_HEIGHT * for_size
-                        + NATURAL_WIDTH / 2) / NATURAL_WIDTH));
+                    (int) (((int64) height * for_size + width / 2) / width));
                 minimum = natural = h;
             } else {
                 minimum = 1;
-                natural = NATURAL_HEIGHT;
+                natural = height;
             }
         }
 
@@ -71,11 +76,22 @@ namespace Dc {
 
         public static MessageStyle style = MessageStyle.BUBBLES;
         public static string? self_display_name = null;
+        private static double media_scale = 1.0;
 
         public int message_id { get; private set; }
         public bool is_outgoing { get; private set; }
 
         public signal void quote_clicked (int quoted_msg_id);
+
+        public static void set_media_scale (int font_size, int system_font_size) {
+            media_scale = font_size > 0 && system_font_size > 0
+                ? (double) font_size / (double) system_font_size
+                : 1.0;
+        }
+
+        public static int media_size (int value) {
+            return int.max (1, (int) (value * media_scale + 0.5));
+        }
 
         public void highlight () {
             this.add_css_class ("message-new");
@@ -305,7 +321,8 @@ namespace Dc {
         }
 
         private static void append_bubble_image (Gtk.Box bubble, Message msg) {
-            var image = load_picture (msg.file_path, 400, 400, 260, 0);
+            var image = load_picture (
+                msg.file_path, 400, 400, 260, 0);
             if (image == null) bubble.append (build_file_indicator (msg));
             else bubble.append (image);
         }
@@ -325,7 +342,8 @@ namespace Dc {
         }
 
         private static void append_irc_image (Gtk.Box strip, Message m) {
-            var picture = load_picture (m.file_path, 260, 200, 0, 180);
+            var picture = load_picture (
+                m.file_path, 260, 200, 0, 180);
             if (picture != null) {
                 picture.add_css_class ("message-image-irc");
                 picture.halign = Gtk.Align.START;
@@ -343,47 +361,45 @@ namespace Dc {
          * preserving aspect, then optionally upscaled to (min_w, min_h).
          * Returns null on read failure (and logs to stderr).
          */
-        private static Gtk.Picture? load_picture (string path,
+        private static Gtk.Widget? load_picture (string path,
                                                   int max_w, int max_h,
                                                   int min_w, int min_h) {
             try {
-                var pixbuf = new Gdk.Pixbuf.from_file_at_scale (path, max_w, max_h, true);
-                int dw = pixbuf.width, dh = pixbuf.height;
-                if (min_w > 0 && dw < min_w) {
-                    dh = (int) ((double) dh * min_w / dw); dw = min_w;
-                } else if (max_w > 0 && dw > max_w) {
-                    dh = (int) ((double) dh * max_w / dw); dw = max_w;
+                int dw, dh;
+                if (Gdk.Pixbuf.get_file_info (path, out dw, out dh) == null ||
+                    dw <= 0 || dh <= 0) {
+                    return null;
                 }
-                if (min_h > 0 && dh < min_h) {
-                    dw = (int) ((double) dw * min_h / dh); dh = min_h;
-                }
-                /* Bake the display size into the texture so it becomes the
-                   picture's natural size, and keep can_shrink on. A hard
-                   set_size_request would become a minimum width that
-                   propagates up to the window and crops the whole UI on
-                   screens narrower than the bubble (issue #31). */
-                if (dw != pixbuf.width || dh != pixbuf.height) {
-                    var scaled = pixbuf.scale_simple (dw, dh, Gdk.InterpType.BILINEAR);
-                    if (scaled != null) pixbuf = scaled;
-                }
+                fit_size (ref dw, ref dh, max_w, max_h, min_w, min_h);
+
+                var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
+                    path, media_size (dw), media_size (dh), true);
                 var texture = Gdk.Texture.for_pixbuf (pixbuf);
                 var picture = new Gtk.Picture.for_paintable (texture);
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
                 picture.can_shrink = true;
-                /* Bubble images need a nonzero minimum allocation so a valid
-                   paintable cannot collapse to an empty bubble, but keep it
-                   capped at min_w so portrait/mobile layouts still fit. */
-                if (min_w > 0) {
-                    int req_w = int.min (dw, min_w);
-                    int req_h = int.max (1, (int) (((int64) dh * req_w + dw / 2) / dw));
-                    picture.set_size_request (int.max (1, req_w), req_h);
-                }
-                picture.halign = Gtk.Align.START;
-                picture.add_css_class ("message-image");
-                return picture;
+                picture.halign = Gtk.Align.FILL;
+
+                var frame = new ScaledPreviewFrame (dw, dh, "message-image");
+                frame.child = picture;
+                frame.halign = Gtk.Align.START;
+                return frame;
             } catch (Error e) {
                 stderr.printf ("  -> Image load failed: %s\n", e.message);
                 return null;
+            }
+        }
+
+        private static void fit_size (ref int dw, ref int dh,
+                                      int max_w, int max_h,
+                                      int min_w, int min_h) {
+            if (min_w > 0 && dw < min_w) {
+                dh = (int) ((double) dh * min_w / dw); dw = min_w;
+            } else if (max_w > 0 && dw > max_w) {
+                dh = (int) ((double) dh * max_w / dw); dw = max_w;
+            }
+            if (min_h > 0 && dh < min_h) {
+                dw = (int) ((double) dw * min_h / dh); dh = min_h;
             }
         }
 
@@ -496,7 +512,7 @@ namespace Dc {
                 overlay.add_overlay (name);
             }
 
-            var frame = new VideoPreviewFrame ();
+            var frame = new ScaledPreviewFrame (260, 150, "message-video-frame");
             frame.child = overlay;
             return frame;
         }

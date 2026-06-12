@@ -19,6 +19,7 @@ namespace Dc {
 
         private Gtk.CssProvider? accent_provider = null;
         private Gtk.CssProvider? background_provider = null;
+        private Gtk.CssProvider? font_provider = null;
 
         public Application () {
             Object (
@@ -131,6 +132,48 @@ namespace Dc {
             );
         }
 
+        public void apply_font (string family, FontAttribute attr, int size) {
+            var display = Gdk.Display.get_default ();
+            if (display == null) return;
+
+            if (font_provider != null) {
+                remove_provider_for_display (display, font_provider);
+                font_provider = null;
+            }
+
+            string clean_family = family.strip ();
+            int clean_size = SettingsManager.clamp_font_size (size);
+            if (clean_family.length == 0 &&
+                attr == FontAttribute.REGULAR &&
+                clean_size == FONT_SIZE_SYSTEM) {
+                return;
+            }
+
+            var css = new StringBuilder (".conversation-view {");
+            if (clean_family.length > 0) {
+                css.append (" font-family: \"%s\";".printf (
+                    css_string (clean_family)));
+            }
+            css.append (" font-style: %s; font-weight: %s;".printf (
+                attr.css_style (), attr.css_weight ()));
+            if (clean_size > FONT_SIZE_SYSTEM) {
+                css.append (" font-size: %dpt;".printf (clean_size));
+            }
+            css.append (" }\n");
+
+            font_provider = new Gtk.CssProvider ();
+            font_provider.load_from_string (css.str);
+            add_provider_for_display (
+                display,
+                font_provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            );
+        }
+
+        private static string css_string (string value) {
+            return value.replace ("\\", "\\\\").replace ("\"", "\\\"");
+        }
+
         protected override void activate () {
             get_or_create_window ().restore_from_tray ();
         }
@@ -171,6 +214,10 @@ namespace Dc {
             settings.load ();
             apply_accent_color (settings.accent_color);
             apply_background (settings.background_mode, settings.background_color);
+            apply_font (
+                settings.font_family,
+                settings.font_attribute,
+                settings.font_size);
             register_icons ();
             Gtk.Window.set_default_icon_name ("io.github.trufae.Parla");
 

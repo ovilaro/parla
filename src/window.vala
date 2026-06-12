@@ -71,6 +71,7 @@ namespace Dc {
         private bool reconnecting_rpc = false;
         private uint unread_notification_timer = 0;
         private int[] pending_unread_notification_accounts = {};
+        private int applied_media_font_size = -1;
 
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
@@ -155,11 +156,14 @@ namespace Dc {
             settings.appearance_changed.connect (() => {
                 MessageRow.style = settings.message_style;
                 apply_current_appearance ();
-                int chat_id = current_chat_id;
-                discard_all_views ();
-                if (chat_id > 0) {
-                    current_chat_id = 0;
-                    select_chat_by_id (chat_id);
+                rebuild_current_chat_view ();
+            });
+            settings.font_changed.connect (() => {
+                int previous_size = applied_media_font_size;
+                apply_current_appearance ();
+                if (applied_media_font_size != previous_size) {
+                    var v = current_view ();
+                    if (v != null) v.queue_resize ();
                 }
             });
 
@@ -188,9 +192,26 @@ namespace Dc {
         private void apply_current_appearance () {
             var app = this.application as Dc.Application;
             if (app == null) return;
+            applied_media_font_size = settings.font_size;
+            MessageRow.set_media_scale (
+                settings.font_size,
+                SettingsManager.system_font_size ());
             app.apply_accent_color (settings.accent_color);
             app.apply_background (
                 settings.background_mode, settings.background_color);
+            app.apply_font (
+                settings.font_family,
+                settings.font_attribute,
+                settings.font_size);
+        }
+
+        private void rebuild_current_chat_view () {
+            int chat_id = current_chat_id;
+            discard_all_views ();
+            if (chat_id > 0) {
+                current_chat_id = 0;
+                select_chat_by_id (chat_id);
+            }
         }
 
         private bool on_close_request () {
@@ -448,6 +469,13 @@ namespace Dc {
             key_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
             key_ctrl.key_pressed.connect (on_window_key_pressed);
             ((Gtk.Widget) this).add_controller (key_ctrl);
+
+            var scroll_ctrl = new Gtk.EventControllerScroll (
+                Gtk.EventControllerScrollFlags.VERTICAL |
+                Gtk.EventControllerScrollFlags.DISCRETE);
+            scroll_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+            scroll_ctrl.scroll.connect (on_window_scroll);
+            ((Gtk.Widget) this).add_controller (scroll_ctrl);
         }
 
         private Gtk.Popover build_account_popover () {
@@ -1993,6 +2021,20 @@ namespace Dc {
             case Gdk.Key.comma:
                 show_settings_dialog ();
                 return true;
+            case Gdk.Key.plus:
+            case Gdk.Key.equal:
+            case Gdk.Key.KP_Add:
+            case Gdk.Key.KP_Equal:
+                adjust_font_size (1);
+                return true;
+            case Gdk.Key.minus:
+            case Gdk.Key.KP_Subtract:
+                adjust_font_size (-1);
+                return true;
+            case Gdk.Key.@0:
+            case Gdk.Key.KP_0:
+                settings.save_font_size (FONT_SIZE_SYSTEM);
+                return true;
             case Gdk.Key.f:
                 toggle_message_search ();
                 return true;
@@ -2013,6 +2055,23 @@ namespace Dc {
                 return true;
             }
             return false;
+        }
+
+        private void adjust_font_size (int delta) {
+            int next_size = SettingsManager.clamp_font_size (
+                settings.effective_font_size () + delta);
+            settings.save_font_size (next_size);
+        }
+
+        private bool on_window_scroll (Gtk.EventControllerScroll scroll,
+                                       double dx, double dy) {
+            if (!Platform.has_primary_modifier (
+                    scroll.get_current_event_state ())) {
+                return false;
+            }
+            if (dy == 0) return false;
+            adjust_font_size (dy < 0 ? 1 : -1);
+            return true;
         }
 
         /* A printable character (excluding space) with no Ctrl/Alt/Super/Meta
@@ -2105,6 +2164,9 @@ namespace Dc {
             "New group",             "<Primary>g",
             "New channel",           "<Primary><Shift>g",
             "Open settings",         "<Primary>comma",
+            "Increase font size",     "<Primary>plus",
+            "Decrease font size",     "<Primary>minus",
+            "Reset font size",        "<Primary>0",
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
             "Refresh messages",      "<Primary>r",
@@ -2151,6 +2213,15 @@ namespace Dc {
                 row.add_suffix (lbl);
                 list.append (row);
             }
+
+            var wheel_row = new Adw.ActionRow ();
+            wheel_row.title = "Change font size";
+            var wheel_lbl = new Gtk.Label (
+                Platform.primary_shortcut_text ("Mouse Wheel"));
+            wheel_lbl.valign = Gtk.Align.CENTER;
+            wheel_lbl.add_css_class ("dim-label");
+            wheel_row.add_suffix (wheel_lbl);
+            list.append (wheel_row);
 
             /* The emoji picker opens on a typed "::" rather than a key
                accelerator, so it gets a plain-text suffix instead of a

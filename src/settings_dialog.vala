@@ -2,6 +2,11 @@ namespace Dc {
 
     public delegate void SettingWriter (KeyFile kf);
 
+    public const int FONT_SIZE_SYSTEM = 0;
+    public const int FONT_SIZE_MIN = 6;
+    public const int FONT_SIZE_MAX = 32;
+    public const int FONT_SIZE_FALLBACK = 11;
+
     public enum SidebarMode {
         FULL = 0,
         COMPACT = 1,
@@ -27,9 +32,37 @@ namespace Dc {
         GRADIENT = 2;
     }
 
+    public enum FontAttribute {
+        REGULAR = 0,
+        ITALIC = 1,
+        BOLD = 2,
+        BOLD_ITALIC = 3;
+
+        public Pango.Style pango_style () {
+            return this == ITALIC || this == BOLD_ITALIC
+                ? Pango.Style.ITALIC
+                : Pango.Style.NORMAL;
+        }
+
+        public Pango.Weight pango_weight () {
+            return this == BOLD || this == BOLD_ITALIC
+                ? Pango.Weight.BOLD
+                : Pango.Weight.NORMAL;
+        }
+
+        public string css_style () {
+            return pango_style () == Pango.Style.ITALIC ? "italic" : "normal";
+        }
+
+        public string css_weight () {
+            return pango_weight () == Pango.Weight.BOLD ? "bold" : "normal";
+        }
+    }
+
     public class SettingsManager : Object {
 
         public signal void appearance_changed ();
+        public signal void font_changed ();
 
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
@@ -45,6 +78,9 @@ namespace Dc {
         public string accent_color { get; set; default = ""; }
         public BackgroundMode background_mode { get; set; default = BackgroundMode.SYSTEM; }
         public string background_color { get; set; default = ""; }
+        public string font_family { get; set; default = ""; }
+        public FontAttribute font_attribute { get; set; default = FontAttribute.REGULAR; }
+        public int font_size { get; set; default = FONT_SIZE_SYSTEM; }
 
         public static string get_config_path () {
             return Path.build_filename (
@@ -79,6 +115,12 @@ namespace Dc {
                               (int) BackgroundMode.SYSTEM, 2);
             background_mode = (BackgroundMode) bm;
             background_color = kf_str (kf, "background_color", "");
+            font_family = kf_str (kf, "font_family", "").strip ();
+            int fa = kf_enum (kf, "font_attribute",
+                              (int) FontAttribute.REGULAR, 3);
+            font_attribute = (FontAttribute) fa;
+            font_size = clamp_font_size (kf_int (kf, "font_size",
+                                                 FONT_SIZE_SYSTEM));
         }
 
         private static int kf_int (KeyFile kf, string k, int d) {
@@ -174,6 +216,95 @@ namespace Dc {
             save_string ("background_color", v);
         }
 
+        public void save_font_size (int v) {
+            save_font (font_family, font_attribute, v);
+        }
+
+        public void save_font_description (Pango.FontDescription desc) {
+            string family = desc.get_family () ?? "";
+            save_font (family, attribute_from_font_description (desc),
+                       size_from_font_description (desc));
+        }
+
+        public void reset_font_defaults () {
+            save_font ("", FontAttribute.REGULAR, FONT_SIZE_SYSTEM);
+        }
+
+        private void save_font (string family, FontAttribute attr, int size) {
+            string clean_family = family.strip ();
+            int clean_size = clamp_font_size (size);
+            if (font_family == clean_family &&
+                font_attribute == attr &&
+                font_size == clean_size) {
+                return;
+            }
+
+            font_family = clean_family;
+            font_attribute = attr;
+            font_size = clean_size;
+            save_to_file ((kf) => {
+                kf.set_string ("General", "font_family", font_family);
+                kf.set_integer ("General", "font_attribute",
+                                (int) font_attribute);
+                kf.set_integer ("General", "font_size", font_size);
+            });
+            font_changed ();
+        }
+
+        public static int clamp_font_size (int size) {
+            if (size <= FONT_SIZE_SYSTEM) return FONT_SIZE_SYSTEM;
+            if (size < FONT_SIZE_MIN) return FONT_SIZE_MIN;
+            if (size > FONT_SIZE_MAX) return FONT_SIZE_MAX;
+            return size;
+        }
+
+        public static int system_font_size () {
+            string font_name = system_font_name ();
+            var desc = Pango.FontDescription.from_string (font_name);
+            int size = size_from_font_description (desc);
+            return size > 0 ? clamp_font_size (size) : FONT_SIZE_FALLBACK;
+        }
+
+        public int effective_font_size () {
+            return font_size > 0 ? font_size : system_font_size ();
+        }
+
+        public Pango.FontDescription effective_font_description () {
+            var desc = Pango.FontDescription.from_string (
+                font_family.length > 0 ? font_family : system_font_name ());
+            desc.set_style (font_attribute.pango_style ());
+            desc.set_weight (font_attribute.pango_weight ());
+            desc.set_size (effective_font_size () * Pango.SCALE);
+            return desc;
+        }
+
+        private static string system_font_name () {
+            var gtk_settings = Gtk.Settings.get_default ();
+            if (gtk_settings == null || gtk_settings.gtk_font_name.length == 0) {
+                return "Sans %d".printf (FONT_SIZE_FALLBACK);
+            }
+            return gtk_settings.gtk_font_name;
+        }
+
+        private static int size_from_font_description (
+                Pango.FontDescription desc) {
+            int size = desc.get_size ();
+            if (size <= 0) return FONT_SIZE_SYSTEM;
+            return (size + (Pango.SCALE / 2)) / Pango.SCALE;
+        }
+
+        private static FontAttribute attribute_from_font_description (
+                Pango.FontDescription desc) {
+            bool italic = desc.get_style () == Pango.Style.ITALIC ||
+                desc.get_style () == Pango.Style.OBLIQUE;
+            bool bold = ((int) desc.get_weight ()) >=
+                ((int) Pango.Weight.BOLD);
+            if (italic && bold) return FontAttribute.BOLD_ITALIC;
+            if (italic) return FontAttribute.ITALIC;
+            if (bold) return FontAttribute.BOLD;
+            return FontAttribute.REGULAR;
+        }
+
         private void save_int (string key, int value) {
             save_to_file ((kf) => { kf.set_integer ("General", key, value); });
         }
@@ -222,6 +353,9 @@ namespace Dc {
         private bool saved_proxy_enabled = false;
         private string saved_proxy_url = "";
         private bool syncing_rpc_source = false;
+        private bool syncing_font_controls = false;
+        private Adw.ActionRow font_type_row;
+        private Gtk.FontDialogButton font_btn;
         private uint rpc_version_request = 0;
         private string? rpc_current_version = null;
         private bool rpc_update_check_available = false;
@@ -329,6 +463,40 @@ namespace Dc {
                     (MessageStyle) style_combo.selected);
             });
             appearance_list.append (style_row);
+
+            font_type_row = action_row (
+                "Conversation font",
+                "Use the system font or choose another family, style and size");
+            var font_dialog = new Gtk.FontDialog ();
+            font_dialog.title = "Choose Font";
+            font_dialog.modal = true;
+            font_btn = new Gtk.FontDialogButton (font_dialog);
+            font_btn.valign = Gtk.Align.CENTER;
+            font_btn.use_font = true;
+            font_btn.use_size = true;
+            font_btn.font_desc = app_window.settings.effective_font_description ();
+            font_btn.notify["font-desc"].connect (() => {
+                if (syncing_font_controls) return;
+                var desc = font_btn.get_font_desc ();
+                if (desc != null) {
+                    app_window.settings.save_font_description (desc);
+                    sync_font_controls ();
+                }
+            });
+            font_type_row.add_suffix (font_btn);
+
+            var font_reset_btn = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
+            font_reset_btn.valign = Gtk.Align.CENTER;
+            font_reset_btn.add_css_class ("flat");
+            font_reset_btn.tooltip_text = "Reset font settings to defaults";
+            font_reset_btn.clicked.connect (() => {
+                app_window.settings.reset_font_defaults ();
+                sync_font_controls ();
+            });
+            font_type_row.add_suffix (font_reset_btn);
+            appearance_list.append (font_type_row);
+
+            sync_font_controls ();
 
             var accent_row = action_row (
                 "Accent color",
@@ -527,6 +695,19 @@ namespace Dc {
             row.add_suffix (dropdown);
             row.activatable_widget = dropdown;
             return dropdown;
+        }
+
+        private void sync_font_controls () {
+            syncing_font_controls = true;
+
+            string family = app_window.settings.font_family;
+            font_type_row.subtitle = family.length > 0
+                ? family
+                : "System default";
+            font_type_row.tooltip_text = family.length > 0 ? family : null;
+            font_btn.font_desc = app_window.settings.effective_font_description ();
+
+            syncing_font_controls = false;
         }
 
         private static string hex_from_rgba (Gdk.RGBA c) {
