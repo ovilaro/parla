@@ -1,5 +1,68 @@
 namespace Dc {
 
+    internal class VideoPreviewFrame : Gtk.Widget {
+        private const int NATURAL_WIDTH = 260;
+        private const int NATURAL_HEIGHT = 150;
+
+        private Gtk.Widget? _child = null;
+        public Gtk.Widget? child {
+            get { return _child; }
+            set {
+                if (_child != null) _child.unparent ();
+                _child = value;
+                if (_child != null) _child.set_parent (this);
+                queue_resize ();
+            }
+        }
+
+        construct {
+            overflow = Gtk.Overflow.HIDDEN;
+            add_css_class ("message-video-frame");
+        }
+
+        public override void dispose () {
+            if (_child != null) {
+                _child.unparent ();
+                _child = null;
+            }
+            base.dispose ();
+        }
+
+        public override Gtk.SizeRequestMode get_request_mode () {
+            return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH;
+        }
+
+        public override void measure (Gtk.Orientation orientation, int for_size,
+                                      out int minimum, out int natural,
+                                      out int minimum_baseline,
+                                      out int natural_baseline) {
+            minimum_baseline = natural_baseline = -1;
+            if (orientation == Gtk.Orientation.HORIZONTAL) {
+                minimum = 1;
+                natural = NATURAL_WIDTH;
+                return;
+            }
+
+            if (for_size > 0) {
+                int h = int.max (1,
+                    (int) (((int64) NATURAL_HEIGHT * for_size
+                        + NATURAL_WIDTH / 2) / NATURAL_WIDTH));
+                minimum = natural = h;
+            } else {
+                minimum = 1;
+                natural = NATURAL_HEIGHT;
+            }
+        }
+
+        public override void size_allocate (int width, int height, int baseline) {
+            if (_child != null) _child.allocate (width, height, baseline, null);
+        }
+
+        public override void snapshot (Gtk.Snapshot snapshot) {
+            if (_child != null) snapshot_child (_child, snapshot);
+        }
+    }
+
     /**
      * A single message bubble in the conversation view.
      * Incoming messages are left-aligned, outgoing messages right-aligned.
@@ -406,21 +469,18 @@ namespace Dc {
             var overlay = new Gtk.Overlay ();
             overlay.halign = Gtk.Align.START;
 
-            /* An empty paintable gives the card its 260x150 natural size
-               while can_shrink keeps the minimum at zero, so the card scales
-               down on narrow screens instead of propagating a hard minimum
-               width up to the window (issue #31). */
-            var bg = new Gtk.Picture.for_paintable (Gdk.Paintable.empty (260, 150));
-            bg.can_shrink = true;
-            bg.add_css_class ("message-video-bg");
-            overlay.child = bg;
+            overlay.child = build_video_paintable (msg);
+
+            var play_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            play_box.add_css_class ("message-video-play");
+            play_box.halign = Gtk.Align.CENTER;
+            play_box.valign = Gtk.Align.CENTER;
+            play_box.tooltip_text = "Play video";
 
             var play = new Gtk.Image.from_icon_name ("media-playback-start-symbolic");
-            play.add_css_class ("message-video-play");
-            play.pixel_size = 48;
-            play.halign = Gtk.Align.CENTER;
-            play.valign = Gtk.Align.CENTER;
-            overlay.add_overlay (play);
+            play.pixel_size = 20;
+            play_box.append (play);
+            overlay.add_overlay (play_box);
 
             if (msg.file_name != null && msg.file_name.length > 0) {
                 var name = new Gtk.Label (msg.file_name);
@@ -435,7 +495,28 @@ namespace Dc {
                 name.margin_bottom = 6;
                 overlay.add_overlay (name);
             }
-            return overlay;
+
+            var frame = new VideoPreviewFrame ();
+            frame.child = overlay;
+            return frame;
+        }
+
+        private static Gtk.Widget build_video_paintable (Message msg) {
+            Gtk.Picture preview;
+            if (msg.has_local_file) {
+                var media = Gtk.MediaFile.for_filename (msg.file_path);
+                media.muted = true;
+                media.pause ();
+                preview = new Gtk.Picture.for_paintable (media);
+            } else {
+                preview = new Gtk.Picture.for_paintable (
+                    Gdk.Paintable.empty (260, 150));
+            }
+            preview.alternative_text = msg.display_file_name ("video");
+            preview.can_shrink = true;
+            preview.content_fit = Gtk.ContentFit.COVER;
+            preview.add_css_class ("message-video-bg");
+            return preview;
         }
 
         private static Gtk.Widget build_audio_player (Message msg) {

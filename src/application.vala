@@ -288,6 +288,29 @@ namespace Dc {
             }
             .message-attachment { padding: 4px 0; }
             .message-image { border-radius: 12px; margin-top: 4px; }
+            .message-video-frame {
+                border-radius: 12px;
+                margin-top: 4px;
+                background-color: alpha(black, 0.72);
+            }
+            .message-video-bg {
+                background-color: alpha(black, 0.72);
+            }
+            .message-video-play {
+                min-width: 36px;
+                min-height: 36px;
+                border-radius: 9999px;
+                background-color: alpha(black, 0.48);
+                color: white;
+            }
+            .message-video-name {
+                color: white;
+                font-size: small;
+                padding: 2px 6px;
+                border-radius: 6px;
+                background-color: alpha(black, 0.45);
+                text-shadow: 0 1px alpha(black, 0.55);
+            }
             .image-viewer-overlay {
                 background-color: alpha(black, 0.75);
             }
