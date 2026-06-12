@@ -76,6 +76,7 @@ namespace Dc {
 
         public static MessageStyle style = MessageStyle.BUBBLES;
         public static string? self_display_name = null;
+        public static string? self_avatar_path = null;
         private static double media_scale = 1.0;
 
         public int message_id { get; private set; }
@@ -103,7 +104,10 @@ namespace Dc {
 
         public MessageRow (Message msg, Message? prev = null,
                            GLib.GenericArray<Message>? trailing_images = null,
-                           bool is_image_continuation = false) {
+                           bool is_image_continuation = false,
+                           BubbleAvatarDisplay avatar_display =
+                               BubbleAvatarDisplay.NONE,
+                           bool avatar_scope_enabled = false) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
@@ -120,6 +124,8 @@ namespace Dc {
             }
 
             bool outgoing = msg.is_outgoing;
+            bool show_avatar = should_show_bubble_avatar (
+                msg, avatar_display, avatar_scope_enabled);
 
             /* Margins (applied to this box directly) */
             this.margin_start = 8;
@@ -197,7 +203,13 @@ namespace Dc {
                 spacer.hexpand = true;
                 this.append (spacer);
             }
+            if (!outgoing && show_avatar) {
+                this.append (build_bubble_avatar (msg));
+            }
             this.append (bubble);
+            if (outgoing && show_avatar) {
+                this.append (build_bubble_avatar (msg));
+            }
             if (!outgoing) {
                 var spacer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
                 spacer.hexpand = true;
@@ -318,6 +330,40 @@ namespace Dc {
             var fi = build_file_indicator (msg);
             if (irc) fi.halign = Gtk.Align.START;
             box.append (fi);
+        }
+
+        private static bool should_show_bubble_avatar (
+                Message msg, BubbleAvatarDisplay display, bool scope_enabled) {
+            if (!scope_enabled || msg.is_info) return false;
+            switch (display) {
+            case BubbleAvatarDisplay.NONE:
+                return false;
+            case BubbleAvatarDisplay.OTHER:
+                return !msg.is_outgoing;
+            case BubbleAvatarDisplay.BOTH:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        private static Gtk.Widget build_bubble_avatar (Message msg) {
+            string text = msg.is_outgoing
+                ? ((self_display_name != null && self_display_name.length > 0)
+                    ? self_display_name : "me")
+                : (msg.sender_name ?? msg.sender_address ?? "?");
+            var avatar = new Adw.Avatar (20, text, true);
+            avatar.custom_image = load_avatar (msg.is_outgoing
+                ? self_avatar_path : msg.sender_avatar_path);
+            avatar.add_css_class ("message-avatar");
+            avatar.valign = Gtk.Align.END;
+            avatar.tooltip_text = text;
+            if (msg.is_outgoing) {
+                avatar.margin_start = 4;
+            } else {
+                avatar.margin_end = 4;
+            }
+            return avatar;
         }
 
         private static void append_bubble_image (Gtk.Box bubble, Message msg) {

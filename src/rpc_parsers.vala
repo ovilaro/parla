@@ -37,6 +37,8 @@ namespace Dc {
                 msg.sender_address = json_str (sender, "address");
                 msg.sender_name = json_str (sender, "displayName")
                     ?? json_str (sender, "name");
+                msg.sender_avatar_path = json_str (sender, "profileImage")
+                    ?? json_str (sender, "avatarPath");
             }
 
             if (self_email != null && msg.sender_address != null) {
@@ -69,10 +71,27 @@ namespace Dc {
             entry.unread_count = (int) json_int (obj, "freshMessageCounter");
             entry.timestamp = json_int (obj, "lastMessageTimestamp");
             entry.avatar_path = json_str (obj, "avatarPath");
+            entry.kind = parse_chat_kind (obj);
             entry.is_muted = json_bool (obj, "isMuted");
             entry.is_contact_request = json_bool (obj, "isContactRequest");
             entry.is_pinned = json_bool (obj, "isPinned");
             return entry;
+        }
+
+        public static ChatKind parse_chat_kind (Json.Object obj) {
+            string chat_type = json_str (obj, "chatType") ?? "";
+            bool is_self_talk = json_bool (obj, "isSelfTalk");
+            bool is_device_chat = json_bool (obj, "isDeviceChat");
+
+            if (chat_type == "Single" && !is_self_talk && !is_device_chat) {
+                return ChatKind.DIRECT;
+            }
+            if (chat_type == "Group" ||
+                chat_type == "Broadcast" ||
+                chat_type == "OutBroadcast") {
+                return ChatKind.GROUP;
+            }
+            return ChatKind.UNKNOWN;
         }
 
         private static void parse_reactions (Json.Object obj, Message msg) {

@@ -241,6 +241,12 @@ namespace Dc {
             set_accels_for_action ("win.refresh", { primary + "r" });
             set_accels_for_action ("win.settings", { primary + "comma" });
             set_accels_for_action ("win.quit", { primary + "q" });
+            set_accels_for_action ("win.font-increase",
+                { primary + "plus", primary + "equal", primary + "KP_Add" });
+            set_accels_for_action ("win.font-decrease",
+                { primary + "minus", primary + "KP_Subtract" });
+            set_accels_for_action ("win.font-reset",
+                { primary + "0", primary + "KP_0" });
         }
 
         private void register_icons () {
@@ -284,6 +290,9 @@ namespace Dc {
             .message-bubble.outgoing {
                 background-color: alpha(@accent_bg_color, 0.5);
                 border-bottom-right-radius: 4px;
+            }
+            .message-avatar {
+                margin-bottom: 1px;
             }
             .message-sender {
                 font-weight: bold;

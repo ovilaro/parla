@@ -159,9 +159,16 @@ namespace Dc {
         public int64 timestamp { get; set; default = 0; }
         public int unread_count { get; set; default = 0; }
         public string? avatar_path { get; set; default = null; }
+        public ChatKind kind { get; set; default = ChatKind.UNKNOWN; }
         public bool is_muted { get; set; default = false; }
         public bool is_contact_request { get; set; default = false; }
         public bool is_pinned { get; set; default = false; }
+    }
+
+    public enum ChatKind {
+        UNKNOWN = 0,
+        DIRECT = 1,
+        GROUP = 2;
     }
 
     /* Delivery state values from deltachat-core that the UI renders. */
@@ -189,6 +196,7 @@ namespace Dc {
         public string? text { get; set; default = null; }
         public string? sender_address { get; set; default = null; }
         public string? sender_name { get; set; default = null; }
+        public string? sender_avatar_path { get; set; default = null; }
         /* True when the message was forwarded into this chat. */
         public bool is_forwarded { get; set; default = false; }
         /* True when the message text was edited after sending. */

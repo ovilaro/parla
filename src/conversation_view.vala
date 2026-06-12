@@ -12,6 +12,8 @@ namespace Dc {
         private unowned Window window;
         private unowned RpcClient rpc;
         private unowned SettingsManager settings;
+        private ChatKind chat_kind = ChatKind.UNKNOWN;
+        private bool chat_kind_loaded = false;
 
         private Gtk.ListView message_listview;
         private Gtk.ScrolledWindow message_scroll;
@@ -42,7 +44,8 @@ namespace Dc {
         private MessageActions msg_actions;
 
         public ConversationView (int chat_id, Window window, RpcClient rpc,
-                                 SettingsManager settings) {
+                                 SettingsManager settings,
+                                 ChatKind chat_kind = ChatKind.UNKNOWN) {
             Object (
                 orientation: Gtk.Orientation.VERTICAL,
                 spacing: 0,
@@ -51,6 +54,8 @@ namespace Dc {
             this.window = window;
             this.rpc = rpc;
             this.settings = settings;
+            this.chat_kind = chat_kind;
+            this.chat_kind_loaded = chat_kind != ChatKind.UNKNOWN;
 
             /* Marker for the custom-background rules (see
                Application.apply_background): when a custom window background
@@ -109,7 +114,10 @@ namespace Dc {
                 var trailing = collect_trailing_irc_images (
                     msg, prev, pos, out is_img_continuation);
 
-                var row = new MessageRow (msg, prev, trailing, is_img_continuation);
+                var row = new MessageRow (
+                    msg, prev, trailing, is_img_continuation,
+                    settings.bubble_avatar_display,
+                    bubble_avatars_apply_to_this_chat ());
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
                 if (msg.highlighted) {
                     msg.highlighted = false;
@@ -331,6 +339,12 @@ namespace Dc {
             compose_bar.visible = !is_request;
         }
 
+        public void set_chat_kind (ChatKind kind) {
+            if (kind == ChatKind.UNKNOWN) return;
+            chat_kind = kind;
+            chat_kind_loaded = true;
+        }
+
         private async void accept_request () {
             try {
                 yield rpc.accept_chat (chat_id);
@@ -537,6 +551,8 @@ namespace Dc {
             if (rpc.account_id <= 0) return;
 
             try {
+                yield load_chat_kind_if_needed ();
+
                 bool was_near_bottom = stick_to_bottom;
                 double previous_scroll_value = 0;
                 if (preserve_scroll) {
@@ -578,6 +594,30 @@ namespace Dc {
                 pinned.update_bar.begin ();
             } catch (Error e) {
                 window.show_toast ("Failed to load messages: " + e.message);
+            }
+        }
+
+        private async void load_chat_kind_if_needed () {
+            if (chat_kind_loaded || chat_kind != ChatKind.UNKNOWN) return;
+            chat_kind_loaded = true;
+            try {
+                var chat = yield rpc.get_full_chat_by_id_for (
+                    rpc.account_id, chat_id);
+                if (chat != null) chat_kind = RpcParsers.parse_chat_kind (chat);
+            } catch (Error e) {
+                /* Non-critical: unknown chats simply do not match scoped
+                   avatar settings until metadata is available. */
+            }
+        }
+
+        private bool bubble_avatars_apply_to_this_chat () {
+            switch (chat_kind) {
+            case ChatKind.DIRECT:
+                return settings.bubble_avatars_in_direct_chats;
+            case ChatKind.GROUP:
+                return true;
+            default:
+                return false;
             }
         }
 

@@ -26,6 +26,12 @@ namespace Dc {
         IRC = 1;
     }
 
+    public enum BubbleAvatarDisplay {
+        NONE = 0,
+        OTHER = 1,
+        BOTH = 2;
+    }
+
     public enum BackgroundMode {
         SYSTEM = 0,
         SOLID = 1,
@@ -75,6 +81,8 @@ namespace Dc {
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
         public string default_account_addr { get; set; default = ""; }
         public MessageStyle message_style { get; set; default = MessageStyle.BUBBLES; }
+        public BubbleAvatarDisplay bubble_avatar_display { get; set; default = BubbleAvatarDisplay.NONE; }
+        public bool bubble_avatars_in_direct_chats { get; set; default = false; }
         public string accent_color { get; set; default = ""; }
         public BackgroundMode background_mode { get; set; default = BackgroundMode.SYSTEM; }
         public string background_color { get; set; default = ""; }
@@ -110,6 +118,11 @@ namespace Dc {
             int ms = kf_enum (kf, "message_style",
                               (int) MessageStyle.BUBBLES, 1);
             message_style = (MessageStyle) ms;
+            int bad = kf_enum (kf, "bubble_avatar_display",
+                               (int) BubbleAvatarDisplay.NONE, 2);
+            bubble_avatar_display = (BubbleAvatarDisplay) bad;
+            bubble_avatars_in_direct_chats =
+                kf_bool (kf, "bubble_avatars_in_direct_chats", false);
             accent_color = kf_str (kf, "accent_color", "");
             int bm = kf_enum (kf, "background_mode",
                               (int) BackgroundMode.SYSTEM, 2);
@@ -193,6 +206,18 @@ namespace Dc {
         public void save_message_style (MessageStyle v) {
             message_style = v;
             save_int ("message_style", (int) v);
+            appearance_changed ();
+        }
+
+        public void save_bubble_avatar_display (BubbleAvatarDisplay v) {
+            bubble_avatar_display = v;
+            save_int ("bubble_avatar_display", (int) v);
+            appearance_changed ();
+        }
+
+        public void save_bubble_avatars_in_direct_chats (bool v) {
+            bubble_avatars_in_direct_chats = v;
+            save_bool ("bubble_avatars_in_direct_chats", v);
             appearance_changed ();
         }
 
@@ -463,6 +488,33 @@ namespace Dc {
                     (MessageStyle) style_combo.selected);
             });
             appearance_list.append (style_row);
+
+            var avatar_row = action_row (
+                "Bubble avatars",
+                "Show small avatars beside message bubbles");
+
+            string[] avatar_labels = { "none", "other", "both" };
+            var avatar_combo = row_dropdown (avatar_row, avatar_labels,
+                (uint) app_window.settings.bubble_avatar_display);
+            avatar_combo.notify["selected"].connect (() => {
+                app_window.settings.save_bubble_avatar_display (
+                    (BubbleAvatarDisplay) avatar_combo.selected);
+            });
+            appearance_list.append (avatar_row);
+
+            var direct_avatar_row = action_row (
+                "Enable in 1:1 chats",
+                "Use the bubble avatar setting in direct conversations");
+            var direct_avatar_check = new Gtk.CheckButton ();
+            direct_avatar_check.active =
+                app_window.settings.bubble_avatars_in_direct_chats;
+            direct_avatar_check.toggled.connect (() => {
+                app_window.settings.save_bubble_avatars_in_direct_chats (
+                    direct_avatar_check.active);
+            });
+            direct_avatar_row.add_suffix (direct_avatar_check);
+            direct_avatar_row.activatable_widget = direct_avatar_check;
+            appearance_list.append (direct_avatar_row);
 
             font_type_row = action_row (
                 "Conversation font",

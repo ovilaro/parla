@@ -618,6 +618,7 @@ namespace Dc {
         private void clear_self_identity () {
             rpc.self_email = null;
             MessageRow.self_display_name = null;
+            MessageRow.self_avatar_path = null;
         }
 
         private async void load_self_identity () {
@@ -631,6 +632,12 @@ namespace Dc {
                     yield rpc.get_config ("displayname", rpc.account_id);
             } catch (Error e) {
                 MessageRow.self_display_name = null;
+            }
+            try {
+                MessageRow.self_avatar_path =
+                    yield rpc.get_config ("selfavatar", rpc.account_id);
+            } catch (Error e) {
+                MessageRow.self_avatar_path = null;
             }
         }
 
@@ -816,10 +823,14 @@ namespace Dc {
             return views.lookup (current_chat_id);
         }
 
-        private ConversationView get_or_create_view (int chat_id) {
+        private ConversationView get_or_create_view (int chat_id,
+                                                     ChatKind kind = ChatKind.UNKNOWN) {
             var v = views.lookup (chat_id);
-            if (v != null) return v;
-            v = new ConversationView (chat_id, this, rpc, settings);
+            if (v != null) {
+                v.set_chat_kind (kind);
+                return v;
+            }
+            v = new ConversationView (chat_id, this, rpc, settings, kind);
             views.insert (chat_id, v);
             content_stack.add_named (v, "chat_%d".printf (chat_id));
             return v;
@@ -910,10 +921,11 @@ namespace Dc {
                 return;
             }
 
-            var view = get_or_create_view (chat_id);
+            var entry = find_chat_entry (chat_store, chat_id);
+            var view = get_or_create_view (
+                chat_id, entry != null ? entry.kind : ChatKind.UNKNOWN);
             current_chat_id = chat_id;
 
-            var entry = find_chat_entry (chat_store, current_chat_id);
             if (entry != null) {
                 content_title_label.label = entry.name;
             }
@@ -1485,6 +1497,7 @@ namespace Dc {
                 string? name = yield rpc.get_config ("displayname", rpc.account_id);
                 string? avatar = yield rpc.get_config ("selfavatar", rpc.account_id);
 
+                MessageRow.self_avatar_path = avatar;
                 profile_avatar.text = name ?? "";
                 profile_avatar.custom_image = load_avatar (avatar);
             } catch (Error e) {
@@ -1608,6 +1621,11 @@ namespace Dc {
             window_action ("shortcuts").activate.connect (() => { show_keyboard_shortcuts_dialog (); });
             window_action ("about").activate.connect (() => { show_about_dialog (); });
             window_action ("quit").activate.connect (() => { this.application.quit (); });
+            window_action ("font-increase").activate.connect (() => { adjust_font_size (1); });
+            window_action ("font-decrease").activate.connect (() => { adjust_font_size (-1); });
+            window_action ("font-reset").activate.connect (() => {
+                settings.save_font_size (FONT_SIZE_SYSTEM);
+            });
 
             var s1 = new GLib.Menu ();
             s1.append ("New Chat", "win.new-chat");
