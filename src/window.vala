@@ -69,6 +69,8 @@ namespace Dc {
         private EventHandler events;
         private ChatContextMenu chat_menu;
         private bool reconnecting_rpc = false;
+        private uint unread_notification_timer = 0;
+        private int[] pending_unread_notification_accounts = {};
 
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
@@ -113,7 +115,7 @@ namespace Dc {
         private string? pending_invite_uri = null;
 
         private TrayIcon? tray = null;
-        private bool minimized_to_tray = false;
+        private bool held_in_background = false;
         private NativeFileDropTarget? native_file_drop_target;
 
         /* Set after an Escape that had nothing transient to dismiss while a
@@ -196,10 +198,13 @@ namespace Dc {
                app held would leave it running with no way back and crashes
                the GTK macOS backend, so always do a normal close there. */
             if (Platform.is_macos ()) return false;
-            if (!settings.minimize_to_tray) return false;
+            if (!settings.minimize_to_tray && !settings.notifications_enabled)
+                return false;
             this.set_visible (false);
-            this.application.hold ();
-            minimized_to_tray = true;
+            if (!held_in_background) {
+                this.application.hold ();
+                held_in_background = true;
+            }
             return true;
         }
 
@@ -224,7 +229,7 @@ namespace Dc {
                 tray = new TrayIcon (conn);
                 tray.show_requested.connect (restore_from_tray);
                 tray.quit_requested.connect (() => {
-                    minimized_to_tray = false;
+                    release_background_hold ();
                     this.application.quit ();
                 });
                 tray.notifications_toggle_requested.connect ((enabled) => {
@@ -238,11 +243,14 @@ namespace Dc {
         }
 
         public void restore_from_tray () {
-            if (minimized_to_tray) {
-                minimized_to_tray = false;
-                this.application.release ();
-            }
+            release_background_hold ();
             this.present ();
+        }
+
+        private void release_background_hold () {
+            if (!held_in_background) return;
+            held_in_background = false;
+            this.application.release ();
         }
 
         public void set_notifications_enabled (bool enabled) {
@@ -558,9 +566,7 @@ namespace Dc {
             });
             events.account_unread_changed.connect ((acct_id) => {
                 update_unread_indicators.begin ();
-            });
-            events.sync_finished.connect ((acct_id) => {
-                on_sync_finished.begin (acct_id);
+                queue_unread_notification_refresh (acct_id);
             });
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
@@ -907,6 +913,7 @@ namespace Dc {
             if (events != null) {
                 events.clear_notifications_for_chat (rpc.account_id, chat_id);
             }
+            queue_unread_notification_refresh (rpc.account_id);
         }
 
         private void on_window_focused () {
@@ -955,15 +962,35 @@ namespace Dc {
             if (events != null) events.schedule_chats_reload ();
         }
 
+        private void queue_unread_notification_refresh (int acct_id) {
+            if (acct_id <= 0 || events == null || !settings.notifications_enabled)
+                return;
+
+            foreach (int pending in pending_unread_notification_accounts) {
+                if (pending == acct_id) return;
+            }
+            pending_unread_notification_accounts += acct_id;
+
+            if (unread_notification_timer > 0) return;
+            unread_notification_timer = Timeout.add (400, () => {
+                unread_notification_timer = 0;
+                int[] accounts = pending_unread_notification_accounts;
+                pending_unread_notification_accounts = {};
+
+                foreach (int id in accounts) {
+                    if (events == null || !settings.notifications_enabled) break;
+                    bool allow_send = id != rpc.account_id
+                        || !this.get_visible ()
+                        || !this.is_active;
+                    events.refresh_unread_notification.begin (id, allow_send);
+                }
+                return Source.REMOVE;
+            });
+        }
 
         private async void on_incoming_msg (int acct_id, int chat_id, int msg_id) {
             if (acct_id != rpc.account_id) {
-                /* Message for a background account: its chats aren't on screen,
-                   so always notify (subject to the global toggle) and refresh
-                   the unread indicators. */
-                if (settings.notifications_enabled) {
-                    yield events.send_notification (acct_id, chat_id, msg_id);
-                }
+                queue_unread_notification_refresh (acct_id);
                 update_unread_indicators.begin ();
                 return;
             }
@@ -972,26 +999,8 @@ namespace Dc {
             if (view != null) {
                 yield view.handle_incoming_msg (msg_id);
             }
-            if (settings.notifications_enabled && !this.is_active) {
-                yield events.send_notification (acct_id, chat_id, msg_id);
-            }
+            queue_unread_notification_refresh (acct_id);
             request_reload_chats ();
-        }
-
-        private async void on_sync_finished (int acct_id) {
-            if (acct_id == rpc.account_id) {
-                yield load_chats ();
-                var v = current_view ();
-                if (v != null) yield v.reload_messages ();
-                if (this.is_active && current_chat_id > 0) {
-                    notice_chat.begin (current_chat_id);
-                }
-            }
-            update_unread_indicators.begin ();
-            if (settings.notifications_enabled &&
-                (acct_id != rpc.account_id || !this.is_active)) {
-                yield events.send_sync_notification (acct_id);
-            }
         }
 
         /* ================================================================

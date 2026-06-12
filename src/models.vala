@@ -182,6 +182,7 @@ namespace Dc {
         };
 
         public int id { get; set; default = 0; }
+        public int chat_id { get; set; default = 0; }
         public string? text { get; set; default = null; }
         public string? sender_address { get; set; default = null; }
         public string? sender_name { get; set; default = null; }

@@ -17,6 +17,7 @@ namespace Dc {
                                              string? self_email = null) {
             var msg = new Message ();
             msg.id = (int) json_int (obj, "id");
+            msg.chat_id = (int) json_int (obj, "chatId");
             msg.text = json_str (obj, "text");
             msg.timestamp = json_int (obj, "timestamp");
             msg.is_info = json_bool (obj, "isInfo");

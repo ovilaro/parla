@@ -261,12 +261,22 @@ namespace Dc {
          * muted chats and contact requests are excluded.
          */
         public async int get_fresh_msg_count (int acct_id) throws Error {
-            if (acct_id <= 0) return 0;
+            return (yield get_fresh_msg_ids (acct_id)).length;
+        }
+
+        public async int[] get_fresh_msg_ids (int acct_id) throws Error {
+            if (acct_id <= 0) return {};
             var result = yield call ("get_fresh_msgs",
                 Params.begin ().add_int (acct_id).build ());
             if (result == null || result.get_node_type () != Json.NodeType.ARRAY)
-                return 0;
-            return (int) result.get_array ().get_length ();
+                return {};
+
+            var arr = result.get_array ();
+            int[] ids = new int[arr.get_length ()];
+            for (uint i = 0; i < arr.get_length (); i++) {
+                ids[i] = (int) arr.get_int_element (i);
+            }
+            return ids;
         }
 
         public async Json.Object? get_full_chat_by_id_for (int acct_id,

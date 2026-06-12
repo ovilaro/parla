@@ -7,7 +7,8 @@ namespace Dc {
         private bool _listening = false;
         private uint chats_reload_timer = 0;
         private uint messages_reload_timer = 0;
-        private HashTable<int, int> sync_accounts;
+        private HashTable<int, int> notification_refresh_generations;
+        private int next_notification_refresh_generation = 0;
 
         public int active_chat_id { get; set; default = 0; }
 
@@ -15,14 +16,14 @@ namespace Dc {
         public signal void messages_reload_fired ();
         public signal void incoming_msg_received (int acct_id, int chat_id, int msg_id);
         public signal void account_unread_changed (int acct_id);
-        public signal void sync_finished (int acct_id);
         public signal void imex_progress (int context_id, int progress);
         public signal void configure_progress (int context_id, int progress,
                                                 string? comment);
 
         public EventHandler (RpcClient rpc) {
             this.rpc = rpc;
-            sync_accounts = new HashTable<int, int> (direct_hash, direct_equal);
+            notification_refresh_generations =
+                new HashTable<int, int> (direct_hash, direct_equal);
         }
 
         public void set_app (GLib.Application a) { this.app = a; }
@@ -63,20 +64,12 @@ namespace Dc {
                         continue;
                     }
 
-                    if (kind == "ImapConnected") {
-                        start_sync (ctx);
-                        continue;
-                    }
-                    if (kind == "ConnectivityChanged") {
-                        yield start_sync_if_working (ctx);
-                        continue;
-                    }
-                    if (kind == "ImapInboxIdle") {
-                        finish_sync (ctx);
-                        continue;
-                    }
                     if (kind == "IncomingMsgBunch") {
-                        if (is_syncing (ctx)) note_sync_change (ctx);
+                        if (ctx == rpc.account_id) {
+                            schedule_messages_reload ();
+                            schedule_chats_reload ();
+                        }
+                        account_unread_changed (ctx);
                         continue;
                     }
 
@@ -114,53 +107,21 @@ namespace Dc {
             });
         }
 
-        private bool is_syncing (int acct_id) {
-            return acct_id > 0 && sync_accounts.contains (acct_id);
-        }
-
-        private bool defer_if_syncing (int acct_id) {
-            if (!is_syncing (acct_id)) return false;
-            note_sync_change (acct_id);
-            return true;
-        }
-
-        private void note_sync_change (int acct_id) {
-            if (acct_id > 0) sync_accounts.insert (acct_id, 2);
-        }
-
-        private void start_sync (int acct_id) {
-            if (acct_id > 0 && !sync_accounts.contains (acct_id)) {
-                sync_accounts.insert (acct_id, 1);
-            }
-        }
-
-        private async void start_sync_if_working (int acct_id) throws Error {
-            if (acct_id <= 0) return;
-            int state = yield rpc.get_connectivity (acct_id);
-            if (state >= 3000 && state < 4000) start_sync (acct_id);
-        }
-
-        private void finish_sync (int acct_id) {
-            bool changed = sync_accounts.lookup (acct_id) == 2;
-            sync_accounts.remove (acct_id);
-            if (changed) sync_finished (acct_id);
-        }
-
         private void dispatch (string kind, Json.Object event) {
             switch (kind) {
             case "IncomingMsg":
                 int chat_id = (int) event.get_int_member ("chatId");
                 int msg_id = (int) event.get_int_member ("msgId");
-                if (defer_if_syncing (rpc.account_id)) break;
                 incoming_msg_received (rpc.account_id, chat_id, msg_id);
+                account_unread_changed (rpc.account_id);
                 break;
 
             case "MsgsChanged":
-                if (defer_if_syncing (rpc.account_id)) break;
                 int changed_chat = (int) event.get_int_member ("chatId");
                 if (changed_chat == 0 || changed_chat == active_chat_id) {
                     schedule_messages_reload ();
                 }
+                account_unread_changed (rpc.account_id);
                 break;
 
             case "MsgDelivered":
@@ -168,17 +129,16 @@ namespace Dc {
             case "MsgFailed":
             case "MsgDeleted":
             case "ReactionsChanged":
-                if (defer_if_syncing (rpc.account_id)) break;
                 int msg_chat = (int) event.get_int_member ("chatId");
                 if (msg_chat == active_chat_id) {
                     schedule_messages_reload ();
                 }
+                if (kind == "MsgDeleted") account_unread_changed (rpc.account_id);
                 break;
 
             case "MsgsNoticed":
                 int noticed_chat = (int) event.get_int_member ("chatId");
                 clear_notifications_for_chat (rpc.account_id, noticed_chat);
-                if (defer_if_syncing (rpc.account_id)) break;
                 account_unread_changed (rpc.account_id);
                 schedule_chats_reload ();
                 break;
@@ -187,8 +147,8 @@ namespace Dc {
             case "ChatlistItemChanged":
             case "ChatModified":
             case "ChatDeleted":
-                if (defer_if_syncing (rpc.account_id)) break;
                 schedule_chats_reload ();
+                account_unread_changed (rpc.account_id);
                 break;
 
             default:
@@ -205,21 +165,22 @@ namespace Dc {
             case "IncomingMsg":
                 int chat_id = (int) event.get_int_member ("chatId");
                 int msg_id = (int) event.get_int_member ("msgId");
-                if (defer_if_syncing (acct_id)) break;
                 incoming_msg_received (acct_id, chat_id, msg_id);
+                account_unread_changed (acct_id);
                 break;
 
             case "MsgsNoticed":
                 int noticed_chat = (int) event.get_int_member ("chatId");
                 clear_notifications_for_chat (acct_id, noticed_chat);
-                if (defer_if_syncing (acct_id)) break;
                 account_unread_changed (acct_id);
                 break;
 
+            case "MsgsChanged":
+            case "MsgDeleted":
             case "ChatlistChanged":
             case "ChatlistItemChanged":
             case "ChatModified":
-                if (defer_if_syncing (acct_id)) break;
+            case "ChatDeleted":
                 account_unread_changed (acct_id);
                 break;
 
@@ -228,24 +189,47 @@ namespace Dc {
             }
         }
 
-        public async void send_notification (int acct_id, int chat_id, int msg_id) {
+        public async void refresh_unread_notification (int acct_id,
+                                                       bool allow_send) {
             if (app == null) return;
+            int generation = begin_notification_refresh (acct_id);
             try {
-                var msg = yield rpc.fetch_message_for (acct_id, msg_id);
-                if (msg == null) return;
-                if (msg.is_outgoing || msg.is_info) return;
+                int[] fresh_ids = yield rpc.get_fresh_msg_ids (acct_id);
+                if (!is_current_notification_refresh (acct_id, generation)) return;
+                if (fresh_ids.length == 0) {
+                    withdraw_notification_id (notification_id (acct_id, 0));
+                    return;
+                }
+                if (!allow_send) return;
 
-                string title = msg.sender_name ?? msg.sender_address ?? "New message";
-                try {
-                    var chat_obj = yield rpc.get_full_chat_by_id_for (acct_id, chat_id);
-                    if (chat_obj != null && chat_obj.has_member ("name")) {
-                        string chat_name = chat_obj.get_string_member ("name");
-                        if (chat_name != null && chat_name.length > 0
-                            && chat_name != title) {
-                            title = "%s (%s)".printf (title, chat_name);
+                int chat_id = 0;
+                string title;
+                string body;
+                if (fresh_ids.length == 1) {
+                    var msg = yield rpc.fetch_message_for (acct_id, fresh_ids[0]);
+                    if (!is_current_notification_refresh (acct_id, generation)) return;
+                    if (msg == null) return;
+
+                    chat_id = msg.chat_id;
+                    title = msg.sender_name ?? msg.sender_address ?? "New message";
+                    try {
+                        var chat_obj = yield rpc.get_full_chat_by_id_for (acct_id, chat_id);
+                        if (chat_obj != null && chat_obj.has_member ("name")) {
+                            string chat_name = chat_obj.get_string_member ("name");
+                            if (chat_name != null && chat_name.length > 0
+                                && chat_name != title) {
+                                title = "%s (%s)".printf (title, chat_name);
+                            }
                         }
-                    }
-                } catch (Error e) { /* fall back to sender */ }
+                    } catch (Error e) { /* fall back to sender */ }
+
+                    body = (msg.text != null && msg.text.length > 0) ? msg.text
+                        : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
+                        : "New message";
+                } else {
+                    title = "%d unread messages".printf (fresh_ids.length);
+                    body = "Open Parla to read them";
+                }
 
                 /* Tag notifications from background accounts so the user can
                    tell which profile they belong to. */
@@ -261,51 +245,37 @@ namespace Dc {
                     } catch (Error e) { /* fall back to plain title */ }
                 }
 
-                string body = (msg.text != null && msg.text.length > 0) ? msg.text
-                    : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
-                    : "New message";
-
                 var n = new GLib.Notification (title);
                 n.set_body (body);
                 n.set_priority (GLib.NotificationPriority.NORMAL);
-                /* Clicking the notification raises the window and opens the
-                   chat the message belongs to (see Application.startup). */
                 n.set_default_action_and_target_value ("app.open-chat",
                     new Variant ("(ii)", acct_id, chat_id));
-                string id = notification_id (acct_id, chat_id);
-                app.send_notification (id, n);
-            } catch (Error e) {
-                warning ("Failed to send notification: %s", e.message);
-            }
-        }
-
-        public async void send_sync_notification (int acct_id) {
-            if (app == null) return;
-            try {
-                int count = yield rpc.get_fresh_msg_count (acct_id);
-                if (count <= 0) {
-                    withdraw_notification_id (notification_id (acct_id, 0));
-                    return;
-                }
-
-                string title = count == 1
-                    ? "New message"
-                    : "%d new messages".printf (count);
-
-                var n = new GLib.Notification (title);
-                n.set_body ("Message sync finished");
-                n.set_priority (GLib.NotificationPriority.NORMAL);
-                n.set_default_action_and_target_value ("app.open-chat",
-                    new Variant ("(ii)", acct_id, 0));
+                if (!is_current_notification_refresh (acct_id, generation)) return;
                 app.send_notification (notification_id (acct_id, 0), n);
             } catch (Error e) {
-                warning ("Failed to send sync notification: %s", e.message);
+                warning ("Failed to refresh unread notification: %s", e.message);
             }
         }
 
         public void clear_notifications_for_chat (int acct_id, int chat_id) {
             if (acct_id <= 0 || chat_id <= 0) return;
             withdraw_notification_id (notification_id (acct_id, chat_id));
+        }
+
+        private int begin_notification_refresh (int acct_id) {
+            if (acct_id <= 0) return 0;
+            next_notification_refresh_generation++;
+            if (next_notification_refresh_generation <= 0) {
+                next_notification_refresh_generation = 1;
+            }
+            notification_refresh_generations.insert (acct_id,
+                next_notification_refresh_generation);
+            return next_notification_refresh_generation;
+        }
+
+        private bool is_current_notification_refresh (int acct_id, int generation) {
+            return acct_id > 0 && generation > 0
+                && notification_refresh_generations.lookup (acct_id) == generation;
         }
 
         public async void reconcile_desktop_notifications () {
