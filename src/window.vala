@@ -2026,6 +2026,12 @@ namespace Dc {
             if (!Platform.has_primary_modifier (state)) return false;
 
             switch (Gdk.keyval_to_lower (keyval)) {
+            case Gdk.Key.Tab:
+            case Gdk.Key.ISO_Left_Tab:
+            case Gdk.Key.KP_Tab:
+                return select_adjacent_chat (
+                    ((state & Gdk.ModifierType.SHIFT_MASK) != 0 ||
+                     keyval == Gdk.Key.ISO_Left_Tab) ? -1 : 1);
             case Gdk.Key.n:
                 on_new_chat ();
                 return true;
@@ -2150,6 +2156,43 @@ namespace Dc {
             }
         }
 
+        private bool select_adjacent_chat (int delta) {
+            int row_count = 0;
+            int current_index = -1;
+            Gtk.ListBoxRow? row;
+
+            while ((row = chat_listbox.get_row_at_index (row_count)) != null) {
+                var chat_row = row.child as ChatRow;
+                if (chat_row != null && chat_row.chat_id == current_chat_id) {
+                    current_index = row_count;
+                }
+                row_count++;
+            }
+
+            if (row_count == 0) return false;
+            if (row_count == 1) return true;
+
+            int target_index;
+            if (current_index < 0) {
+                target_index = delta > 0 ? 0 : row_count - 1;
+            } else {
+                target_index = current_index + delta;
+                if (target_index < 0) {
+                    target_index = row_count - 1;
+                } else if (target_index >= row_count) {
+                    target_index = 0;
+                }
+            }
+
+            row = chat_listbox.get_row_at_index (target_index);
+            if (row == null) return false;
+
+            var chat_row = row.child as ChatRow;
+            if (chat_row == null) return false;
+
+            return select_chat_by_id (chat_row.chat_id);
+        }
+
         private void show_quick_switch_dialog () {
             if (!can_show_account_modal ()) return;
             if (chat_store.get_n_items () == 0) return;
@@ -2187,6 +2230,8 @@ namespace Dc {
             "Reset font size",        "<Primary>0",
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
+            "Next conversation",     "<Primary>Tab",
+            "Previous conversation", "<Primary><Shift>Tab",
             "Refresh messages",      "<Primary>r",
             "Cycle sidebar mode",    "<Primary>s",
             "Focus message entry",   "Escape",

@@ -68,6 +68,8 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 | New group | `Ctrl+G` | `Command+G` |
 | New channel | `Ctrl+Shift+G` | `Command+Shift+G` |
 | Quick chat switcher | `Ctrl+K` | `Command+K` |
+| Next conversation | `Ctrl+Tab` | `Command+Tab` |
+| Previous conversation | `Ctrl+Shift+Tab` | `Command+Shift+Tab` |
 | Search in conversation | `Ctrl+F` | `Command+F` |
 | Focus compose entry | `Esc` | `Esc` |
 | Refresh | `Ctrl+R` | `Command+R` |
