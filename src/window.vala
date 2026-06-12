@@ -39,6 +39,7 @@ namespace Dc {
         private Gtk.Label connection_banner_label;
 
         /* Profile avatar */
+        private Gtk.MenuButton account_menu_button;
         private Adw.Avatar profile_avatar;
         private Gtk.Box profile_unread_badge;
         private Gtk.Popover account_popover;
@@ -49,6 +50,7 @@ namespace Dc {
            (sync-event bursts used to make the open menu flash). */
         private string? account_menu_state = null;
         private int account_menu_load_gen = 0;
+        private bool focus_current_account_on_menu_load = false;
 
         /* State */
         private unowned RpcClient rpc;
@@ -310,13 +312,14 @@ namespace Dc {
             avatar_overlay.child = profile_avatar;
             avatar_overlay.add_overlay (profile_unread_badge);
 
-            var avatar_button = new Gtk.MenuButton ();
-            avatar_button.child = avatar_overlay;
-            avatar_button.add_css_class ("flat");
-            avatar_button.add_css_class ("circular");
-            avatar_button.tooltip_text = "Account Menu";
-            avatar_button.popover = account_popover;
-            sidebar_header.pack_start (avatar_button);
+            account_menu_button = new Gtk.MenuButton ();
+            account_menu_button.child = avatar_overlay;
+            account_menu_button.add_css_class ("flat");
+            account_menu_button.add_css_class ("circular");
+            account_menu_button.tooltip_text = "Account Menu (%s)".printf (
+                Platform.primary_shortcut_text ("Shift+A"));
+            account_menu_button.popover = account_popover;
+            sidebar_header.pack_start (account_menu_button);
 
             /* Hamburger menu button on the right */
             var menu_button = new Gtk.MenuButton ();
@@ -1055,6 +1058,7 @@ namespace Dc {
                 row.title = "Not connected";
                 row.subtitle = "Open Settings to configure the RPC server";
                 account_menu_list.append (row);
+                focus_current_account_menu_row_if_requested ();
                 return;
             }
 
@@ -1076,7 +1080,10 @@ namespace Dc {
                         id, id == rpc.account_id, state);
                 }
                 if (gen != account_menu_load_gen) return; /* superseded */
-                if (account_menu_state == state.str) return;
+                if (account_menu_state == state.str) {
+                    focus_current_account_menu_row_if_requested ();
+                    return;
+                }
                 account_menu_state = state.str;
 
                 clear_listbox (account_menu_list);
@@ -1088,6 +1095,7 @@ namespace Dc {
                     account_menu_list.append (empty);
                 }
                 account_menu_list.append (build_add_account_row ());
+                focus_current_account_menu_row_if_requested ();
             } catch (Error e) {
                 if (gen != account_menu_load_gen) return;
                 account_menu_state = null;
@@ -1097,7 +1105,39 @@ namespace Dc {
                 err_row.title = "Error loading accounts";
                 err_row.subtitle = e.message;
                 account_menu_list.append (err_row);
+                focus_current_account_menu_row_if_requested ();
             }
+        }
+
+        private void focus_current_account_menu_row_if_requested () {
+            if (!focus_current_account_on_menu_load) return;
+            focus_current_account_on_menu_load = false;
+
+            Idle.add (() => {
+                focus_current_account_menu_row ();
+                return Source.REMOVE;
+            });
+        }
+
+        private void focus_current_account_menu_row () {
+            Gtk.ListBoxRow? fallback = null;
+            int current_account_id = rpc != null ? rpc.account_id : 0;
+            int idx = 0;
+            Gtk.ListBoxRow? row;
+
+            while ((row = account_menu_list.get_row_at_index (idx)) != null) {
+                if (fallback == null) fallback = row;
+
+                var action_row = row as Adw.ActionRow;
+                if (action_row != null &&
+                    action_row.get_data<int> ("acct-id") == current_account_id) {
+                    row.grab_focus ();
+                    return;
+                }
+                idx++;
+            }
+
+            if (fallback != null) fallback.grab_focus ();
         }
 
         private Adw.ActionRow build_add_account_row () {
@@ -2032,6 +2072,10 @@ namespace Dc {
                 return select_adjacent_chat (
                     ((state & Gdk.ModifierType.SHIFT_MASK) != 0 ||
                      keyval == Gdk.Key.ISO_Left_Tab) ? -1 : 1);
+            case Gdk.Key.a:
+                if ((state & Gdk.ModifierType.SHIFT_MASK) == 0) return false;
+                show_account_menu ();
+                return true;
             case Gdk.Key.n:
                 on_new_chat ();
                 return true;
@@ -2156,6 +2200,18 @@ namespace Dc {
             }
         }
 
+        private void show_account_menu () {
+            if (active_modal != null) return;
+
+            focus_current_account_on_menu_load = true;
+            if (account_popover.get_visible ()) {
+                focus_current_account_menu_row_if_requested ();
+                return;
+            }
+
+            account_menu_button.popup ();
+        }
+
         private bool select_adjacent_chat (int delta) {
             int row_count = 0;
             int current_index = -1;
@@ -2230,6 +2286,7 @@ namespace Dc {
             "Reset font size",        "<Primary>0",
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
+            "Account menu",          "<Primary><Shift>a",
             "Next conversation",     "<Primary>Tab",
             "Previous conversation", "<Primary><Shift>Tab",
             "Refresh messages",      "<Primary>r",
