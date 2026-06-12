@@ -135,7 +135,10 @@ namespace Dc {
 
     public static Adw.ActionRow chat_pick_row (ChatEntry chat) {
         var row = new Adw.ActionRow ();
+        row.use_markup = false;
         row.title = chat.name;
+        row.title_lines = 1;
+        row.subtitle_lines = 1;
         if (chat.last_message != null && chat.last_message.length > 0) {
             row.subtitle = chat.last_message;
         }
