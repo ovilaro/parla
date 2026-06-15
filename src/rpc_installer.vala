@@ -483,8 +483,8 @@ namespace Dc {
 
             if (content_length > 0 && received < content_length) {
                 throw new IOError.PARTIAL_INPUT (
-                    "Download truncated (%lld of %lld bytes)".printf (
-                        received, content_length));
+                    "Download truncated (%s of %s bytes)".printf (
+                        received.to_string (), content_length.to_string ()));
             }
         }
 

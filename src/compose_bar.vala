@@ -365,7 +365,7 @@ namespace Dc {
                 v /= 1024.0;
                 u++;
             }
-            if (u == 0) return "%lld %s".printf ((int64) v, units[u]);
+            if (u == 0) return "%s %s".printf (((int64) v).to_string (), units[u]);
             return "%.1f %s".printf (v, units[u]);
         }
 
