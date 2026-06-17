@@ -6,6 +6,22 @@ project('parla', ['vala', 'c'],
 # posix vapi provides Posix.getpid () for the StatusNotifierItem bus name
 add_project_arguments(['--pkg', 'posix'], language: 'vala')
 
+# Silence warnings emitted by valac-generated C and lagging GTK/glib vapi
+# bindings (unused temporaries, g_once_init_enter atomics, const mismatches).
+# These are not fixable from the Vala source.
+cc = meson.get_compiler('c')
+add_project_arguments(
+  cc.get_supported_arguments([
+    '-Wno-unused-but-set-variable',
+    '-Wno-unused-function',
+    '-Wno-unused-variable',
+    '-Wno-incompatible-pointer-types',
+    '-Wno-discarded-qualifiers',
+    '-Wno-address',
+  ]),
+  language: 'c',
+)
+
 deps = [
   dependency('glib-2.0'),
   dependency('gio-2.0'),
