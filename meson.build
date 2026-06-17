@@ -139,3 +139,12 @@ storage_quota_test = executable(
 )
 
 test('storage-quota', storage_quota_test)
+
+markdown_test = executable(
+  'markdown-test',
+  files('tests/markdown_test.vala', 'src/markdown.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('pango')],
+  install: false,
+)
+
+test('markdown', markdown_test)

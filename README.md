@@ -30,7 +30,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - **Pinned messages** — pin any message in a chat; a pinned-messages bar at the top of the conversation lets you jump back to them.
 - **Reply previews** — quoted sender and text preview (capped at 3 lines) above the compose entry and inside bubbles.
 - **Inline image previews** with a full-screen viewer (click to open, right-click to save, Escape to close).
-- **Optional Markdown rendering** — **bold**, *italic*, ~~strikethrough~~, `inline code`, fenced code blocks, headings, and auto-linkified URLs.
+- **Optional Markdown rendering** — **bold**, *italic*, ~~strikethrough~~, `inline code`, fenced code blocks, headings, tables, and auto-linkified URLs.
 - **In-chat search** (Ctrl+F, Command+F on macOS) with real-time filtering and highlight.
 - **Save attachments** to disk from the message context menu.
 

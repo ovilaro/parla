@@ -343,6 +343,21 @@ namespace Dc {
                 margin-bottom: 2px;
             }
             .message-attachment { padding: 4px 0; }
+            .markdown-table {
+                margin-top: 4px;
+                margin-bottom: 4px;
+                border-radius: 6px;
+                background-color: alpha(@view_fg_color, 0.04);
+            }
+            .markdown-table-cell {
+                padding: 4px 6px;
+                border-bottom: 1px solid alpha(@view_fg_color, 0.12);
+                border-right: 1px solid alpha(@view_fg_color, 0.10);
+            }
+            .markdown-table-header {
+                font-weight: bold;
+                background-color: alpha(@view_fg_color, 0.06);
+            }
             .message-image { border-radius: 12px; margin-top: 4px; }
             .message-video-frame {
                 border-radius: 12px;

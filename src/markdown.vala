@@ -3,11 +3,24 @@ namespace Dc {
     /**
      * Converts markdown-formatted text to Pango markup for GTK labels.
      * Supports: bold, italic, strikethrough, inline code, code blocks,
-     * headings, and URL linkification.
+     * headings, tables, and URL linkification.
      */
     public class Markdown {
 
         public static bool enabled = false;
+        private const int ALIGN_LEFT = 0;
+        private const int ALIGN_RIGHT = 1;
+        private const int ALIGN_CENTER = 2;
+
+        private class TableRow {
+            public string[] cells;
+            public bool separator;
+
+            public TableRow (string[] cells, bool separator = false) {
+                this.cells = cells;
+                this.separator = separator;
+            }
+        }
 
         /* Compiled regexes — built once on first use */
         private static Regex? cb_re = null;
@@ -85,6 +98,9 @@ namespace Dc {
                 return false;
             });
 
+            /* Tables: render pipe tables as aligned monospace text. */
+            work = format_tables (work, segments);
+
             /* Linkify URLs */
             work = linkify (work);
 
@@ -108,6 +124,243 @@ namespace Dc {
                 sb.append ("\x01%d\x01".printf (idx));
                 return false;
             });
+        }
+
+        private static string format_tables (string input,
+                                             GenericArray<string> segments) {
+            var lines = input.split ("\n");
+            var sb = new StringBuilder ();
+            bool first = true;
+
+            for (int i = 0; i < lines.length;) {
+                int end;
+                string? table = try_format_table_at (lines, i, out end, segments);
+                if (!first) sb.append_c ('\n');
+                first = false;
+
+                if (table != null) {
+                    sb.append (table);
+                    i = end;
+                } else {
+                    sb.append (lines[i]);
+                    i++;
+                }
+            }
+
+            return sb.str;
+        }
+
+        private static string? try_format_table_at (string[] lines, int start,
+                                                    out int end,
+                                                    GenericArray<string> segments) {
+            end = start;
+            if (start + 1 >= lines.length) return null;
+
+            string[]? header = parse_table_row (lines[start]);
+            string[]? separator = parse_table_row (lines[start + 1]);
+            if (header == null || separator == null) return null;
+            if (header.length < 2 || header.length != separator.length) return null;
+            if (!is_separator_row (separator)) return null;
+
+            int cols = header.length;
+            int[] widths = new int[cols];
+            int[] aligns = new int[cols];
+            for (int c = 0; c < cols; c++) {
+                widths[c] = 3;
+                aligns[c] = separator_align (separator[c]);
+            }
+
+            var rows = new GenericArray<TableRow> ();
+            rows.add (new TableRow (header));
+            rows.add (new TableRow (separator, true));
+            update_widths (widths, header, segments);
+
+            end = start + 2;
+            while (end < lines.length) {
+                string line = lines[end];
+                if (line.strip ().length == 0) break;
+
+                string[]? cells = parse_table_row (line);
+                if (cells == null || cells.length != cols) break;
+
+                rows.add (new TableRow (cells));
+                update_widths (widths, cells, segments);
+                end++;
+            }
+
+            return render_table (rows, widths, aligns, segments);
+        }
+
+        private static string[]? parse_table_row (string line) {
+            string trimmed = line.strip ();
+            if (!trimmed.contains ("|")) return null;
+
+            string inner = trimmed;
+            if (inner.has_prefix ("|")) {
+                inner = inner.substring (1);
+            }
+            if (inner.has_suffix ("|") && inner.length > 0) {
+                inner = inner.substring (0, inner.length - 1);
+            }
+
+            var raw = inner.split ("|");
+            if (raw.length < 2) return null;
+
+            string[] cells = new string[raw.length];
+            for (int i = 0; i < raw.length; i++) {
+                cells[i] = raw[i].strip ();
+            }
+            return cells;
+        }
+
+        private static bool is_separator_row (string[] cells) {
+            foreach (string cell in cells) {
+                string s = cell.strip ();
+                int start = s.has_prefix (":") ? 1 : 0;
+                int end = s.has_suffix (":") ? s.length - 1 : s.length;
+                if (end - start < 3) return false;
+                for (int i = start; i < end; i++) {
+                    if (s[i] != '-') return false;
+                }
+            }
+            return true;
+        }
+
+        private static int separator_align (string cell) {
+            string s = cell.strip ();
+            bool left = s.has_prefix (":");
+            bool right = s.has_suffix (":");
+            if (left && right) return ALIGN_CENTER;
+            if (right) return ALIGN_RIGHT;
+            return ALIGN_LEFT;
+        }
+
+        private static void update_widths (int[] widths, string[] cells,
+                                           GenericArray<string> segments) {
+            for (int i = 0; i < widths.length; i++) {
+                int width = visible_width (cells[i], segments);
+                if (width > widths[i]) widths[i] = width;
+            }
+        }
+
+        private static string render_table (GenericArray<TableRow> rows,
+                                            int[] widths, int[] aligns,
+                                            GenericArray<string> segments) {
+            var sb = new StringBuilder ();
+            sb.append ("<tt>");
+
+            for (int r = 0; r < rows.length; r++) {
+                if (r > 0) sb.append_c ('\n');
+                TableRow row = rows[r];
+                if (row.separator) {
+                    append_separator (sb, widths);
+                    continue;
+                }
+
+                for (int c = 0; c < widths.length; c++) {
+                    if (c > 0) sb.append (" | ");
+                    append_aligned_cell (sb, row.cells[c], widths[c],
+                                         aligns[c], segments);
+                }
+            }
+
+            sb.append ("</tt>");
+            return sb.str;
+        }
+
+        private static void append_separator (StringBuilder sb, int[] widths) {
+            for (int c = 0; c < widths.length; c++) {
+                if (c > 0) sb.append ("-+-");
+                append_repeated (sb, '-', widths[c]);
+            }
+        }
+
+        private static void append_aligned_cell (StringBuilder sb, string cell,
+                                                 int width, int align,
+                                                 GenericArray<string> segments) {
+            int pad = width - visible_width (cell, segments);
+            if (pad < 0) pad = 0;
+
+            if (align == ALIGN_RIGHT) {
+                append_repeated (sb, ' ', pad);
+                sb.append (cell);
+            } else if (align == ALIGN_CENTER) {
+                int left = pad / 2;
+                append_repeated (sb, ' ', left);
+                sb.append (cell);
+                append_repeated (sb, ' ', pad - left);
+            } else {
+                sb.append (cell);
+                append_repeated (sb, ' ', pad);
+            }
+        }
+
+        private static void append_repeated (StringBuilder sb, char c, int count) {
+            for (int i = 0; i < count; i++) {
+                sb.append_c (c);
+            }
+        }
+
+        private static int visible_width (string markup,
+                                          GenericArray<string>? segments = null) {
+            int width = 0;
+            bool in_tag = false;
+
+            for (int i = 0; i < markup.length;) {
+                unichar c;
+                if (!markup.get_next_char (ref i, out c)) break;
+
+                if (in_tag) {
+                    if (c == '>') in_tag = false;
+                    continue;
+                }
+
+                if (c == '<') {
+                    in_tag = true;
+                    continue;
+                }
+
+                if (c == '&') {
+                    int semi = markup.index_of_char (';', i);
+                    if (semi >= i && semi - i <= 16) {
+                        width++;
+                        i = semi + 1;
+                        continue;
+                    }
+                }
+
+                if (c == 0x01 && segments != null) {
+                    int? idx = read_segment_index (markup, ref i);
+                    if (idx != null && idx >= 0 && idx < segments.length) {
+                        width += visible_width (segments[idx]);
+                        continue;
+                    }
+                }
+
+                width++;
+            }
+
+            return width;
+        }
+
+        private static int? read_segment_index (string text, ref int index) {
+            int idx = 0;
+            bool have_digit = false;
+
+            while (index < text.length) {
+                char c = text[index];
+                if (c == '\x01') {
+                    index++;
+                    if (have_digit) return idx;
+                    return null;
+                }
+                if (c < '0' || c > '9') return null;
+                idx = idx * 10 + (c - '0');
+                have_digit = true;
+                index++;
+            }
+
+            return null;
         }
 
         private static string linkify (string escaped) {

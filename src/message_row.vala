@@ -78,6 +78,29 @@ namespace Dc {
         public static string? self_display_name = null;
         public static string? self_avatar_path = null;
         private static double media_scale = 1.0;
+        private const int ALIGN_LEFT = 0;
+        private const int ALIGN_RIGHT = 1;
+        private const int ALIGN_CENTER = 2;
+
+        private class MarkdownTableRow {
+            public string[] cells;
+            public bool header;
+
+            public MarkdownTableRow (string[] cells, bool header = false) {
+                this.cells = cells;
+                this.header = header;
+            }
+        }
+
+        private class MarkdownTableBlock {
+            public GenericArray<MarkdownTableRow> rows =
+                new GenericArray<MarkdownTableRow> ();
+            public int[] aligns;
+
+            public MarkdownTableBlock (int columns) {
+                aligns = new int[columns];
+            }
+        }
 
         public int message_id { get; private set; }
         public bool is_outgoing { get; private set; }
@@ -166,7 +189,7 @@ namespace Dc {
 
             /* Message text */
             if (msg.text != null && msg.text.length > 0) {
-                bubble.append (build_text_label (msg, 50));
+                bubble.append (build_text_widget (msg, 50));
             }
 
             /* Timestamp + pin indicator + delivery/read tick */
@@ -278,7 +301,7 @@ namespace Dc {
             append_attachment (body, msg, true, trailing_images);
 
             if (msg.text != null && msg.text.length > 0) {
-                body.append (build_text_label (msg, -1));
+                body.append (build_text_widget (msg, -1));
             }
 
             /* Reactions */
@@ -674,12 +697,22 @@ namespace Dc {
             return btn;
         }
 
-        /** Message body label with markdown + link markup. Shared by both row styles. */
-        private static Gtk.Label build_text_label (Message msg, int max_width_chars) {
-            var text = new Gtk.Label (msg.text);
-            bool big_emoji = is_single_emoji_text (msg.text);
+        /** Message body widget with markdown + link markup. Shared by both row styles. */
+        private static Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
+            if (Markdown.enabled) {
+                var table_body = build_text_with_tables (msg.text, max_width_chars);
+                if (table_body != null) return table_body;
+            }
+            return build_markup_label (msg.text, max_width_chars,
+                                       is_single_emoji_text (msg.text));
+        }
+
+        private static Gtk.Label build_markup_label (string raw,
+                                                     int max_width_chars,
+                                                     bool big_emoji = false) {
+            var text = new Gtk.Label (raw);
             try {
-                string markup = Markdown.format (msg.text);
+                string markup = Markdown.format (raw);
                 var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
                 Pango.AttrList attrs;
                 string parsed;
@@ -693,7 +726,11 @@ namespace Dc {
             text.selectable = true;
             if (big_emoji) text.add_css_class ("message-big-emoji");
             if (max_width_chars > 0) text.max_width_chars = max_width_chars;
+            connect_label_links (text);
+            return text;
+        }
 
+        private static void connect_label_links (Gtk.Label text) {
             /* Delta Chat invite links join in-app instead of bouncing through a
                browser; everything else falls through to the default handler. */
             text.activate_link.connect ((uri) => {
@@ -703,7 +740,192 @@ namespace Dc {
                 }
                 return false;
             });
-            return text;
+        }
+
+        private static Gtk.Widget? build_text_with_tables (string raw,
+                                                           int max_width_chars) {
+            var lines = raw.split ("\n");
+            var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            body.halign = Gtk.Align.FILL;
+            body.hexpand = true;
+
+            bool found_table = false;
+            bool in_code_block = false;
+            int text_start = 0;
+            for (int i = 0; i < lines.length;) {
+                if (is_code_fence_line (lines[i])) {
+                    in_code_block = !in_code_block;
+                    i++;
+                    continue;
+                }
+                if (in_code_block) {
+                    i++;
+                    continue;
+                }
+
+                int end;
+                MarkdownTableBlock? table = parse_table_at (lines, i, out end);
+                if (table == null) {
+                    i++;
+                    continue;
+                }
+
+                append_text_block (body, lines, text_start, i, max_width_chars);
+                body.append (build_table_grid (table, max_width_chars));
+                found_table = true;
+                i = end;
+                text_start = i;
+            }
+
+            if (!found_table) return null;
+            append_text_block (body, lines, text_start, lines.length,
+                               max_width_chars);
+            return body;
+        }
+
+        private static bool is_code_fence_line (string line) {
+            return line.strip ().has_prefix ("```");
+        }
+
+        private static void append_text_block (Gtk.Box body, string[] lines,
+                                               int start, int end,
+                                               int max_width_chars) {
+            string text = join_lines (lines, start, end).strip ();
+            if (text.length == 0) return;
+            body.append (build_markup_label (text, max_width_chars));
+        }
+
+        private static string join_lines (string[] lines, int start, int end) {
+            var sb = new StringBuilder ();
+            for (int i = start; i < end; i++) {
+                if (i > start) sb.append_c ('\n');
+                sb.append (lines[i]);
+            }
+            return sb.str;
+        }
+
+        private static MarkdownTableBlock? parse_table_at (string[] lines,
+                                                           int start,
+                                                           out int end) {
+            end = start;
+            if (start + 1 >= lines.length) return null;
+
+            string[]? header = parse_table_row (lines[start]);
+            string[]? separator = parse_table_row (lines[start + 1]);
+            if (header == null || separator == null) return null;
+            if (header.length < 2 || header.length != separator.length) return null;
+            if (!is_table_separator (separator)) return null;
+
+            var table = new MarkdownTableBlock (header.length);
+            for (int c = 0; c < header.length; c++) {
+                table.aligns[c] = table_separator_align (separator[c]);
+            }
+            table.rows.add (new MarkdownTableRow (header, true));
+
+            end = start + 2;
+            while (end < lines.length) {
+                string line = lines[end];
+                if (line.strip ().length == 0) break;
+
+                string[]? cells = parse_table_row (line);
+                if (cells == null || cells.length != header.length) break;
+                table.rows.add (new MarkdownTableRow (cells));
+                end++;
+            }
+
+            return table;
+        }
+
+        private static string[]? parse_table_row (string line) {
+            string trimmed = line.strip ();
+            if (!trimmed.contains ("|")) return null;
+
+            string inner = trimmed;
+            if (inner.has_prefix ("|")) {
+                inner = inner.substring (1);
+            }
+            if (inner.has_suffix ("|") && inner.length > 0) {
+                inner = inner.substring (0, inner.length - 1);
+            }
+
+            var raw = inner.split ("|");
+            if (raw.length < 2) return null;
+
+            string[] cells = new string[raw.length];
+            for (int i = 0; i < raw.length; i++) {
+                cells[i] = raw[i].strip ();
+            }
+            return cells;
+        }
+
+        private static bool is_table_separator (string[] cells) {
+            foreach (string cell in cells) {
+                string s = cell.strip ();
+                int start = s.has_prefix (":") ? 1 : 0;
+                int end = s.has_suffix (":") ? s.length - 1 : s.length;
+                if (end - start < 3) return false;
+                for (int i = start; i < end; i++) {
+                    if (s[i] != '-') return false;
+                }
+            }
+            return true;
+        }
+
+        private static int table_separator_align (string cell) {
+            string s = cell.strip ();
+            bool left = s.has_prefix (":");
+            bool right = s.has_suffix (":");
+            if (left && right) return ALIGN_CENTER;
+            if (right) return ALIGN_RIGHT;
+            return ALIGN_LEFT;
+        }
+
+        private static Gtk.Widget build_table_grid (MarkdownTableBlock table,
+                                                    int max_width_chars) {
+            var grid = new Gtk.Grid ();
+            grid.add_css_class ("markdown-table");
+            grid.halign = Gtk.Align.FILL;
+            grid.hexpand = true;
+            grid.column_spacing = 0;
+            grid.row_spacing = 0;
+
+            int columns = table.aligns.length;
+            int cell_width = table_cell_width_chars (columns, max_width_chars);
+
+            for (int r = 0; r < table.rows.length; r++) {
+                var row = table.rows[r];
+                for (int c = 0; c < columns; c++) {
+                    var cell = build_table_cell (row.cells[c], cell_width,
+                                                 table.aligns[c], row.header);
+                    grid.attach (cell, c, r, 1, 1);
+                }
+            }
+
+            return grid;
+        }
+
+        private static int table_cell_width_chars (int columns,
+                                                   int max_width_chars) {
+            int total = max_width_chars > 0 ? max_width_chars : 84;
+            int width = (total - ((columns - 1) * 3)) / columns;
+            return int.max (6, int.min (28, width));
+        }
+
+        private static Gtk.Widget build_table_cell (string raw, int width_chars,
+                                                    int align, bool header) {
+            var label = build_markup_label (raw, width_chars);
+            label.add_css_class ("markdown-table-cell");
+            if (header) label.add_css_class ("markdown-table-header");
+            label.valign = Gtk.Align.START;
+            label.hexpand = true;
+            label.width_chars = int.min (width_chars, 18);
+            label.max_width_chars = width_chars;
+            label.xalign = align == ALIGN_RIGHT ? 1.0f
+                : align == ALIGN_CENTER ? 0.5f : 0.0f;
+            label.justify = align == ALIGN_RIGHT ? Gtk.Justification.RIGHT
+                : align == ALIGN_CENTER ? Gtk.Justification.CENTER
+                : Gtk.Justification.LEFT;
+            return label;
         }
 
         private static bool is_single_emoji_text (string? raw) {
