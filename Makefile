@@ -19,12 +19,16 @@ clean:
 	rm -rf builddir builddir-macos dist/macos
 
 install:
+	mkdir -p $(DESTDIR)$(BINDIR)
+	mkdir -p $(DESTDIR)$(DATADIR)/metainfo
+	mkdir -p $(DESTDIR)$(DATADIR)/icons/applications
+	mkdir -p $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps
 	install -Dm755 ./$(BUILD_DIR)/parla $(DESTDIR)$(BINDIR)/parla
 	install -Dm644 data/io.github.trufae.Parla.desktop $(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop
 	install -Dm644 data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg
 	install -Dm644 data/io.github.trufae.Parla.appdata.xml $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
 	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
-	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
+	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null || exit 0
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/parla
