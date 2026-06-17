@@ -10,15 +10,7 @@ namespace Dc {
     public enum SidebarMode {
         FULL = 0,
         COMPACT = 1,
-        HIDDEN = 2;
-
-        public SidebarMode next () {
-            switch (this) {
-            case FULL: return COMPACT;
-            case COMPACT: return HIDDEN;
-            default: return FULL;
-            }
-        }
+        HIDDEN = 2
     }
 
     public enum MessageStyle {

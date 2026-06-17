@@ -21,6 +21,7 @@ namespace Dc {
         private Gtk.SearchEntry search_entry;
         private Gtk.Box sidebar_box;
         private Gtk.Button sidebar_toggle_btn;
+        private Gtk.MenuButton sidebar_menu_button;
         private Adw.WindowTitle sidebar_title;
 
         /* Chat list */
@@ -74,6 +75,12 @@ namespace Dc {
         private uint unread_notification_timer = 0;
         private int[] pending_unread_notification_accounts = {};
         private int applied_media_font_size = -1;
+
+        private const double FULL_SIDEBAR_MIN_WIDTH = 260;
+        private const double FULL_SIDEBAR_MAX_WIDTH = 340;
+        private const double COLLAPSED_SIDEBAR_MIN_WIDTH = 220;
+        private const double COLLAPSED_SIDEBAR_MAX_WIDTH = 10000;
+        private const double COMPACT_SIDEBAR_WIDTH = 48;
 
         /* Modal dialog guard – only one at a time */
         private Adw.Dialog? active_modal = null;
@@ -322,12 +329,12 @@ namespace Dc {
             sidebar_header.pack_start (account_menu_button);
 
             /* Hamburger menu button on the right */
-            var menu_button = new Gtk.MenuButton ();
-            menu_button.icon_name = "open-menu-symbolic";
-            menu_button.tooltip_text = "Main Menu";
-            menu_button.add_css_class ("flat");
-            menu_button.menu_model = build_app_menu ();
-            sidebar_header.pack_end (menu_button);
+            sidebar_menu_button = new Gtk.MenuButton ();
+            sidebar_menu_button.icon_name = "open-menu-symbolic";
+            sidebar_menu_button.tooltip_text = "Main Menu";
+            sidebar_menu_button.add_css_class ("flat");
+            sidebar_menu_button.menu_model = build_app_menu ();
+            sidebar_header.pack_end (sidebar_menu_button);
 
 
             sidebar_box.append (sidebar_header);
@@ -394,10 +401,11 @@ namespace Dc {
             content_title_label.ellipsize = Pango.EllipsizeMode.END;
             content_header.title_widget = content_title_label;
 
-            /* Sidebar tri-state cycle button (Full → Compact → Hidden → Full) */
+            /* Sidebar visibility button. On collapsed/mobile widths this
+               opens the sidebar as the full-width overlay instead of compact. */
             sidebar_toggle_btn = new Gtk.Button.from_icon_name ("sidebar-show-symbolic");
             sidebar_toggle_btn.add_css_class ("flat");
-            sidebar_toggle_btn.clicked.connect (() => { cycle_sidebar_mode (); });
+            sidebar_toggle_btn.clicked.connect (() => { toggle_sidebar_button (); });
             content_header.pack_start (sidebar_toggle_btn);
 
             /* Search/filter button on the right side */
@@ -425,8 +433,8 @@ namespace Dc {
             split_view = new Adw.OverlaySplitView ();
             split_view.sidebar = sidebar_box;
             split_view.content = content_box;
-            split_view.max_sidebar_width = 340;
-            split_view.min_sidebar_width = 260;
+            split_view.max_sidebar_width = FULL_SIDEBAR_MAX_WIDTH;
+            split_view.min_sidebar_width = FULL_SIDEBAR_MIN_WIDTH;
             split_view.sidebar_width_fraction = 0.32;
             split_view.enable_show_gesture = true;
             split_view.enable_hide_gesture = true;
@@ -453,10 +461,10 @@ namespace Dc {
                the persisted mode so a chat-selected-while-narrow doesn't leave
                the sidebar stuck hidden. */
             split_view.notify["collapsed"].connect (() => {
-                if (!split_view.collapsed) apply_sidebar_mode ();
+                apply_sidebar_mode (!split_view.collapsed);
             });
 
-            apply_sidebar_mode ();
+            apply_sidebar_mode (true);
 
             /* Fullscreen image viewer overlay */
             var image_overlay = new Gtk.Overlay ();
@@ -1931,55 +1939,110 @@ namespace Dc {
             views.remove_all ();
         }
 
-        private void cycle_sidebar_mode () {
-            /* On narrow widths the sidebar can be visually hidden by the
-               collapse breakpoint without changing the persisted mode.
-               In that case, just bring it back instead of cycling. */
-            if (split_view.collapsed && !split_view.show_sidebar) {
-                split_view.show_sidebar = true;
-                return;
+        private void toggle_sidebar_button () {
+            if (split_view.collapsed) {
+                toggle_collapsed_sidebar ();
+            } else {
+                toggle_sidebar_visibility ();
             }
-            var next = settings.sidebar_mode.next ();
-            settings.save_sidebar_mode (next);
-            apply_sidebar_mode ();
         }
 
-        private void apply_sidebar_mode () {
+        private void toggle_collapsed_sidebar () {
+            if (split_view.show_sidebar) {
+                split_view.show_sidebar = false;
+                return;
+            }
+            settings.save_sidebar_mode (SidebarMode.FULL);
+            apply_sidebar_mode (true);
+        }
+
+        private void toggle_sidebar_visibility () {
+            if (split_view.collapsed) {
+                toggle_collapsed_sidebar ();
+                return;
+            }
+            settings.save_sidebar_mode (
+                settings.sidebar_mode == SidebarMode.HIDDEN
+                    ? SidebarMode.FULL
+                    : SidebarMode.HIDDEN);
+            apply_sidebar_mode (true);
+        }
+
+        private void toggle_sidebar_width () {
+            settings.save_sidebar_mode (
+                settings.sidebar_mode == SidebarMode.COMPACT
+                    ? SidebarMode.FULL
+                    : SidebarMode.COMPACT);
+            apply_sidebar_mode (true);
+        }
+
+        private void apply_sidebar_mode (bool update_visibility) {
             var mode = settings.sidebar_mode;
             switch (mode) {
             case SidebarMode.FULL:
-                split_view.show_sidebar = true;
-                split_view.min_sidebar_width = 260;
-                split_view.max_sidebar_width = 340;
+                if (update_visibility) split_view.show_sidebar = true;
+                split_view.sidebar_width_unit = Adw.LengthUnit.SP;
+                split_view.min_sidebar_width = split_view.collapsed
+                    ? COLLAPSED_SIDEBAR_MIN_WIDTH
+                    : FULL_SIDEBAR_MIN_WIDTH;
+                split_view.max_sidebar_width = split_view.collapsed
+                    ? COLLAPSED_SIDEBAR_MAX_WIDTH
+                    : FULL_SIDEBAR_MAX_WIDTH;
                 split_view.sidebar_width_fraction = 0.32;
                 sidebar_box.remove_css_class ("sidebar-compact");
                 search_entry.visible = true;
+                sidebar_menu_button.visible = true;
+                sidebar_title.visible = true;
                 sidebar_title.title = "Parla";
+                set_compact_header_chrome (false);
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
-                sidebar_toggle_btn.tooltip_text = "Compact Sidebar (%s)".printf (
+                sidebar_toggle_btn.tooltip_text = "Hide Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
                 break;
             case SidebarMode.COMPACT:
-                split_view.show_sidebar = true;
-                split_view.min_sidebar_width = 72;
-                split_view.max_sidebar_width = 72;
+                if (update_visibility) split_view.show_sidebar = true;
+                split_view.sidebar_width_unit = Adw.LengthUnit.PX;
+                split_view.min_sidebar_width = COMPACT_SIDEBAR_WIDTH;
+                split_view.max_sidebar_width = COMPACT_SIDEBAR_WIDTH;
                 split_view.sidebar_width_fraction = 0.0;
                 sidebar_box.add_css_class ("sidebar-compact");
                 search_entry.visible = false;
+                sidebar_menu_button.visible = false;
+                sidebar_title.visible = false;
                 sidebar_title.title = "";
+                set_compact_header_chrome (true);
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
                 sidebar_toggle_btn.tooltip_text = "Hide Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
                 break;
             case SidebarMode.HIDDEN:
-                split_view.show_sidebar = false;
+                if (update_visibility) split_view.show_sidebar = false;
+                split_view.sidebar_width_unit = Adw.LengthUnit.SP;
+                split_view.min_sidebar_width = split_view.collapsed
+                    ? COLLAPSED_SIDEBAR_MIN_WIDTH
+                    : FULL_SIDEBAR_MIN_WIDTH;
+                split_view.max_sidebar_width = split_view.collapsed
+                    ? COLLAPSED_SIDEBAR_MAX_WIDTH
+                    : FULL_SIDEBAR_MAX_WIDTH;
+                split_view.sidebar_width_fraction = 0.32;
                 sidebar_box.remove_css_class ("sidebar-compact");
+                search_entry.visible = true;
+                sidebar_menu_button.visible = true;
+                sidebar_title.visible = true;
+                sidebar_title.title = "Parla";
+                set_compact_header_chrome (false);
                 sidebar_toggle_btn.icon_name = "sidebar-show-symbolic";
                 sidebar_toggle_btn.tooltip_text = "Show Sidebar (%s)".printf (
                     Platform.primary_shortcut_text ("S"));
                 break;
             }
             apply_compact_to_rows (mode == SidebarMode.COMPACT);
+        }
+
+        private void set_compact_header_chrome (bool compact) {
+            if (!Platform.is_macos ()) return;
+            sidebar_header.show_start_title_buttons = !compact;
+            sidebar_header.show_end_title_buttons = !compact;
         }
 
         private void apply_compact_to_rows (bool compact) {
@@ -2113,7 +2176,11 @@ namespace Dc {
                 refresh_current_chat ();
                 return true;
             case Gdk.Key.s:
-                cycle_sidebar_mode ();
+                if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
+                    toggle_sidebar_width ();
+                } else {
+                    toggle_sidebar_visibility ();
+                }
                 return true;
             case Gdk.Key.w:
                 this.close ();
@@ -2290,7 +2357,8 @@ namespace Dc {
             "Next conversation",     "<Primary>Tab",
             "Previous conversation", "<Primary><Shift>Tab",
             "Refresh messages",      "<Primary>r",
-            "Cycle sidebar mode",    "<Primary>s",
+            "Toggle sidebar",        "<Primary>s",
+            "Compact sidebar",       "<Primary><Shift>s",
             "Focus message entry",   "Escape",
             "Cancel reply/edit/image", "Escape",
             "Close window",          "<Primary>w",
