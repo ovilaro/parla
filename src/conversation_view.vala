@@ -119,6 +119,9 @@ namespace Dc {
                     settings.bubble_avatar_display,
                     bubble_avatars_apply_to_this_chat ());
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
+                row.full_message_requested.connect ((mid) => {
+                    load_full_message.begin (mid);
+                });
                 if (msg.highlighted) {
                     msg.highlighted = false;
                     row.highlight ();
@@ -489,6 +492,87 @@ namespace Dc {
                 scroll_down_btn.visible = !is_near_bottom ();
                 return Source.REMOVE;
             });
+        }
+
+        private async void load_full_message (int msg_id) {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null) return;
+
+            try {
+                if (msg.can_download_full_message) {
+                    yield rpc.download_full_message (msg_id);
+                    yield load_messages (true);
+                    return;
+                }
+
+                if (msg.has_html) {
+                    string? html = yield rpc.get_message_html (msg_id);
+                    if (html != null && html.length > 0) {
+                        show_full_message_text (msg_id, html_to_text (html));
+                        return;
+                    }
+                }
+
+                window.show_toast ("Full message unavailable");
+            } catch (Error e) {
+                window.show_toast ("Full message failed: " + e.message);
+            }
+        }
+
+        private static string html_to_text (string html) {
+            string text = html;
+            try {
+                var hidden = new Regex ("<(head|script|style)\\b[^>]*>.*?</\\1>",
+                    RegexCompileFlags.CASELESS | RegexCompileFlags.DOTALL);
+                var breaks = new Regex ("<br\\s*/?>", RegexCompileFlags.CASELESS);
+                var blocks = new Regex ("</(p|div|section|article|li|tr|h[1-6])>",
+                    RegexCompileFlags.CASELESS);
+                var tags = new Regex ("<[^>]+>");
+
+                text = hidden.replace (text, -1, 0, "");
+                text = breaks.replace (text, -1, 0, "\n");
+                text = blocks.replace (text, -1, 0, "\n");
+                text = tags.replace (text, -1, 0, "");
+            } catch (RegexError e) {
+            }
+            return decode_basic_html_entities (text).strip ();
+        }
+
+        private static string decode_basic_html_entities (string text) {
+            return text
+                .replace ("&nbsp;", " ")
+                .replace ("&quot;", "\"")
+                .replace ("&apos;", "'")
+                .replace ("&lt;", "<")
+                .replace ("&gt;", ">")
+                .replace ("&amp;", "&");
+        }
+
+        private void show_full_message_text (int msg_id, string full_text) {
+            var dialog = new Adw.Dialog ();
+            dialog.title = "Message %d".printf (msg_id);
+            dialog.content_width = 640;
+            dialog.content_height = 520;
+
+            var toolbar = new Adw.ToolbarView ();
+            var header = new Adw.HeaderBar ();
+            toolbar.add_top_bar (header);
+
+            var scroller = new Gtk.ScrolledWindow ();
+            scroller.hscrollbar_policy = Gtk.PolicyType.NEVER;
+            scroller.vexpand = true;
+
+            var text = new Gtk.TextView ();
+            text.editable = false;
+            text.cursor_visible = false;
+            text.wrap_mode = Gtk.WrapMode.WORD_CHAR;
+            text.buffer.text = full_text;
+            scroller.child = text;
+
+            toolbar.content = scroller;
+            dialog.child = toolbar;
+            install_escape_close (dialog);
+            dialog.present (window);
         }
 
         /**

@@ -31,6 +31,8 @@ namespace Dc {
             msg.file_bytes = (int) json_int (obj, "fileBytes");
             msg.view_type = json_str (obj, "viewType");
             msg.state = (int) json_int (obj, "state");
+            msg.has_html = json_bool (obj, "hasHtml");
+            msg.download_state = json_str (obj, "downloadState") ?? "Done";
 
             if (obj.has_member ("sender") && !obj.get_member ("sender").is_null ()) {
                 var sender = obj.get_object_member ("sender");

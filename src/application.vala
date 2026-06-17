@@ -343,6 +343,14 @@ namespace Dc {
                 margin-bottom: 2px;
             }
             .message-attachment { padding: 4px 0; }
+            .message-full-text-button {
+                font-size: small;
+                padding: 2px 0;
+            }
+            .message-full-text-status {
+                font-size: small;
+                opacity: 0.65;
+            }
             .markdown-table {
                 margin-top: 4px;
                 margin-bottom: 4px;

@@ -106,6 +106,7 @@ namespace Dc {
         public bool is_outgoing { get; private set; }
 
         public signal void quote_clicked (int quoted_msg_id);
+        public signal void full_message_requested (int msg_id);
 
         public static void set_media_scale (int font_size, int system_font_size) {
             media_scale = font_size > 0 && system_font_size > 0
@@ -698,13 +699,43 @@ namespace Dc {
         }
 
         /** Message body widget with markdown + link markup. Shared by both row styles. */
-        private static Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
+        private Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
+            Gtk.Widget body;
             if (Markdown.enabled) {
                 var table_body = build_text_with_tables (msg.text, max_width_chars);
-                if (table_body != null) return table_body;
+                body = table_body ?? build_markup_label (msg.text, max_width_chars,
+                    is_single_emoji_text (msg.text));
+            } else {
+                body = build_markup_label (msg.text, max_width_chars,
+                    is_single_emoji_text (msg.text));
             }
-            return build_markup_label (msg.text, max_width_chars,
-                                       is_single_emoji_text (msg.text));
+
+            if (!msg.has_full_message_action && !msg.is_downloading_full_message) return body;
+
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            box.halign = Gtk.Align.FILL;
+            box.append (body);
+
+            if (msg.is_downloading_full_message) {
+                var status = new Gtk.Label ("Downloading full message...");
+                status.add_css_class ("message-full-text-status");
+                status.halign = Gtk.Align.START;
+                status.xalign = 0;
+                box.append (status);
+            } else {
+                var btn = new Gtk.Button.with_label (
+                    msg.can_download_full_message
+                        ? "Download full message"
+                        : "Show full message");
+                btn.add_css_class ("flat");
+                btn.add_css_class ("message-full-text-button");
+                btn.halign = Gtk.Align.START;
+                btn.clicked.connect (() => {
+                    full_message_requested (msg.id);
+                });
+                box.append (btn);
+            }
+            return box;
         }
 
         private static Gtk.Label build_markup_label (string raw,

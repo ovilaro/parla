@@ -308,6 +308,22 @@ namespace Dc {
             return result.get_object ();
         }
 
+        public async string? get_message_html_for (int acct_id, int msg_id) throws Error {
+            var result = yield call ("get_message_html",
+                Params.begin ().add_int (acct_id).add_int (msg_id).build ());
+            if (result == null || result.is_null ()) return null;
+            return result.get_string ();
+        }
+
+        public async string? get_message_html (int msg_id) throws Error {
+            return yield get_message_html_for (account_id, msg_id);
+        }
+
+        public async void download_full_message (int msg_id) throws Error {
+            yield call ("download_full_message",
+                Params.begin ().add_int (account_id).add_int (msg_id).build ());
+        }
+
         public async Message? fetch_message (int msg_id) throws Error {
             return yield fetch_message_for (account_id, msg_id, self_email);
         }

@@ -212,6 +212,8 @@ namespace Dc {
         public int file_bytes { get; set; default = 0; }
         public string? view_type { get; set; default = null; }
         public bool is_info { get; set; default = false; }
+        public bool has_html { get; set; default = false; }
+        public string download_state { get; set; default = "Done"; }
         public string? reactions { get; set; default = null; }
         /* Emojis the local user has reacted with (comma-separated). */
         public string? my_reactions { get; set; default = null; }
@@ -245,6 +247,15 @@ namespace Dc {
         }
         public bool has_text {
             get { return text != null && text.strip ().length > 0; }
+        }
+        public bool can_download_full_message {
+            get { return download_state == "Available" || download_state == "Failure"; }
+        }
+        public bool is_downloading_full_message {
+            get { return download_state == "InProgress"; }
+        }
+        public bool has_full_message_action {
+            get { return can_download_full_message || has_html; }
         }
         public bool can_edit_text {
             get { return is_outgoing && !is_info && has_text; }
