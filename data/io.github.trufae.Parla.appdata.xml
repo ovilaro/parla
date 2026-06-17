@@ -29,6 +29,19 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.5.2" date="2026-06-17">
+      <description>
+        <ul>
+          <li>Fix notification counters</li>
+          <li>View large messages</li>
+          <li>Fix ui refresh flood when syncing accounts</li>
+          <li>Show preview thumbnails for videos</li>
+          <li>Custom fonts and resize with keyboard/mouse</li>
+          <li>New keys to switch between accounts and chats</li>
+          <li>Render markdown tables</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-06-11">
       <description>
         <ul>
