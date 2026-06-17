@@ -82,6 +82,7 @@ sources = files(
   'src/models.vala',
   'src/chat_row.vala',
   'src/markdown.vala',
+  'src/image_utils.vala',
   'src/message_row.vala',
   'src/image_viewer.vala',
   'src/video_player.vala',

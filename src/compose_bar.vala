@@ -288,7 +288,7 @@ namespace Dc {
                 try {
                     var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
                         file_path, 256, 256, true);
-                    var texture = Gdk.Texture.for_pixbuf (pixbuf);
+                    var texture = texture_from_pixbuf (pixbuf);
                     attachment_picture.paintable = texture;
                     attachment_picture.visible = true;
                 } catch (Error e) {

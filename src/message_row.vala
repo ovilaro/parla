@@ -444,7 +444,7 @@ namespace Dc {
 
                 var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
                     path, media_size (dw), media_size (dh), true);
-                var texture = Gdk.Texture.for_pixbuf (pixbuf);
+                var texture = texture_from_pixbuf (pixbuf);
                 var picture = new Gtk.Picture.for_paintable (texture);
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
                 picture.can_shrink = true;

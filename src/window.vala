@@ -2370,6 +2370,16 @@ namespace Dc {
                 Platform.primary_accelerator_prefix ());
         }
 
+        private static string shortcut_label_text (string accelerator) {
+            uint key;
+            Gdk.ModifierType mods;
+            var resolved = shortcut_accelerator (accelerator);
+            if (!Gtk.accelerator_parse (resolved, out key, out mods)) {
+                return resolved;
+            }
+            return Gtk.accelerator_get_label (key, mods);
+        }
+
         private void show_keyboard_shortcuts_dialog () {
             if (active_modal != null) return;
 
@@ -2395,9 +2405,9 @@ namespace Dc {
             for (int i = 0; i + 1 < SHORTCUTS.length; i += 2) {
                 var row = new Adw.ActionRow ();
                 row.title = SHORTCUTS[i];
-                var lbl = new Gtk.ShortcutLabel (
-                    shortcut_accelerator (SHORTCUTS[i + 1]));
+                var lbl = new Gtk.Label (shortcut_label_text (SHORTCUTS[i + 1]));
                 lbl.valign = Gtk.Align.CENTER;
+                lbl.add_css_class ("dim-label");
                 row.add_suffix (lbl);
                 list.append (row);
             }
@@ -2412,8 +2422,7 @@ namespace Dc {
             list.append (wheel_row);
 
             /* The emoji picker opens on a typed "::" rather than a key
-               accelerator, so it gets a plain-text suffix instead of a
-               Gtk.ShortcutLabel. */
+               accelerator, so it gets a plain-text suffix. */
             var emoji_row = new Adw.ActionRow ();
             emoji_row.title = "Emoji picker";
             var emoji_lbl = new Gtk.Label ("::");
