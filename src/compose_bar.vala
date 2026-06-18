@@ -274,7 +274,6 @@ namespace Dc {
             pending_file = file_path;
             pending_file_name = file_name ?? Path.get_basename (file_path);
             pending_file_is_temp = false;
-            text_view.buffer.text = "";
             populate_attachment_preview (file_path, pending_file_name);
             cancel_attach_button.visible = true;
         }
