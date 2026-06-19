@@ -2112,7 +2112,13 @@ namespace Dc {
                Ctrl normally, Command on macOS. */
             if (!Platform.has_primary_modifier (state)) return false;
 
-            switch (Gdk.keyval_to_lower (keyval)) {
+            uint lower_key = Gdk.keyval_to_lower (keyval);
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+            if (lower_key == Gdk.Key.v && paste_macos_text_into_focus ())
+                return true;
+#endif
+
+            switch (lower_key) {
             case Gdk.Key.Tab:
             case Gdk.Key.ISO_Left_Tab:
             case Gdk.Key.KP_Tab:
@@ -2238,6 +2244,48 @@ namespace Dc {
             }
             return false;
         }
+
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+        private bool paste_macos_text_into_focus () {
+            if (!Platform.is_macos ()) return false;
+
+            var focus = this.focus_widget;
+            if (focus == null || is_inside_compose_bar (focus)) return false;
+
+            string? text = null;
+            for (var w = focus; w != null; w = w.get_parent ()) {
+                var editable = w as Gtk.Editable;
+                if (editable != null && editable.get_editable ()) {
+                    text = text ?? Platform.read_macos_pasteboard_text ();
+                    if (text == null || text.length == 0) return false;
+
+                    editable.delete_selection ();
+                    int position = editable.get_position ();
+                    editable.do_insert_text (text, text.length, ref position);
+                    editable.set_position (position);
+                    return true;
+                }
+
+                var text_view = w as Gtk.TextView;
+                if (text_view != null && text_view.editable) {
+                    text = text ?? Platform.read_macos_pasteboard_text ();
+                    if (text == null || text.length == 0) return false;
+
+                    text_view.buffer.delete_selection (true, text_view.editable);
+                    text_view.buffer.insert_at_cursor (text, text.length);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool is_inside_compose_bar (Gtk.Widget widget) {
+            for (var w = widget; w != null; w = w.get_parent ()) {
+                if (w is ComposeBar) return true;
+            }
+            return false;
+        }
+#endif
 
         private void toggle_message_search () {
             var v = current_view ();

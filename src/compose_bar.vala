@@ -208,6 +208,9 @@ namespace Dc {
             text_view.vadjustment = entry_vadj;
 
             var key_ctrl = new Gtk.EventControllerKey ();
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+            key_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+#endif
             key_ctrl.key_pressed.connect (on_entry_key_pressed);
             text_view.add_controller (key_ctrl);
             input_row.append (entry_overlay);
@@ -546,16 +549,28 @@ namespace Dc {
                 return true;
             }
 
-            if (!can_accept_attachment ()) return false;
             bool primary_v = Platform.has_primary_modifier (state)
                           && (keyval == Gdk.Key.v || keyval == Gdk.Key.V);
             if (!primary_v && !(shift && keyval == Gdk.Key.Insert)) return false;
+            if (!can_accept_attachment ()) {
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+                return primary_v && paste_macos_text ();
+#else
+                return false;
+#endif
+            }
 
             var clipboard = get_display ().get_clipboard ();
             var formats = clipboard.get_formats ();
             bool has_files = formats.contain_gtype (typeof (Gdk.FileList));
             bool has_texture = formats.contain_gtype (typeof (Gdk.Texture));
-            if (!has_files && !has_texture) return false;
+            if (!has_files && !has_texture) {
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+                return primary_v && paste_macos_text ();
+#else
+                return false;
+#endif
+            }
             paste_from_clipboard.begin (clipboard, has_files, has_texture);
             return true;
         }
@@ -583,6 +598,17 @@ namespace Dc {
             if (!previous.backward_char ()) return false;
             return previous.get_char () == ':';
         }
+
+#if PARLA_MACOS_CLIPBOARD_WORKAROUND
+        private bool paste_macos_text () {
+            var text = Platform.read_macos_pasteboard_text ();
+            if (text == null || text.length == 0) return false;
+
+            text_view.buffer.delete_selection (true, text_view.editable);
+            text_view.buffer.insert_at_cursor (text, text.length);
+            return true;
+        }
+#endif
 
         private void open_emoji_picker_after_typed_colon () {
             GLib.Idle.add (() => {

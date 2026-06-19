@@ -112,6 +112,16 @@ if host_machine.system() == 'darwin'
   add_languages('objc', native: false)
   sources += files('src/platform_macos.m')
   deps += dependency('appleframeworks', modules: ['Cocoa'])
+  if get_option('macos_clipboard_workaround')
+    add_project_arguments(
+      ['--define=PARLA_MACOS_CLIPBOARD_WORKAROUND'],
+      language: 'vala',
+    )
+    add_project_arguments(
+      ['-DPARLA_MACOS_CLIPBOARD_WORKAROUND=1'],
+      language: ['c', 'objc'],
+    )
+  endif
 endif
 
 executable('parla',
