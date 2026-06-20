@@ -88,6 +88,32 @@ namespace Dc {
                 "parla", "settings.ini");
         }
 
+        /**
+         * True when this build pins the deltachat-rpc-server to a fixed binary
+         * (meson -Drpc_server_path=...). Such builds always use that binary as
+         * the Custom server and never auto-update the engine.
+         */
+        public static bool rpc_server_path_is_fixed () {
+            return Parla.RPC_SERVER_PATH.length > 0;
+        }
+
+        /** Server path to actually use: the pinned one if set, else the user's. */
+        public string effective_rpc_server_path () {
+            return rpc_server_path_is_fixed ()
+                ? Parla.RPC_SERVER_PATH : rpc_server_path;
+        }
+
+        /** Server source to actually use: Custom when pinned, else the user's. */
+        public RpcServerSource effective_rpc_server_source () {
+            return rpc_server_path_is_fixed ()
+                ? RpcServerSource.CUSTOM : rpc_server_source;
+        }
+
+        /** Whether Parla may check for / install engine updates. */
+        public bool rpc_auto_update_enabled () {
+            return !rpc_server_path_is_fixed () && rpc_check_updates_on_startup;
+        }
+
         public void load () {
             var kf = new KeyFile ();
             try { kf.load_from_file (get_config_path (), KeyFileFlags.NONE); }
@@ -633,7 +659,7 @@ namespace Dc {
 
             string[] rpc_source_labels = { "Auto", "Custom" };
             rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
-                (uint) app_window.settings.rpc_server_source);
+                (uint) app_window.settings.effective_rpc_server_source ());
             rpc_source_dropdown.notify["selected"].connect (on_rpc_source_changed);
 
             rpc_choose_btn = new Gtk.Button.with_label ("Choose");
@@ -672,6 +698,8 @@ namespace Dc {
                 app_window.settings.save_rpc_check_updates_on_startup (
                     autocheck_switch.active);
             });
+            /* Engine updates are off entirely when the server path is pinned. */
+            rpc_autocheck_row.visible = !SettingsManager.rpc_server_path_is_fixed ();
             advanced_list.append (rpc_autocheck_row);
 
             update_rpc_row ();
@@ -892,15 +920,19 @@ namespace Dc {
         private void update_rpc_row () {
             sync_rpc_source_dropdown ();
 
-            string custom = app_window.settings.rpc_server_path;
-            RpcServerSource source = app_window.settings.rpc_server_source;
+            bool pinned = SettingsManager.rpc_server_path_is_fixed ();
+            string custom = app_window.settings.effective_rpc_server_path ();
+            RpcServerSource source = app_window.settings.effective_rpc_server_source ();
             string? found = AccountFinder.find_rpc_server (custom, source);
-            rpc_choose_btn.visible = source == RpcServerSource.CUSTOM;
-            rpc_choose_btn.sensitive = source == RpcServerSource.CUSTOM;
-            rpc_download_btn.visible = source == RpcServerSource.AUTO;
-            rpc_download_btn.sensitive = RpcInstaller.can_auto_install ();
+            /* A pinned build can't change source or update the engine. */
+            rpc_source_dropdown.sensitive = !pinned;
+            rpc_choose_btn.visible = source == RpcServerSource.CUSTOM && !pinned;
+            rpc_choose_btn.sensitive = source == RpcServerSource.CUSTOM && !pinned;
+            rpc_download_btn.visible = source == RpcServerSource.AUTO && !pinned;
+            rpc_download_btn.sensitive = RpcInstaller.can_auto_install () && !pinned;
             rpc_download_btn.label =
                 found == AccountFinder.get_managed_rpc_path () ? "Update" : "Install";
+            rpc_update_btn.visible = !pinned;
             switch (source) {
             case RpcServerSource.CUSTOM:
                 if (custom.length == 0) {
@@ -908,7 +940,7 @@ namespace Dc {
                     rpc_row.tooltip_text = "Choose a deltachat-rpc-server binary";
                 } else {
                     rpc_row.subtitle = found != null
-                        ? "Using custom binary"
+                        ? (pinned ? "Using built-in server" : "Using custom binary")
                         : "Custom path is not executable";
                     rpc_row.tooltip_text = custom;
                 }
@@ -959,8 +991,9 @@ namespace Dc {
                 if (process.get_successful () && version.length > 0) {
                     rpc_version_row.subtitle = version;
                     rpc_current_version = RpcInstaller.extract_version (version);
-                    rpc_update_check_available = true;
-                    rpc_update_btn.sensitive = true;
+                    rpc_update_check_available =
+                        !SettingsManager.rpc_server_path_is_fixed ();
+                    rpc_update_btn.sensitive = rpc_update_check_available;
                 } else {
                     rpc_version_row.subtitle = "Unable to read version";
                     rpc_current_version = null;
@@ -995,8 +1028,8 @@ namespace Dc {
 
                 bool managed_active =
                     AccountFinder.find_rpc_server (
-                        app_window.settings.rpc_server_path,
-                        app_window.settings.rpc_server_source)
+                        app_window.settings.effective_rpc_server_path (),
+                        app_window.settings.effective_rpc_server_source ())
                     == AccountFinder.get_managed_rpc_path ();
 
                 if (rpc_current_version == null) {
@@ -1032,7 +1065,7 @@ namespace Dc {
         private void sync_rpc_source_dropdown () {
             syncing_rpc_source = true;
             rpc_source_dropdown.selected =
-                (uint) app_window.settings.rpc_server_source;
+                (uint) app_window.settings.effective_rpc_server_source ();
             syncing_rpc_source = false;
         }
 

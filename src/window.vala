@@ -526,7 +526,8 @@ namespace Dc {
             /* Find the RPC server binary. Auto mode uses Parla/distro-owned
                standalone servers; Custom uses the explicit configured path. */
             string? rpc_path = AccountFinder.find_rpc_server (
-                settings.rpc_server_path, settings.rpc_server_source);
+                settings.effective_rpc_server_path (),
+                settings.effective_rpc_server_source ());
             if (rpc_path == null) {
                 set_connection_status (false, "RPC server not found");
                 show_rpc_not_found ();
@@ -564,7 +565,7 @@ namespace Dc {
 
             /* If we're running Parla's own downloaded server, optionally check
                for a newer release in the background and offer to update. */
-            if (settings.rpc_check_updates_on_startup &&
+            if (settings.rpc_auto_update_enabled () &&
                 rpc_path == AccountFinder.get_managed_rpc_path ()) {
                 check_managed_update.begin ();
             }
@@ -645,16 +646,17 @@ namespace Dc {
                install switches the source to Auto so the downloaded binary is
                picked up. Custom choices still get their specific error text,
                but the download is the primary action. */
-            bool can_download = RpcInstaller.can_auto_install ();
+            bool can_download = RpcInstaller.can_auto_install () &&
+                !SettingsManager.rpc_server_path_is_fixed ();
 
             string icon_name = "dialog-error-symbolic";
             string title = "RPC server not found";
             string description;
-            if (settings.rpc_server_source == RpcServerSource.CUSTOM &&
-                settings.rpc_server_path.length > 0) {
+            if (settings.effective_rpc_server_source () == RpcServerSource.CUSTOM &&
+                settings.effective_rpc_server_path ().length > 0) {
                 description =
                     "Configured path is missing or not executable:\n" +
-                    Markup.escape_text (settings.rpc_server_path) +
+                    Markup.escape_text (settings.effective_rpc_server_path ()) +
                     (can_download ? "\n\nDownload the engine to use it instead." : "");
             } else if (can_download) {
                 icon_name = "parla-welcome";
@@ -1877,7 +1879,8 @@ namespace Dc {
 
             var dialog = new SettingsDialog (this, rpc);
             dialog.closed.connect (() => {
-                if (!rpc.is_connected && settings.rpc_server_path.length > 0) {
+                if (!rpc.is_connected &&
+                    settings.effective_rpc_server_path ().length > 0) {
                     try_connect.begin ();
                 }
             });

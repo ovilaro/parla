@@ -32,6 +32,7 @@ deps = [
 
 config = configuration_data()
 config.set('VERSION', meson.project_version())
+config.set('RPC_SERVER_PATH', get_option('rpc_server_path'))
 config_file = configure_file(
   input: 'src/config.vala.in',
   output: 'config.vala',
