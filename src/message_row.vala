@@ -591,7 +591,6 @@ namespace Dc {
             Gtk.Picture preview;
             if (msg.has_local_file) {
                 var media = Gtk.MediaFile.for_filename (msg.file_path);
-                media.muted = true;
                 media.pause ();
                 preview = new Gtk.Picture.for_paintable (media);
             } else {
