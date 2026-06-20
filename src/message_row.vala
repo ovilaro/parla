@@ -161,6 +161,7 @@ namespace Dc {
             var bubble = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
             bubble.add_css_class ("message-bubble");
             bubble.add_css_class (outgoing ? "outgoing" : "incoming");
+            bubble.valign = Gtk.Align.START;
 
             /* Forwarded indicator replaces the plain sender line: it already
                names the forwarder (incoming) or just reads "Forwarded"
@@ -449,10 +450,18 @@ namespace Dc {
                 picture.content_fit = Gtk.ContentFit.CONTAIN;
                 picture.can_shrink = true;
                 picture.halign = Gtk.Align.FILL;
+                picture.valign = Gtk.Align.FILL;
 
-                var frame = new ScaledPreviewFrame (dw, dh, "message-image");
+                var frame = new Gtk.AspectFrame (
+                    0.0f, 0.0f,
+                    (float) pixbuf.width / (float) pixbuf.height,
+                    false);
+                frame.add_css_class ("message-image");
+                frame.overflow = Gtk.Overflow.HIDDEN;
+                frame.set_size_request (pixbuf.width, pixbuf.height);
                 frame.child = picture;
                 frame.halign = Gtk.Align.START;
+                frame.valign = Gtk.Align.START;
                 return frame;
             } catch (Error e) {
                 stderr.printf ("  -> Image load failed: %s\n", e.message);
