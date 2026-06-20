@@ -219,21 +219,9 @@ namespace Dc {
         }
 
         public void show (int chat_id, double x, double y, Gtk.Widget parent) {
-            show_loaded.begin (chat_id, x, y, parent);
-        }
-
-        private async void show_loaded (int chat_id, double x, double y,
-                                        Gtk.Widget parent) {
             bool is_pinned = false;
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) is_pinned = entry.is_pinned;
-
-            Contact? dm_contact = null;
-            try {
-                dm_contact = yield load_dm_contact (chat_id);
-            } catch (Error e) {
-                dm_contact = null;
-            }
 
             var popover = new Gtk.Popover ();
             popover.has_arrow = false;
@@ -245,56 +233,14 @@ namespace Dc {
 
             append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
                 () => { toggle_pin.begin (chat_id, is_pinned); });
-            append_menu_button (box, popover, "Chat Info",
+            append_menu_button (box, popover, "Details…",
                 () => { show_info.begin (chat_id); });
-
-            if (dm_contact != null) {
-                Contact contact = dm_contact;
-                append_menu_button (box, popover, contact.is_blocked
-                    ? "Unblock contact" : "Block contact…", () => {
-                    if (contact.is_blocked) {
-                        unblock_contact.begin (chat_id, contact.id);
-                    } else {
-                        confirm_block_contact (chat_id, contact);
-                    }
-                }, !contact.is_blocked);
-            }
-
             append_menu_button (box, popover, "Delete…",
-                () => { confirm_delete.begin (chat_id); });
+                () => { confirm_delete.begin (chat_id); }, true);
 
             popover.child = box;
             popover.closed.connect (() => { popover.unparent (); });
             popover.popup ();
-        }
-
-        private async Contact? load_dm_contact (int chat_id) throws Error {
-            var chat = yield rpc.get_full_chat_by_id_for (rpc.account_id, chat_id);
-            if (chat == null) return null;
-
-            string chat_type = json_str (chat, "chatType") ?? "";
-            bool is_self_talk = json_bool (chat, "isSelfTalk");
-            bool is_device_chat = json_bool (chat, "isDeviceChat");
-            if (chat_type != "Single" || is_self_talk || is_device_chat)
-                return null;
-            if (!chat.has_member ("contactIds")) return null;
-
-            var ids = chat.get_array_member ("contactIds");
-            if (ids == null || ids.get_length () == 0) return null;
-
-            int contact_id = (int) ids.get_int_element (0);
-            if (contact_id <= 1) return null;
-
-            var obj = yield rpc.get_contact_for (rpc.account_id, contact_id);
-            if (obj == null) return null;
-
-            return RpcParsers.parse_contact (contact_id, obj);
-        }
-
-        private static string contact_label (Contact contact) {
-            if (contact.display_name.length > 0) return contact.display_name;
-            if (contact.address.length > 0) return contact.address;
-            return "contact";
         }
 
         private static Gtk.Button make_menu_button (string label) {
@@ -353,37 +299,6 @@ namespace Dc {
             });
 
             dialog.present (window);
-        }
-
-        private void confirm_block_contact (int chat_id, Contact contact) {
-            string label = contact_label (contact);
-            confirm_action (window, "Block Contact",
-                "Block \"%s\"? You will no longer receive messages from this contact.".printf (label),
-                "block", "Block", () => {
-                    block_contact.begin (chat_id, contact.id);
-                });
-        }
-
-        private async void block_contact (int chat_id, int contact_id) {
-            try {
-                yield rpc.block_contact (contact_id);
-                window.show_toast ("Contact blocked");
-                if (window.current_chat_id == chat_id)
-                    window.clear_chat_view ();
-                yield window.load_chats ();
-            } catch (Error e) {
-                window.show_toast ("Failed to block contact: " + e.message);
-            }
-        }
-
-        private async void unblock_contact (int chat_id, int contact_id) {
-            try {
-                yield rpc.unblock_contact (contact_id);
-                window.show_toast ("Contact unblocked");
-                yield window.load_chats ();
-            } catch (Error e) {
-                window.show_toast ("Failed to unblock contact: " + e.message);
-            }
         }
 
         private async void confirm_delete (int chat_id) {
