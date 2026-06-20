@@ -29,6 +29,18 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.5.4" date="2026-06-21">
+      <description>
+        <ul>
+          <li>Discover relays to create new profile</li>
+          <li>Allow to rename group chats</li>
+          <li>Improve user profile usability</li>
+          <li>Fix coloring and tint for readability</li>
+          <li>Deprecate Deltachat desktop server finder</li>
+          <li>Don't clear input when attaching files</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-06-17">
       <description>
         <ul>
