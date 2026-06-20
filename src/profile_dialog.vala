@@ -60,8 +60,8 @@ namespace Dc {
         private Gtk.Entry name_entry;
         private Gtk.Entry status_entry;
         private Gtk.Label email_label;
-        private Gtk.Switch default_switch;
-        private bool syncing_default_switch = false;
+        private Gtk.Label default_caption_label;
+        private Gtk.Button default_make_button;
         private string? account_addr = null;
         private Gtk.Label connectivity_status_label;
         private Gtk.Label storage_summary_label;
@@ -109,29 +109,47 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            content.append (heading_label ("Display Name"));
+            var fields_grid = new Gtk.Grid ();
+            fields_grid.column_spacing = 12;
+            fields_grid.row_spacing = 12;
+
+            var name_heading = heading_label ("Name");
+            name_heading.valign = Gtk.Align.CENTER;
+            fields_grid.attach (name_heading, 0, 0, 1, 1);
 
             name_entry = new Gtk.Entry ();
+            name_entry.hexpand = true;
             name_entry.placeholder_text = "Your name";
             name_entry.changed.connect (() => {
                 avatar_widget.text = name_entry.text.length > 0
                     ? name_entry.text : "";
             });
-            content.append (name_entry);
+            fields_grid.attach (name_entry, 1, 0, 1, 1);
 
-            content.append (heading_label ("Status"));
+            var status_heading = heading_label ("Status");
+            status_heading.valign = Gtk.Align.CENTER;
+            fields_grid.attach (status_heading, 0, 1, 1, 1);
 
             status_entry = new Gtk.Entry ();
+            status_entry.hexpand = true;
             status_entry.placeholder_text = "Your status message";
-            content.append (status_entry);
+            fields_grid.attach (status_entry, 1, 1, 1, 1);
 
-            content.append (heading_label ("Email"));
+            var email_heading = heading_label ("Email");
+            email_heading.valign = Gtk.Align.CENTER;
+            fields_grid.attach (email_heading, 0, 2, 1, 1);
 
             email_label = dim_label ("");
             email_label.selectable = true;
-            content.append (email_label);
+            email_label.hexpand = true;
+            email_label.valign = Gtk.Align.CENTER;
+            fields_grid.attach (email_label, 1, 2, 1, 1);
 
-            content.append (build_default_account_row ());
+            content.append (fields_grid);
+
+            content.append (build_profile_action_row ("Invite Code",
+                "Show a contact invite QR code", "Share your contact",
+                show_invite_code_dialog));
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
@@ -139,15 +157,15 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            content.append (build_profile_action_row ("Invite Code",
-                "Show a contact invite QR code", "Share your contact",
-                show_invite_code_dialog));
             content.append (build_profile_action_row ("Relays...",
                 "Manage chatmail relays for this profile", "Manage transports",
                 show_relays_dialog));
             content.append (build_profile_action_row ("Add Second Device",
                 "Show a setup QR code for another device",
                 "Transfer to another device", show_second_device_dialog));
+
+            content.append (build_default_account_row ());
+
             content.append (build_profile_action_row ("Delete Profile",
                 "Delete local profile data", "Delete local profile data",
                 confirm_delete_account, "destructive-action"));
@@ -172,59 +190,57 @@ namespace Dc {
             var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             box.margin_top = 4;
 
+            var caption = dim_label (caption_text, true);
+            caption.valign = Gtk.Align.CENTER;
+            box.append (caption);
+
             var button = new Gtk.Button.with_label (button_label);
+            button.halign = Gtk.Align.END;
             if (css_class != null) button.add_css_class (css_class);
             button.tooltip_text = tooltip;
             button.clicked.connect (() => { action (); });
             box.append (button);
 
-            var caption = dim_label (caption_text, true);
-            caption.valign = Gtk.Align.CENTER;
-            box.append (caption);
-
             return box;
         }
 
         private Gtk.Widget build_default_account_row () {
-            var list = new Gtk.ListBox ();
-            list.selection_mode = Gtk.SelectionMode.NONE;
-            list.add_css_class ("boxed-list");
-            list.margin_top = 8;
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            box.margin_top = 4;
 
-            var row = new Adw.ActionRow ();
-            row.title = "Default Account";
-            row.subtitle = "Open this account when Parla starts";
+            default_caption_label = dim_label ("", true);
+            default_caption_label.valign = Gtk.Align.CENTER;
+            box.append (default_caption_label);
 
-            default_switch = new Gtk.Switch ();
-            default_switch.valign = Gtk.Align.CENTER;
-            default_switch.notify["active"].connect (on_default_switch_toggled);
-            row.add_suffix (default_switch);
-            row.activatable_widget = default_switch;
+            default_make_button = new Gtk.Button.with_label ("Make Default");
+            default_make_button.halign = Gtk.Align.END;
+            default_make_button.valign = Gtk.Align.CENTER;
+            default_make_button.tooltip_text = "Open this account when Parla starts";
+            default_make_button.clicked.connect (make_account_default);
+            box.append (default_make_button);
 
-            list.append (row);
-            return list;
+            update_default_account_row ();
+            return box;
         }
 
-        private void on_default_switch_toggled () {
-            if (syncing_default_switch) return;
-            if (account_addr == null || account_addr.length == 0) {
-                /* Email not loaded yet — revert the toggle silently. */
-                sync_default_switch ();
-            }
-            /* The new value is staged on the switch; it is committed in
-               do_save() so closing the dialog without saving discards it. */
+        /* Applies immediately: making an account the default is an explicit
+           action, so it persists without waiting for the Save button (which
+           commits the editable profile fields). */
+        private void make_account_default () {
+            if (account_addr == null || account_addr.length == 0) return;
+            settings.save_default_account_addr (account_addr);
+            update_default_account_row ();
         }
 
-        private void sync_default_switch () {
-            syncing_default_switch = true;
-            bool is_default = account_addr != null
-                && account_addr.length > 0
+        private void update_default_account_row () {
+            bool loaded = account_addr != null && account_addr.length > 0;
+            bool is_default = loaded
                 && settings.default_account_addr.down ().strip ()
                     == account_addr.down ().strip ();
-            default_switch.active = is_default;
-            default_switch.sensitive = account_addr != null
-                && account_addr.length > 0;
-            syncing_default_switch = false;
+            default_caption_label.label = is_default
+                ? "This is your default account, opened when Parla starts"
+                : "Open this account automatically when Parla starts";
+            default_make_button.visible = loaded && !is_default;
         }
 
         private Gtk.Widget build_connectivity_storage_section () {
@@ -287,7 +303,7 @@ namespace Dc {
                 if (email != null) {
                     email_label.label = email;
                     account_addr = email;
-                    sync_default_switch ();
+                    update_default_account_row ();
                 }
                 if (avatar != null && avatar.length > 0 &&
                     FileUtils.test (avatar, FileTest.EXISTS)) {
@@ -331,22 +347,10 @@ namespace Dc {
                 if (avatar_changed && avatar_path != null) {
                     yield rpc.batch_set_config ("selfavatar", avatar_path, account_id);
                 }
-                commit_default_account_pref ();
                 profile_updated ();
                 this.close ();
             } catch (Error e) {
                 show_error (this, e.message);
-            }
-        }
-
-        private void commit_default_account_pref () {
-            if (account_addr == null || account_addr.length == 0) return;
-            string mine = account_addr.down ().strip ();
-            string stored = settings.default_account_addr.down ().strip ();
-            if (default_switch.active && stored != mine) {
-                settings.save_default_account_addr (account_addr);
-            } else if (!default_switch.active && stored == mine) {
-                settings.save_default_account_addr ("");
             }
         }
 
