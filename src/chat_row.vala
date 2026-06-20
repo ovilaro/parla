@@ -311,7 +311,7 @@ namespace Dc {
                                                 owned VoidFunc action,
                                                 bool destructive = false) {
             var btn = make_menu_button (label);
-            if (destructive) btn.add_css_class ("destructive-action");
+            if (destructive) btn.add_css_class ("menu-destructive");
             btn.clicked.connect (() => {
                 popover.popdown ();
                 action ();

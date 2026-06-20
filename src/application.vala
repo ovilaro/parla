@@ -297,7 +297,7 @@ namespace Dc {
             .message-sender {
                 font-weight: bold;
                 font-size: small;
-                color: @accent_color;
+                color: @view_fg_color;
             }
             .message-time {
                 font-size: x-small;
@@ -615,6 +615,12 @@ namespace Dc {
                 padding: 5px 14px;
                 border-radius: 16px;
                 opacity: 0.95;
+            }
+            /* Destructive entry in a flat popover menu. Uses the red text
+               color (not @destructive_fg_color, which is white and meant for
+               a solid red button — on a flat item that leaves white text). */
+            .menu-destructive {
+                color: @destructive_color;
             }
         """;
     }
