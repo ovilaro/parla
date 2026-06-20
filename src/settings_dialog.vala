@@ -495,7 +495,7 @@ namespace Dc {
             appearance_list.append (avatar_row);
 
             var direct_avatar_row = action_row (
-                "Enable in 1:1 chats",
+                "Use avatars in 1:1 chats",
                 "Use the bubble avatar setting in direct conversations");
             var direct_avatar_check = new Gtk.CheckButton ();
             direct_avatar_check.active =
@@ -629,7 +629,7 @@ namespace Dc {
 
             var advanced_list = settings_list ("Advanced");
 
-            rpc_row = action_row ("RPC server");
+            rpc_row = action_row ("Chatmail Server");
 
             string[] rpc_source_labels = { "Auto", "Custom" };
             rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
@@ -653,7 +653,7 @@ namespace Dc {
 
             advanced_list.append (rpc_row);
 
-            rpc_version_row = action_row ("RPC server version", "Checking...");
+            rpc_version_row = action_row ("Chatmail server version", "Checking...");
             rpc_update_btn = new Gtk.Button.with_label ("Check");
             rpc_update_btn.valign = Gtk.Align.CENTER;
             rpc_update_btn.add_css_class ("flat");
@@ -663,7 +663,7 @@ namespace Dc {
             advanced_list.append (rpc_version_row);
 
             var rpc_autocheck_row = action_row (
-                "Check for engine updates on startup",
+                "Check for chatmail updates on startup",
                 "Notify when a newer deltachat-rpc-server is available");
             var autocheck_switch = row_switch (
                 rpc_autocheck_row,
@@ -1012,11 +1012,11 @@ namespace Dc {
                                 latest_version));
                     } else {
                         app_window.show_toast (
-                            "RPC server version differs: " + latest_version);
+                            "Chatmail server version differs: " + latest_version);
                     }
                 } else {
                     rpc_version_row.subtitle = "Up to date: %s".printf (rpc_current_version);
-                    app_window.show_toast ("RPC server is up to date");
+                    app_window.show_toast ("Chatmail server is up to date");
                 }
                 rpc_version_row.tooltip_text =
                     "Latest release: https://github.com/chatmail/core/releases/tag/%s".printf (
@@ -1047,7 +1047,7 @@ namespace Dc {
             }
 
             app_window.settings.save_rpc_server_source (source);
-            app_window.show_toast ("RPC server preference saved");
+            app_window.show_toast ("Chatmail server preference saved");
             update_rpc_row ();
             app_window.reconnect_rpc_server.begin ();
         }
@@ -1069,7 +1069,7 @@ namespace Dc {
                         app_window.settings.save_rpc_server_path (path);
                         app_window.settings.save_rpc_server_source (RpcServerSource.CUSTOM);
                         sync_rpc_source_dropdown ();
-                        app_window.show_toast ("RPC server path saved");
+                        app_window.show_toast ("Chatmail server path saved");
                         app_window.reconnect_rpc_server.begin ();
                     } else {
                         show_error (app_window, "Selected file is not an executable binary.");
@@ -1111,7 +1111,7 @@ namespace Dc {
                     app_window.settings.save_rpc_server_source (RpcServerSource.AUTO);
                     sync_rpc_source_dropdown ();
                 }
-                app_window.show_toast ("RPC server installed");
+                app_window.show_toast ("Chatmail server installed");
                 yield app_window.reconnect_rpc_server ();
             } catch (Error e) {
                 rpc_row.subtitle = prev_subtitle;

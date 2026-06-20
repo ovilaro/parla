@@ -341,7 +341,7 @@ namespace Dc {
 
             /* Search */
             search_entry = new Gtk.SearchEntry ();
-            search_entry.placeholder_text = "Search chats…";
+            search_entry.placeholder_text = "Search contacts…";
             search_entry.margin_start = 8;
             search_entry.margin_end = 8;
             search_entry.margin_top = 4;
