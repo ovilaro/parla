@@ -237,7 +237,7 @@ namespace Dc {
 
             content.append (account_setup_heading ("Server"));
 
-            relay_picker = new RelayPicker ();
+            relay_picker = new RelayPicker (rpc);
             content.append (relay_picker);
 
             var hint = new Gtk.Label (null);

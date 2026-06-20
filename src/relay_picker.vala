@@ -60,9 +60,15 @@ namespace Dc {
         private Gtk.StringList model;
         private Gtk.Entry custom_entry;
         private GenericArray<string> domains;
+        private RpcClient? rpc = null;
+        private Gtk.Button? discover_btn = null;
+        private bool discovered = false;
 
-        public RelayPicker () {
-            Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
+        /* Pass an RpcClient to include the built-in "Discover from Contacts"
+           button; omit it for a plain relay list. */
+        public RelayPicker (RpcClient? rpc = null) {
+            Object (orientation: Gtk.Orientation.VERTICAL, spacing: 8);
+            this.rpc = rpc;
 
             domains = new GenericArray<string> ();
             model = new Gtk.StringList (null);
@@ -84,8 +90,44 @@ namespace Dc {
                 dropdown.sensitive = custom_entry.text.strip ().length == 0;
             });
 
-            this.append (dropdown);
-            this.append (custom_entry);
+            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            row.append (dropdown);
+            row.append (custom_entry);
+            this.append (row);
+
+            if (rpc != null) {
+                discover_btn = new Gtk.Button.with_label ("Discover from Contacts");
+                discover_btn.halign = Gtk.Align.START;
+                discover_btn.add_css_class ("flat");
+                discover_btn.tooltip_text =
+                    "Scan contacts on your other profiles and add the relays they use.";
+                discover_btn.clicked.connect (() => { run_discover.begin (); });
+                this.append (discover_btn);
+            }
+        }
+
+        /* Drives the built-in Discover button: scans once, then reports the
+           outcome in the button label and leaves it disabled. */
+        private async void run_discover () {
+            if (rpc == null || discovered) return;
+            discover_btn.sensitive = false;
+            string original = discover_btn.label;
+            discover_btn.label = "Scanning…";
+
+            int added = 0;
+            try {
+                added = yield discover_from_contacts (rpc);
+            } catch (Error e) {
+                discover_btn.label = original;
+                discover_btn.sensitive = true;
+                show_error (this, "Failed to scan contacts: " + e.message);
+                return;
+            }
+
+            discovered = true;
+            discover_btn.label = added > 0
+                ? "Found %d new".printf (added)
+                : "No new relays";
         }
 
         public string get_selected_domain () {
@@ -116,6 +158,57 @@ namespace Dc {
             return true;
         }
 
+        /**
+         * Scan known contacts across every configured account (purely local,
+         * no network round-trips), pull the domain out of each address, and
+         * append the unique ones to the dropdown. Returns how many new
+         * domains were added.
+         */
+        public async int discover_from_contacts (RpcClient rpc) throws Error {
+            var counts = new HashTable<string, int> (str_hash, str_equal);
+
+            var accounts_node = yield rpc.get_all_accounts ();
+            if (accounts_node != null
+                && accounts_node.get_node_type () == Json.NodeType.ARRAY) {
+                var accounts = accounts_node.get_array ();
+                for (uint a = 0; a < accounts.get_length (); a++) {
+                    var acct = accounts.get_object_element (a);
+                    if (acct == null) continue;
+                    int aid = (int) acct.get_int_member ("id");
+                    if (aid <= 0) continue;
+                    yield collect_contact_domains (rpc, aid, counts);
+                }
+            }
+
+            int added = 0;
+            counts.foreach ((domain, count) => {
+                string note = count == 1
+                    ? "1 contact"
+                    : "%d contacts".printf (count);
+                if (add_domain (domain, note)) added++;
+            });
+            return added;
+        }
+
+        private async void collect_contact_domains (RpcClient rpc, int aid,
+                                                    HashTable<string, int> counts) throws Error {
+            var ids = yield rpc.get_contact_ids_for (aid, null);
+            if (ids == null) return;
+            for (uint i = 0; i < ids.get_length (); i++) {
+                int cid = (int) ids.get_int_element (i);
+                if (cid <= 1) continue; /* skip self / special ids */
+                var obj = yield rpc.get_contact_for (aid, cid);
+                if (obj == null) continue;
+                string addr = json_str (obj, "address") ?? "";
+                int at = addr.index_of_char ('@');
+                if (at <= 0 || at >= addr.length - 1) continue;
+                string domain = addr.substring (at + 1).down ().strip ();
+                if (domain.length == 0) continue;
+                int prev = counts.lookup (domain);
+                counts.insert (domain, prev + 1);
+            }
+        }
+
     }
 
     /**
@@ -132,9 +225,7 @@ namespace Dc {
         private Gtk.Label empty_label;
         private RelayPicker picker;
         private Gtk.Button add_btn;
-        private Gtk.Button discover_btn;
         private bool busy = false;
-        private bool discovered = false;
 
         public RelaysDialog (RpcClient rpc, int acct_id) {
             this.rpc = rpc;
@@ -186,17 +277,11 @@ namespace Dc {
             add_label.xalign = 0;
             content.append (add_label);
 
-            picker = new RelayPicker ();
+            picker = new RelayPicker (rpc);
             content.append (picker);
 
             var add_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             add_row.halign = Gtk.Align.END;
-            discover_btn = new Gtk.Button.with_label ("Discover from Contacts");
-            discover_btn.tooltip_text =
-                "Scan known contacts on all profiles and append their relays " +
-                "to the list above.";
-            discover_btn.clicked.connect (() => { do_discover.begin (); });
-            add_row.append (discover_btn);
             add_btn = new Gtk.Button.with_label ("Add Relay");
             add_btn.add_css_class ("suggested-action");
             add_btn.clicked.connect (() => { do_add_relay.begin (); });
@@ -298,79 +383,5 @@ namespace Dc {
             yield refresh_list ();
         }
 
-        /**
-         * Walk every configured account, read all known contacts locally
-         * (no network round-trips), pull the domain out of each address,
-         * and append the unique ones to the picker.
-         */
-        private async void do_discover () {
-            if (busy) return;
-            if (discovered) {
-                /* Avoid stacking duplicate "(N contacts)" entries on repeat
-                 * clicks — one scan is enough per dialog session. */
-                return;
-            }
-            busy = true;
-            discover_btn.sensitive = false;
-            string original_label = discover_btn.label;
-            discover_btn.label = "Scanning…";
-
-            var counts = new HashTable<string, int> (str_hash, str_equal);
-
-            try {
-                var accounts_node = yield rpc.get_all_accounts ();
-                if (accounts_node != null
-                    && accounts_node.get_node_type () == Json.NodeType.ARRAY) {
-                    var accounts = accounts_node.get_array ();
-                    for (uint a = 0; a < accounts.get_length (); a++) {
-                        var acct = accounts.get_object_element (a);
-                        if (acct == null) continue;
-                        int aid = (int) acct.get_int_member ("id");
-                        if (aid <= 0) continue;
-                        yield collect_domains_for (aid, counts);
-                    }
-                }
-            } catch (Error e) {
-                show_error (this, "Failed to scan contacts: " + e.message);
-                discover_btn.label = original_label;
-                discover_btn.sensitive = true;
-                busy = false;
-                return;
-            }
-
-            int added = 0;
-            counts.foreach ((domain, count) => {
-                string note = count == 1
-                    ? "1 contact"
-                    : "%d contacts".printf (count);
-                if (picker.add_domain (domain, note)) added++;
-            });
-
-            discovered = true;
-            discover_btn.label = added > 0
-                ? "Found %d new".printf (added)
-                : "No new relays";
-            /* leave button disabled — repeat scans would rebuild the same set */
-            busy = false;
-        }
-
-        private async void collect_domains_for (int aid,
-                                                HashTable<string, int> counts) throws Error {
-            var ids = yield rpc.get_contact_ids_for (aid, null);
-            if (ids == null) return;
-            for (uint i = 0; i < ids.get_length (); i++) {
-                int cid = (int) ids.get_int_element (i);
-                if (cid <= 1) continue; /* skip self / special ids */
-                var obj = yield rpc.get_contact_for (aid, cid);
-                if (obj == null) continue;
-                string addr = json_str (obj, "address") ?? "";
-                int at = addr.index_of_char ('@');
-                if (at <= 0 || at >= addr.length - 1) continue;
-                string domain = addr.substring (at + 1).down ().strip ();
-                if (domain.length == 0) continue;
-                int prev = counts.lookup (domain);
-                counts.insert (domain, prev + 1);
-            }
-        }
     }
 }
