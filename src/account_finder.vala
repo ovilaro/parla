@@ -2,14 +2,12 @@ namespace Dc {
 
     public enum RpcServerSource {
         AUTO = 0,
-        CUSTOM = 1,
-        DESKTOP = 2
+        CUSTOM = 1
     }
 
     /**
      * Locates standalone, Parla-owned or distro-provided
-     * deltachat-rpc-server binaries. Delta Chat Desktop is only consulted
-     * when explicitly requested.
+     * deltachat-rpc-server binaries.
      */
     public class AccountFinder {
 
@@ -18,16 +16,14 @@ namespace Dc {
         /**
          * Return an absolute path to deltachat-rpc-server, or null if none found.
          *
-         * Custom and Desktop modes are exclusive so broken explicit choices
-         * can be surfaced instead of silently falling back.
+         * Custom mode is exclusive so broken explicit choices can be surfaced
+         * instead of silently falling back.
          */
         public static string? find_rpc_server (string? custom_path = null,
                                                RpcServerSource source = RpcServerSource.AUTO) {
             switch (source) {
             case RpcServerSource.CUSTOM:
                 return is_executable (custom_path) ? custom_path : null;
-            case RpcServerSource.DESKTOP:
-                return find_desktop_rpc_server ();
             case RpcServerSource.AUTO:
             default:
                 return find_standalone_rpc_server ();
@@ -90,32 +86,6 @@ namespace Dc {
             return Path.build_filename (get_parla_data_dir (), "bin", RPC_BIN);
         }
 
-        public static string? find_desktop_rpc_server () {
-            string home = Environment.get_home_dir ();
-            string[] app_roots = {
-                "/opt/DeltaChat/resources/app.asar.unpacked",
-                Path.build_filename (home, ".local", "share", "flatpak", "app",
-                                     "chat.delta.desktop", "current", "active",
-                                     "files", "delta", "resources", "app"),
-                "/var/lib/flatpak/app/chat.delta.desktop/current/active/files/delta/resources/app",
-                "/snap/deltachat-desktop/current/resources/app.asar.unpacked",
-            };
-            string[] arch_dirs = {
-                "stdio-rpc-server-linux-x64",
-                "stdio-rpc-server-linux-arm64",
-            };
-            foreach (string root in app_roots) {
-                foreach (string arch in arch_dirs) {
-                    string candidate = Path.build_filename (
-                        root, "node_modules", "@deltachat", arch, RPC_BIN);
-                    if (is_executable (candidate)) {
-                        return candidate;
-                    }
-                }
-            }
-            return null;
-        }
-
         private static bool is_executable (string? path) {
             return path != null && path.length > 0
                 && FileUtils.test (path, FileTest.IS_EXECUTABLE);
@@ -142,31 +112,7 @@ namespace Dc {
             return data_dir;
         }
 
-        public static string? find_desktop_data_dir () {
-            string home = Environment.get_home_dir ();
-            string[] candidates = {
-                Path.build_filename (home, ".var", "app",
-                                     "chat.delta.desktop", "config", "DeltaChat"),
-                Path.build_filename (home, ".config", "DeltaChat"),
-                Path.build_filename (home, "snap", "deltachat-desktop",
-                                     "current", ".config", "DeltaChat"),
-            };
-            foreach (string dir in candidates) {
-                string accounts = Path.build_filename (dir, "accounts");
-                if (FileUtils.test (accounts, FileTest.IS_DIR)) return dir;
-            }
-            return null;
-        }
-
-        /**
-         * Return the account store to use. Parla owns its data by default;
-         * Delta Chat Desktop data is an explicit compatibility option.
-         */
-        public static string? get_data_dir (bool use_desktop_store = false) {
-            if (use_desktop_store) {
-                string? desktop_dir = find_desktop_data_dir ();
-                return desktop_dir;
-            }
+        public static string get_data_dir () {
             return get_parla_data_dir ();
         }
 

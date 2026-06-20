@@ -103,7 +103,7 @@
         <ul>
           <li>Show user cache and server quota stats</li>
           <li>Download and update chatmail jsonrpc server</li>
-          <li>No longer depends on deltachat desktop by default</li>
+          <li>No longer depends on Delta Chat Desktop</li>
         </ul>
       </description>
     </release>

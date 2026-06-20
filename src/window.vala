@@ -524,7 +524,7 @@ namespace Dc {
                 "Select a chat to start messaging");
 
             /* Find the RPC server binary. Auto mode uses Parla/distro-owned
-               standalone servers; Desktop is an explicit compatibility mode. */
+               standalone servers; Custom uses the explicit configured path. */
             string? rpc_path = AccountFinder.find_rpc_server (
                 settings.rpc_server_path, settings.rpc_server_source);
             if (rpc_path == null) {
@@ -533,20 +533,7 @@ namespace Dc {
                 return;
             }
 
-            /* Desktop mode reuses Delta Chat Desktop's account store; all
-             * other server sources use Parla's private account store.
-             */
-            string? data_dir = AccountFinder.get_data_dir (
-                settings.rpc_server_source == RpcServerSource.DESKTOP);
-            if (data_dir == null) {
-                show_empty_status ("dialog-error-symbolic",
-                    "Desktop accounts not found",
-                    "Delta Chat Desktop's account store was not found.\n" +
-                    "Open Settings to choose another server source.");
-                set_connection_status (false, "Desktop accounts not found");
-                show_toast ("Delta Chat Desktop accounts not found");
-                return;
-            }
+            string data_dir = AccountFinder.get_data_dir ();
             string accounts_path = Path.build_filename (data_dir, "accounts");
 
             /* Try to connect */
@@ -656,8 +643,8 @@ namespace Dc {
             /* Whenever a prebuilt binary exists for this architecture we offer a
                one-click download — regardless of the configured source — and the
                install switches the source to Auto so the downloaded binary is
-               picked up. Custom/Desktop choices still get their specific error
-               text, but the download is the primary action. */
+               picked up. Custom choices still get their specific error text,
+               but the download is the primary action. */
             bool can_download = RpcInstaller.can_auto_install ();
 
             string icon_name = "dialog-error-symbolic";
@@ -669,12 +656,6 @@ namespace Dc {
                     "Configured path is missing or not executable:\n" +
                     Markup.escape_text (settings.rpc_server_path) +
                     (can_download ? "\n\nDownload the engine to use it instead." : "");
-            } else if (settings.rpc_server_source == RpcServerSource.DESKTOP) {
-                description = can_download
-                    ? "Delta Chat Desktop's bundled server was not found.\n" +
-                      "Download Parla's own engine to get started."
-                    : "Delta Chat Desktop's bundled server was not found.\n" +
-                      "Open Settings to choose a standalone server.";
             } else if (can_download) {
                 icon_name = "parla-welcome";
                 title = "Welcome to Parla";
@@ -758,7 +739,7 @@ namespace Dc {
             }
 
             /* The downloaded binary lives in the Auto search path, so make sure
-               we resolve it on reconnect even if the source was Custom/Desktop. */
+               we resolve it on reconnect even if the source was Custom. */
             if (settings.rpc_server_source != RpcServerSource.AUTO) {
                 settings.save_rpc_server_source (RpcServerSource.AUTO);
             }

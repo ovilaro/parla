@@ -23,8 +23,7 @@ download fallback, and how to package Parla so it never self-downloads), see
 
 ## Runtime Resolution
 
-Parla's default `Auto` mode does not scan Delta Chat Desktop internals. It
-uses, in order:
+Parla does not scan Delta Chat Desktop internals. `Auto` mode uses, in order:
 
 - `PARLA_RPC_SERVER`, if set and executable.
 - A server installed next to Parla or under the same prefix, for example
@@ -33,13 +32,8 @@ uses, in order:
 - `deltachat-rpc-server` from `PATH`.
 - User installs in `~/.local/bin` or `~/.cargo/bin`.
 
-Delta Chat Desktop's bundled server is still available from Settings as an
-explicit compatibility mode. That mode also reuses Delta Chat Desktop's account
-store.
-
-Parla also stores accounts in its own XDG data directory by default. Desktop's
-account store can still conflict with Desktop if both applications try to use
-the same accounts.
+Parla stores accounts in its own XDG data directory and does not reuse Delta Chat
+Desktop's account store.
 
 ## Flatpak
 

@@ -46,7 +46,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 
 ### Accounts & profile
 
-- **Private Parla account store** by default; Delta Chat Desktop compatibility mode reuses Desktop accounts.
+- **Private Parla account store** in Parla's XDG data directory.
 - **Auto-discovery of standalone `deltachat-rpc-server`** from the Parla bundle, distro packages, `$PATH`, `~/.local/bin`, and `~/.cargo/bin`.
 - **Multi-account** switching from the settings dialog.
 - **My Profile** dialog to edit display name, status and avatar.
@@ -58,7 +58,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - Toggle Markdown rendering.
 - Toggle Shift+Enter vs Enter to send.
 - Toggle desktop notifications for incoming messages when the window is unfocused.
-- Choose the JSON-RPC server source: Parla/system, custom binary, or Delta Chat Desktop compatibility mode.
+- Choose the JSON-RPC server source: Parla/system auto-discovery or a custom binary.
 
 ### Keyboard shortcuts
 

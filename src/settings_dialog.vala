@@ -100,7 +100,7 @@ namespace Dc {
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
             int source = kf_enum (kf, "rpc_server_source",
-                                  (int) RpcServerSource.AUTO, 2);
+                                  (int) RpcServerSource.AUTO, 1);
             rpc_server_source = (RpcServerSource) source;
             rpc_check_updates_on_startup =
                 kf_bool (kf, "rpc_check_updates_on_startup", true);
@@ -631,7 +631,7 @@ namespace Dc {
 
             rpc_row = action_row ("RPC server");
 
-            string[] rpc_source_labels = { "Auto", "Custom", "Desktop" };
+            string[] rpc_source_labels = { "Auto", "Custom" };
             rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
                 (uint) app_window.settings.rpc_server_source);
             rpc_source_dropdown.notify["selected"].connect (on_rpc_source_changed);
@@ -911,22 +911,6 @@ namespace Dc {
                         ? "Using custom binary"
                         : "Custom path is not executable";
                     rpc_row.tooltip_text = custom;
-                }
-                break;
-            case RpcServerSource.DESKTOP:
-                string? desktop_dir = AccountFinder.find_desktop_data_dir ();
-                if (found == null) {
-                    rpc_row.subtitle = "Delta Chat Desktop server not found";
-                    rpc_row.tooltip_text =
-                        "Install Delta Chat Desktop or choose another server source";
-                } else if (desktop_dir == null) {
-                    rpc_row.subtitle = "Desktop account store not found";
-                    rpc_row.tooltip_text =
-                        "Sign in to Delta Chat Desktop or choose another server source";
-                } else {
-                    rpc_row.subtitle =
-                        "Using Delta Chat Desktop server and accounts";
-                    rpc_row.tooltip_text = "%s\n%s".printf (found, desktop_dir);
                 }
                 break;
             case RpcServerSource.AUTO:

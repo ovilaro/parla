@@ -27,8 +27,8 @@ and uses the first match:
 5. **Parla-managed fallback:** `~/.local/share/parla/bin/deltachat-rpc-server`
    — the copy Parla downloads for itself (see below).
 
-`Custom` and `Desktop` modes are explicit user choices configured in Settings and
-bypass this list.
+`Custom` mode is an explicit user choice configured in Settings and bypasses
+this list.
 
 ## For packagers: make Parla self-contained
 
