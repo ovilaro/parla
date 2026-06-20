@@ -591,6 +591,15 @@ namespace Dc {
                     .build ());
         }
 
+        public async void set_chat_name (int chat_id, string name) throws Error {
+            yield call ("set_chat_name",
+                Params.begin ()
+                    .add_int (account_id)
+                    .add_int (chat_id)
+                    .add_string (name)
+                    .build ());
+        }
+
         public async void set_chat_ephemeral_timer (int chat_id, int timer) throws Error {
             yield call ("set_chat_ephemeral_timer",
                 Params.begin ()

@@ -150,6 +150,12 @@ namespace Dc {
                         () => {
                             show_edit_contact_name_dialog (dm_contact_id, name_lbl);
                         }));
+                } else if (is_group) {
+                    name_box.append (flat_icon_button (
+                        "document-edit-symbolic", "Edit group name",
+                        () => {
+                            show_edit_group_name_dialog (name_lbl);
+                        }));
                 }
 
                 content.append (name_box);
@@ -405,6 +411,47 @@ namespace Dc {
                     name_lbl.label = new_name;
                 }
 
+                chat_changed ();
+            } catch (Error e) {
+                show_error (this, e.message);
+            }
+        }
+
+        private void show_edit_group_name_dialog (Gtk.Label name_lbl) {
+            var dialog = new Adw.AlertDialog ("Edit Group Name", null);
+
+            var entry = new Gtk.Entry ();
+            entry.text = name_lbl.label;
+            entry.placeholder_text = "Group name";
+            entry.activates_default = true;
+            entry.hexpand = true;
+
+            dialog.extra_child = entry;
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("save", "Save");
+            dialog.set_response_appearance ("save", Adw.ResponseAppearance.SUGGESTED);
+            dialog.default_response = "save";
+            dialog.close_response = "cancel";
+
+            entry.activate.connect (() => { dialog.response ("save"); });
+
+            dialog.response.connect ((resp) => {
+                if (resp != "save") return;
+                string new_name = entry.text.strip ();
+                /* Groups must keep a name, so ignore an empty entry. */
+                if (new_name.length > 0)
+                    save_group_name.begin (new_name, name_lbl);
+            });
+
+            dialog.present (this);
+            entry.grab_focus ();
+        }
+
+        private async void save_group_name (string new_name, Gtk.Label name_lbl) {
+            try {
+                yield rpc.set_chat_name (chat_id, new_name);
+                chat_name = new_name;
+                name_lbl.label = new_name;
                 chat_changed ();
             } catch (Error e) {
                 show_error (this, e.message);
