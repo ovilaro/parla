@@ -184,6 +184,11 @@ namespace Dc {
             text_view.buffer.changed.connect (update_placeholder);
             update_placeholder ();
 
+            var focus_ctrl = new Gtk.EventControllerFocus ();
+            focus_ctrl.enter.connect (() => { set_entry_active (true); });
+            focus_ctrl.leave.connect (() => { set_entry_active (false); });
+            text_view.add_controller (focus_ctrl);
+
             /* A bare TextView reports the height of its last *validated*
                layout, which is computed asynchronously and for the width it
                had at the time. When its width changes (the cancel-edit
@@ -267,6 +272,14 @@ namespace Dc {
 
         private void update_placeholder () {
             placeholder_label.visible = text_view.buffer.get_char_count () == 0;
+        }
+
+        private void set_entry_active (bool active) {
+            if (active) {
+                text_view.add_css_class ("compose-entry-active");
+            } else {
+                text_view.remove_css_class ("compose-entry-active");
+            }
         }
 
         public bool can_accept_attachment () {

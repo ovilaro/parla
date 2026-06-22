@@ -394,7 +394,15 @@ namespace Dc {
                 background-color: alpha(black, 0.75);
             }
             .compose-bar { border-top: none; }
-            .compose-entry { min-height: 36px; border-radius: 18px; }
+            .compose-entry {
+                min-height: 36px;
+                border-radius: 18px;
+                transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+            }
+            .compose-entry-active {
+                background-color: alpha(@accent_bg_color, 0.10);
+                box-shadow: inset 0 0 0 2px alpha(@accent_bg_color, 0.70);
+            }
             .attachment-bar {
                 padding: 6px 10px;
                 margin-bottom: 6px;
