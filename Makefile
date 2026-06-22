@@ -2,53 +2,42 @@ DESTDIR?=
 PREFIX?=/usr/local
 BINDIR?=$(PREFIX)/bin
 DATADIR?=$(PREFIX)/share
+BUILD_DIR?=builddir
+BUILDTYPE?=debug
 UNAME_S := $(shell uname -s)
-BUILD_DIR ?= $(if $(filter Darwin,$(UNAME_S)),builddir-macos,builddir)
+RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
+
+.PHONY: all run clean install uninstall deb app dmg
 
 all:
-	./build.sh
+	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; fi
+	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
 
 run: all
-ifeq ($(UNAME_S),Darwin)
-	scripts/macos/run.sh
-else
-	./$(BUILD_DIR)/parla
-endif
+	$(RUN_ENV) "./$(BUILD_DIR)/parla"
 
 clean:
-	rm -rf builddir builddir-macos dist/macos
+	rm -rf builddir dist/macos
 
-install:
-	mkdir -p $(DESTDIR)$(BINDIR)
-	mkdir -p $(DESTDIR)$(DATADIR)/metainfo
-	mkdir -p $(DESTDIR)$(DATADIR)/icons/applications
-	mkdir -p $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps
-	install -Dm755 ./$(BUILD_DIR)/parla $(DESTDIR)$(BINDIR)/parla
-	install -Dm644 data/io.github.trufae.Parla.desktop $(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop
-	install -Dm644 data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg
-	install -Dm644 data/io.github.trufae.Parla.appdata.xml $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
-	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
-	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null || exit 0
+install: all
+	DESTDIR="$(DESTDIR)" meson install -C "$(BUILD_DIR)"
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/parla
-	rm -f $(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop
-	rm -f $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg
-	rm -f $(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml
+	rm -f "$(DESTDIR)$(BINDIR)/parla"
+	rm -f "$(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop"
+	rm -f "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg"
+	rm -f "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/parla-welcome.svg"
+	rm -f "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/parla-tray.svg"
+	rm -f "$(DESTDIR)$(DATADIR)/metainfo/io.github.trufae.Parla.metainfo.xml"
 	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
 
 deb: all
 	$(MAKE) -C dist/debian
 
-macos:
-	scripts/macos/build.sh
+app: all
+	BUILD_DIR="$(BUILD_DIR)" bash scripts/macos/bundle.sh
 
-macos-run:
-	scripts/macos/run.sh
-
-macos-app:
-	scripts/macos/bundle.sh
-
-macos-dmg:
-	scripts/macos/package-dmg.sh
+dmg: BUILDTYPE=release
+dmg:
+	BUILD_DIR="$(BUILD_DIR)" BUILDTYPE="$(BUILDTYPE)" bash scripts/macos/package-dmg.sh

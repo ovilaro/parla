@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/scripts/macos/env.sh"
 
-BUILD_DIR="${BUILD_DIR:-$ROOT/builddir-macos}"
+BUILD_DIR="${BUILD_DIR:-$ROOT/builddir}"
 APP_NAME="${APP_NAME:-Parla}"
 APP_DIR="${APP_DIR:-$ROOT/dist/macos/$APP_NAME.app}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.trufae.Parla}"
@@ -12,7 +12,7 @@ VERSION="${VERSION:-$(awk -F"'" '/version:/ { print $2; exit }' "$ROOT/meson.bui
 PARLA_BUNDLE_CLEAN="${PARLA_BUNDLE_CLEAN:-1}"
 
 if [ ! -x "$BUILD_DIR/parla" ]; then
-    "$ROOT/scripts/macos/build.sh"
+    make -C "$ROOT" all BUILD_DIR="$BUILD_DIR"
 fi
 
 CONTENTS="$APP_DIR/Contents"

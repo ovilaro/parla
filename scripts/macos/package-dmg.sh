@@ -10,7 +10,7 @@ APP_DIR="${APP_DIR:-$ROOT/dist/macos/Parla.app}"
 DMG_DIR="${DMG_DIR:-$ROOT/dist/macos}"
 DMG="$DMG_DIR/Parla-$VERSION-$ARCH.dmg"
 
-"$ROOT/scripts/macos/build.sh"
+make -C "$ROOT" all BUILD_DIR="${BUILD_DIR:-$ROOT/builddir}" BUILDTYPE="${BUILDTYPE:-release}"
 APP_DIR="$APP_DIR" VERSION="$VERSION" "$ROOT/scripts/macos/bundle.sh" >/dev/null
 
 mkdir -p "$DMG_DIR"

@@ -92,7 +92,7 @@ pip install deltachat-rpc-server
 # Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
 
 # Build & run
-make ; make run
+make run
 ```
 
 <details>
@@ -115,13 +115,12 @@ brew install meson ninja vala pkgconf gtk4 libadwaita json-glib librsvg glib-net
 pip install deltachat-rpc-server
 # Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
 
-make            # builds builddir-macos/parla natively
-make run        # runs the native binary
-make macos-app  # creates dist/macos/Parla.app
-make macos-dmg  # creates dist/macos/Parla-<version>-<arch>.dmg
+make run   # builds and runs builddir/parla
+make app   # creates dist/macos/Parla.app
+make dmg   # creates dist/macos/Parla-<version>-<arch>.dmg
 ```
 
-`make macos-app` bundles Homebrew GTK/libadwaita libraries and copies
+`make app` bundles Homebrew GTK/libadwaita libraries and copies
 `deltachat-rpc-server` into `Parla.app` when it is available in `PATH`.
 Set `PARLA_BUNDLE_RPC_SERVER=/absolute/path/to/deltachat-rpc-server` to force
 a specific backend binary.
