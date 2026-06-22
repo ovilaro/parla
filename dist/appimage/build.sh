@@ -138,10 +138,6 @@ main() {
     make -C "$ROOT" all BUILD_DIR="$BUILD_DIR" BUILDTYPE="$BUILDTYPE" PREFIX=/usr
     DESTDIR="$APPDIR" meson install -C "$BUILD_DIR"
     install_rpc_server
-    if [ -f "$APPDIR/usr/share/metainfo/io.github.trufae.Parla.metainfo.xml" ]; then
-        cp "$APPDIR/usr/share/metainfo/io.github.trufae.Parla.metainfo.xml" \
-            "$APPDIR/usr/share/metainfo/io.github.trufae.Parla.appdata.xml"
-    fi
 
     cp "$ROOT/data/io.github.trufae.Parla.desktop" "$APPDIR/"
     cp "$ROOT/data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg" "$APPDIR/"
