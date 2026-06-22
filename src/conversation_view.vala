@@ -127,9 +127,11 @@ namespace Dc {
                     row.highlight ();
                 }
                 li.child = row;
-                /* Avoid focus-driven GtkListView re-anchoring on row clicks. */
+                /* Non-focusable rows: else a focused item gets re-scrolled into
+                   view when a popover closes, jerking the chat to the top. */
                 li.selectable = false;
                 li.activatable = false;
+                li.focusable = false;
             });
 
             var selection = new Gtk.NoSelection (filtered_message_store);
