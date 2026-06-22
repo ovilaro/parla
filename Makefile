@@ -7,7 +7,7 @@ BUILDTYPE?=debug
 UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
 
-.PHONY: all run clean install uninstall deb app dmg
+.PHONY: all run clean install uninstall deb app dmg appimage
 
 all:
 	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; fi
@@ -41,3 +41,8 @@ app: all
 dmg: BUILDTYPE=release
 dmg:
 	BUILD_DIR="$(BUILD_DIR)" BUILDTYPE="$(BUILDTYPE)" bash scripts/macos/package-dmg.sh
+
+appimage: BUILD_DIR=builddir-appimage
+appimage: BUILDTYPE=release
+appimage:
+	BUILD_DIR="$(BUILD_DIR)" BUILDTYPE="$(BUILDTYPE)" bash dist/appimage/build.sh

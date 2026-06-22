@@ -103,6 +103,8 @@ make run
 **Arch:** `sudo pacman -S vala meson gtk4 libadwaita json-glib`
 
 **Flatpak:** `flatpak install io.github.trufae.Parla.flatpak`
+
+**AppImage:** `make appimage`
 </details>
 
 <details>
