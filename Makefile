@@ -6,6 +6,7 @@ BUILD_DIR?=builddir
 BUILDTYPE?=debug
 UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
+MACOS_APP_DIR?=dist/macos/Parla.app
 
 .PHONY: all run clean install uninstall deb app dmg appimage
 
@@ -13,8 +14,14 @@ all:
 	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; fi
 	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
 
+ifeq ($(UNAME_S),Darwin)
+run: all
+	BUILD_DIR="$(BUILD_DIR)" APP_DIR="$(CURDIR)/$(MACOS_APP_DIR)" PARLA_BUNDLE_CLEAN=0 bash scripts/macos/bundle.sh >/dev/null
+	open -n -W "$(CURDIR)/$(MACOS_APP_DIR)"
+else
 run: all
 	$(RUN_ENV) "./$(BUILD_DIR)/parla"
+endif
 
 clean:
 	rm -rf builddir dist/macos

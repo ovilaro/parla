@@ -29,6 +29,19 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.5.6" date="2026-06-22">
+      <description>
+        <ul>
+          <li>Add appImage</li>
+          <li>Switch between chats with Control+PageUp/Down</li>
+          <li>Highlight input field when in focus</li>
+          <li>Fix message bubble containing pictures</li>
+          <li>Fix audio messages playing muted</li>
+          <li>Workaround a macos/gtk4 clipboard bug (feature flag)</li>
+          <li>Add compile time option to hardcode jsonrpc server path</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.4" date="2026-06-21">
       <description>
         <ul>

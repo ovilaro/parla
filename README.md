@@ -117,7 +117,7 @@ brew install meson ninja vala pkgconf gtk4 libadwaita json-glib librsvg glib-net
 pip install deltachat-rpc-server
 # Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
 
-make run   # builds and runs builddir/parla
+make run   # builds and runs dist/macos/Parla.app
 make app   # creates dist/macos/Parla.app
 make dmg   # creates dist/macos/Parla-<version>-<arch>.dmg
 ```

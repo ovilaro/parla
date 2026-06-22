@@ -109,7 +109,7 @@ jobs:
             create-dmg
 
       - name: Build
-        run: scripts/macos/build.sh
+        run: make BUILDTYPE=release
 
       - name: Package DMG
         id: dmg
