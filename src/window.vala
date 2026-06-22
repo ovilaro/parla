@@ -2119,6 +2119,12 @@ namespace Dc {
 #endif
 
             switch (lower_key) {
+            case Gdk.Key.Page_Up:
+            case Gdk.Key.KP_Page_Up:
+                return select_adjacent_chat (-1);
+            case Gdk.Key.Page_Down:
+            case Gdk.Key.KP_Page_Down:
+                return select_adjacent_chat (1);
             case Gdk.Key.Tab:
             case Gdk.Key.ISO_Left_Tab:
             case Gdk.Key.KP_Tab:
@@ -2386,8 +2392,8 @@ namespace Dc {
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
             "Account menu",          "<Primary><Shift>a",
-            "Next conversation",     "<Primary>Tab",
-            "Previous conversation", "<Primary><Shift>Tab",
+            "Next conversation",     "<Primary>Page_Down",
+            "Previous conversation", "<Primary>Page_Up",
             "Refresh messages",      "<Primary>r",
             "Toggle sidebar",        "<Primary>s",
             "Compact sidebar",       "<Primary><Shift>s",
