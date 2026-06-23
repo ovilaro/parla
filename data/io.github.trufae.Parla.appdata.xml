@@ -29,6 +29,14 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.5.8" date="2026-06-23">
+      <description>
+        <ul>
+          <li>System program media playback as fallback</li>
+          <li>Fix the conversation scroll to top bug</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.6" date="2026-06-22">
       <description>
         <ul>
