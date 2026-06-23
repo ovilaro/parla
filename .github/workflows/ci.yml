@@ -88,6 +88,44 @@ jobs:
           bundle: parla-${{ matrix.arch }}.flatpak
           cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('dist/flatpak/io.github.trufae.Parla.json') }}
 
+  build-appimage:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson \
+            ninja-build \
+            valac \
+            libglib2.0-dev \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libjson-glib-dev \
+            make \
+            curl \
+            python3
+
+      - name: Package AppImage
+        run: make appimage ARCH=${{ matrix.arch }}
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: parla-appimage-${{ matrix.arch }}
+          path: dist/appimage/out/*.AppImage
+          if-no-files-found: error
+
   build-macos:
     runs-on: macos-26
     steps:
@@ -132,7 +170,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-deb, build-flatpak, build-macos]
+    needs: [build-deb, build-flatpak, build-appimage, build-macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Download artifacts
@@ -146,10 +184,11 @@ jobs:
           shopt -s nullglob globstar
           debs=(artifacts/**/*.deb)
           flatpaks=(artifacts/**/*.flatpak)
+          appimages=(artifacts/**/*.AppImage)
           dmgs=(artifacts/**/*.dmg)
-          if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#dmgs[@]} == 0 )); then
+          if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#appimages[@]} == 0 || ${#dmgs[@]} == 0 )); then
             find artifacts -maxdepth 4 -type f
-            echo "::error::Missing release artifact (.deb, .flatpak, or .dmg)"
+            echo "::error::Missing release artifact (.deb, .flatpak, .AppImage, or .dmg)"
             exit 1
           fi
 
@@ -160,4 +199,5 @@ jobs:
           files: |
             artifacts/**/*.deb
             artifacts/**/*.flatpak
+            artifacts/**/*.AppImage
             artifacts/**/*.dmg

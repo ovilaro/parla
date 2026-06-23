@@ -113,7 +113,7 @@ make run
 ```sh
 brew install meson ninja vala pkgconf gtk4 libadwaita json-glib librsvg glib-networking adwaita-icon-theme create-dmg
 
-# Install the RPC backend for source builds and Finder-launched app bundles.
+# Install the RPC backend for source builds.
 pip install deltachat-rpc-server
 # Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
 
@@ -122,10 +122,9 @@ make app   # creates dist/macos/Parla.app
 make dmg   # creates dist/macos/Parla-<version>-<arch>.dmg
 ```
 
-`make app` bundles Homebrew GTK/libadwaita libraries and copies
-`deltachat-rpc-server` into `Parla.app` when it is available in `PATH`.
-Set `PARLA_BUNDLE_RPC_SERVER=/absolute/path/to/deltachat-rpc-server` to force
-a specific backend binary.
+`make app` bundles Homebrew GTK/libadwaita libraries. The RPC backend is not
+bundled by default; set `PARLA_BUNDLE_RPC_SERVER=/absolute/path/to/deltachat-rpc-server`
+only for a local bundle that should include a specific backend binary.
 </details>
 
 See [docs/rpc-server.md](docs/rpc-server.md) for how Parla finds the JSON-RPC

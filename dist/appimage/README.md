@@ -12,9 +12,8 @@ The build writes:
 - `dist/appimage/out/Parla-<version>-<arch>.AppImage`
 - downloaded packaging tools under `dist/appimage/tools`
 
-By default the script bundles `deltachat-rpc-server` from `PATH`; if it is not
-installed locally, it downloads the pinned release asset from the Flatpak
-manifest and verifies its SHA-256 checksum.
+The RPC backend is not bundled by default. Set `PARLA_APPIMAGE_RPC_SERVER` only
+for a local AppImage that should include a specific backend binary.
 
 Useful overrides:
 

@@ -190,15 +190,14 @@ if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
     copy_file "$(command -v gdk-pixbuf-query-loaders)" "$RESOURCES/bin/gdk-pixbuf-query-loaders"
 fi
 
-rpc_server="${PARLA_BUNDLE_RPC_SERVER:-${PARLA_RPC_SERVER:-}}"
-if [ -z "$rpc_server" ] && command -v deltachat-rpc-server >/dev/null 2>&1; then
-    rpc_server="$(command -v deltachat-rpc-server)"
-fi
-if [ -n "$rpc_server" ] && [ -x "$rpc_server" ]; then
+rpc_server="${PARLA_BUNDLE_RPC_SERVER:-}"
+if [ -n "$rpc_server" ]; then
+    if [ ! -x "$rpc_server" ]; then
+        echo "error: PARLA_BUNDLE_RPC_SERVER is not executable: $rpc_server" >&2
+        exit 1
+    fi
     cp "$rpc_server" "$MACOS/deltachat-rpc-server"
     chmod 755 "$MACOS/deltachat-rpc-server"
-else
-    echo "warning: deltachat-rpc-server not bundled; install it separately or set PARLA_BUNDLE_RPC_SERVER" >&2
 fi
 
 make_icon
@@ -215,7 +214,16 @@ print(os.path.relpath(sys.argv[2], sys.argv[1]))
 PY
 }
 
-declare -A processed
+processed=()
+
+processed_contains() {
+    local needle="$1"
+    local item
+    for item in "${processed[@]}"; do
+        [ "$item" = "$needle" ] && return 0
+    done
+    return 1
+}
 
 bundle_macho() {
     local file="$1"
@@ -224,10 +232,10 @@ bundle_macho() {
 
     local real
     real="$(cd "$(dirname "$file")" && pwd -P)/$(basename "$file")"
-    if [ "${processed[$real]+set}" = set ]; then
+    if processed_contains "$real"; then
         return 0
     fi
-    processed[$real]=1
+    processed[${#processed[@]}]="$real"
 
     chmod u+w "$file" 2>/dev/null || true
 

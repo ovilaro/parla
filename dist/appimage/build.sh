@@ -17,7 +17,6 @@ APPIMAGE_NAME="${APPIMAGE_NAME:-Parla-$VERSION-$ARCH.AppImage}"
 LINUXDEPLOY="${LINUXDEPLOY:-$TOOLS_DIR/linuxdeploy-$ARCH.AppImage}"
 APPIMAGETOOL="${APPIMAGETOOL:-$TOOLS_DIR/appimagetool-$ARCH.AppImage}"
 GTK_PLUGIN="${GTK_PLUGIN:-$TOOLS_DIR/linuxdeploy-plugin-gtk.sh}"
-MANIFEST="$ROOT/dist/flatpak/io.github.trufae.Parla.json"
 RPC_BIN="deltachat-rpc-server"
 
 download() {
@@ -44,64 +43,19 @@ download_tools() {
     fi
 }
 
-sha256_file() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$1" | awk '{ print $1 }'
-    else
-        shasum -a 256 "$1" | awk '{ print $1 }'
-    fi
-}
-
-rpc_manifest_entry() {
-    python3 - "$MANIFEST" "$ARCH" <<'PY'
-import json
-import sys
-
-manifest, arch = sys.argv[1], sys.argv[2]
-with open(manifest, encoding="utf-8") as f:
-    data = json.load(f)
-
-for module in data.get("modules", []):
-    if module.get("name") != "deltachat-rpc-server":
-        continue
-    for source in module.get("sources", []):
-        if source.get("type") == "file" and arch in source.get("only-arches", []):
-            print(source["url"])
-            print(source["sha256"])
-            raise SystemExit(0)
-
-raise SystemExit(f"No deltachat-rpc-server source for {arch}")
-PY
-}
-
 install_rpc_server() {
     local dst="$APPDIR/usr/bin/$RPC_BIN"
     local src="${PARLA_APPIMAGE_RPC_SERVER:-}"
 
-    if [ -z "$src" ] && command -v "$RPC_BIN" >/dev/null 2>&1; then
-        src="$(command -v "$RPC_BIN")"
+    if [ -z "$src" ]; then
+        return 0
     fi
-
-    mkdir -p "$(dirname "$dst")"
-    if [ -n "$src" ]; then
-        install -Dm755 "$src" "$dst"
-        return
-    fi
-
-    local rpc_entry url sha tmp actual
-    mapfile -t rpc_entry < <(rpc_manifest_entry)
-    url="${rpc_entry[0]}"
-    sha="${rpc_entry[1]}"
-    tmp="$TOOLS_DIR/$RPC_BIN-$ARCH"
-    download "$url" "$tmp"
-    actual="$(sha256_file "$tmp")"
-    if [ "$actual" != "$sha" ]; then
-        echo "Checksum mismatch for $tmp" >&2
-        echo "expected: $sha" >&2
-        echo "actual:   $actual" >&2
+    if [ ! -x "$src" ]; then
+        echo "PARLA_APPIMAGE_RPC_SERVER is not executable: $src" >&2
         exit 1
     fi
-    install -Dm755 "$tmp" "$dst"
+
+    install -Dm755 "$src" "$dst"
 }
 
 write_apprun() {
