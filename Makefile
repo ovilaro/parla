@@ -7,11 +7,17 @@ BUILDTYPE?=debug
 UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
 MACOS_APP_DIR?=dist/macos/Parla.app
+MESON_OPTIONS?=
+
+ifeq ($(UNAME_S),Darwin)
+MACOS_CLIPBOARD_WORKAROUND?=true
+MESON_OPTIONS += -Dmacos_clipboard_workaround=$(MACOS_CLIPBOARD_WORKAROUND)
+endif
 
 .PHONY: all run clean install uninstall deb app dmg appimage
 
 all:
-	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)"; fi
+	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); fi
 	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
 
 ifeq ($(UNAME_S),Darwin)
