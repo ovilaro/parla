@@ -219,6 +219,7 @@ processed=()
 processed_contains() {
     local needle="$1"
     local item
+    [ "${#processed[@]}" -gt 0 ] || return 1
     for item in "${processed[@]}"; do
         [ "$item" = "$needle" ] && return 0
     done
