@@ -67,6 +67,7 @@ namespace Dc {
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
+        public bool system_audio_player { get; set; default = false; }
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public bool rpc_check_updates_on_startup { get; set; default = true; }
@@ -124,6 +125,8 @@ namespace Dc {
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
+            system_audio_player = kf_bool (kf, "system_audio_player", false);
+            AudioPlayer.prefer_system = system_audio_player;
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
             int source = kf_enum (kf, "rpc_server_source",
                                   (int) RpcServerSource.AUTO, 1);
@@ -194,6 +197,12 @@ namespace Dc {
         public void save_minimize_to_tray (bool v) {
             minimize_to_tray = v;
             save_bool ("minimize_to_tray", v);
+        }
+
+        public void save_system_audio_player (bool v) {
+            system_audio_player = v;
+            AudioPlayer.prefer_system = v;
+            save_bool ("system_audio_player", v);
         }
 
         public void save_rpc_server_path (string v) {
@@ -475,6 +484,18 @@ namespace Dc {
             });
 
             behavior_list.append (notif_row);
+
+            var audio_row = action_row (
+                "System audio player",
+                "Spawn afplay/gst-play/mpv to play voice messages instead of "
+                + "the built-in GTK media backend");
+            var audio_switch = row_switch (
+                audio_row, app_window.settings.system_audio_player);
+            audio_switch.notify["active"].connect (() => {
+                app_window.settings.save_system_audio_player (audio_switch.active);
+            });
+
+            behavior_list.append (audio_row);
 
             /* The tray is a StatusNotifierItem exported over the session
                D-Bus with no watcher on macOS, so the option is Linux-only. */

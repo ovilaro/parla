@@ -2,22 +2,26 @@ namespace Dc {
 
     /**
      * Compact inline player for audio / voice attachments: a single
-     * play/stop button plus the file name — no bulky media-controls bar.
+     * play/stop button plus the file name.
      *
-     * Playback quirk this works around: a bare Gtk.MediaFile never actually
-     * plays (it prepares asynchronously and a manual play() is dropped), and
-     * even a realized stream won't start on a manual play() — only a mapped
-     * Gtk.Video with autoplay=true reliably drives the GStreamer pipeline,
-     * and once paused it won't resume. So the engine is a hidden Gtk.Video
-     * (controls removed, opacity 0) created fresh on each play and torn down
-     * to stop. pause() does work, which lets us halt cleanly.
+     * On Linux, GTK4's gstreamer media backend drives Gtk.MediaFile fine.
+     * macOS brew's gtk4 ships without a media backend, so MediaFile is a
+     * silent no-op there — we shell out to afplay instead. The same
+     * shell-out path is also available on Linux via gst-play-1.0/mpv/
+     * ffplay, opt-in through the "System audio player" setting.
      */
     public class AudioPlayer : Gtk.Box {
 
+        /* Set by SettingsManager. When true, prefer the external player even
+           when the GTK media backend is available. */
+        public static bool prefer_system = false;
+
         private string path;
         private Gtk.Button btn;
-        private Gtk.Overlay host;
-        private Gtk.Video? engine = null;
+        private Gtk.MediaFile? media = null;
+        private GLib.Subprocess? proc = null;
+        private Posix.pid_t proc_pid = 0;
+        private GLib.Cancellable? proc_cancel = null;
 
         public AudioPlayer (string path, string? name) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
@@ -30,13 +34,7 @@ namespace Dc {
             btn.valign = Gtk.Align.CENTER;
             btn.tooltip_text = "Play";
             btn.clicked.connect (toggle);
-
-            /* The hidden Gtk.Video engine lives as an overlay on top of the
-               button so it adds no width of its own. */
-            host = new Gtk.Overlay ();
-            host.child = btn;
-            host.valign = Gtk.Align.CENTER;
-            append (host);
+            append (btn);
 
             var label = new Gtk.Label (
                 (name != null && name.length > 0) ? name : "Voice message");
@@ -49,44 +47,89 @@ namespace Dc {
         }
 
         private void toggle () {
-            if (engine != null) stop ();
+            if (media != null || proc != null) stop ();
             else play ();
         }
 
         private void play () {
             stop ();
-            var e = new Gtk.Video ();
-            e.autoplay = true;
-            e.loop = false;
-            e.can_target = false;
-            e.opacity = 0;
-            e.set_size_request (0, 0);
-            e.set_filename (path);
-            hide_controls (e);
-            host.add_overlay (e);
-            engine = e;
-
-            var st = e.get_media_stream ();
-            if (st != null) {
-                st.notify["playing"].connect (() => {
-                    if (engine == null) return;
-                    var s = engine.get_media_stream ();
-                    /* A play stream only flips to "not playing" when it ends
-                       (we pause explicitly via stop()), so reset to idle. */
-                    if (s == null || !s.playing) stop ();
-                    else set_playing_visuals (true);
-                });
+            /* macOS has no usable GTK media backend in brew's gtk4, so the
+               external path is mandatory there regardless of the setting. */
+            bool try_external = prefer_system || Platform.is_macos ();
+            if (try_external) {
+                var argv = find_external_command ();
+                if (argv != null && play_external (argv)) {
+                    set_playing_visuals (true);
+                    return;
+                }
             }
+            play_media ();
             set_playing_visuals (true);
         }
 
+        private string[]? find_external_command () {
+            if (Environment.find_program_in_path ("afplay") != null)
+                return {"afplay", path};
+            if (Environment.find_program_in_path ("gst-play-1.0") != null)
+                return {"gst-play-1.0", "--quiet", path};
+            if (Environment.find_program_in_path ("mpv") != null)
+                return {"mpv", "--no-video", "--really-quiet", path};
+            if (Environment.find_program_in_path ("ffplay") != null)
+                return {"ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path};
+            return null;
+        }
+
+        private bool play_external (string[] argv) {
+            try {
+                var launcher = new GLib.SubprocessLauncher (
+                    SubprocessFlags.STDOUT_SILENCE | SubprocessFlags.STDERR_SILENCE);
+                var p = launcher.spawnv (argv);
+                proc = p;
+                var pid_str = p.get_identifier ();
+                proc_pid = pid_str != null ? (Posix.pid_t) int.parse (pid_str) : 0;
+                proc_cancel = new GLib.Cancellable ();
+                p.wait_async.begin (proc_cancel, (obj, res) => {
+                    try { p.wait_async.end (res); } catch (Error e) { /* cancelled */ }
+                    if (proc == p) stop ();
+                });
+                return true;
+            } catch (Error e) {
+                warning ("audio: failed to spawn %s: %s", argv[0], e.message);
+                return false;
+            }
+        }
+
+        private void play_media () {
+            var m = Gtk.MediaFile.for_filename (path);
+            media = m;
+            m.notify["ended"].connect (() => {
+                if (media == m && m.ended) stop ();
+            });
+            m.notify["error"].connect (() => {
+                if (media == m && m.error != null) stop ();
+            });
+            m.play_now ();
+        }
+
         private void stop () {
-            var e = engine;
-            engine = null;
-            if (e != null) {
-                var st = e.get_media_stream ();
-                if (st != null) st.pause ();
-                host.remove_overlay (e);
+            if (proc_pid > 0) {
+                /* Posix.kill directly because g_subprocess_force_exit can be
+                   a no-op in some bundled-on-macOS scenarios; SIGTERM first so
+                   children clean up, SIGKILL as backstop. */
+                Posix.kill (proc_pid, Posix.Signal.TERM);
+                Posix.kill (proc_pid, Posix.Signal.KILL);
+                proc_pid = 0;
+            }
+            if (proc != null) {
+                proc = null;
+            }
+            if (proc_cancel != null) {
+                proc_cancel.cancel ();
+                proc_cancel = null;
+            }
+            if (media != null) {
+                media.pause ();
+                media = null;
             }
             set_playing_visuals (false);
         }
@@ -96,15 +139,6 @@ namespace Dc {
                 ? "media-playback-stop-symbolic"
                 : "media-playback-start-symbolic";
             btn.tooltip_text = playing ? "Stop" : "Play";
-        }
-
-        /* Remove Gtk.Video's built-in controls so the engine collapses to a
-           zero-sized, invisible playback surface. */
-        private static void hide_controls (Gtk.Widget w) {
-            for (var c = w.get_first_child (); c != null; c = c.get_next_sibling ()) {
-                if (c is Gtk.MediaControls) c.visible = false;
-                hide_controls (c);
-            }
         }
     }
 }
