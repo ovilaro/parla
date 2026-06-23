@@ -117,6 +117,10 @@ jobs:
           version=$(awk -F"'" '/version:/ { print $2; exit }' meson.build)
           VERSION="$version" scripts/macos/package-dmg.sh | tee /tmp/parla-dmg.log
           dmg=$(tail -n 1 /tmp/parla-dmg.log)
+          test -f "$dmg"
+          case "$dmg" in
+            "$PWD"/*) dmg="${dmg#"$PWD"/}" ;;
+          esac
           echo "path=$dmg" >> "$GITHUB_OUTPUT"
 
       - name: Upload DMG artifact
@@ -124,6 +128,7 @@ jobs:
         with:
           name: parla-macos-dmg
           path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -136,9 +141,22 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Verify release artifacts
+        run: |
+          shopt -s nullglob globstar
+          debs=(artifacts/**/*.deb)
+          flatpaks=(artifacts/**/*.flatpak)
+          dmgs=(artifacts/**/*.dmg)
+          if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#dmgs[@]} == 0 )); then
+            find artifacts -maxdepth 4 -type f
+            echo "::error::Missing release artifact (.deb, .flatpak, or .dmg)"
+            exit 1
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
+          fail_on_unmatched_files: true
           files: |
             artifacts/**/*.deb
             artifacts/**/*.flatpak
