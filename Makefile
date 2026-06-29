@@ -8,13 +8,14 @@ UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
 MACOS_APP_DIR?=dist/macos/Parla.app
 MESON_OPTIONS?=
+SANITIZER_DEBUG_OPTIONS=-Dstrip=false -Dvala_args=--debug -Dc_args=-g
 
 ifeq ($(UNAME_S),Darwin)
 MACOS_CLIPBOARD_WORKAROUND?=true
 MESON_OPTIONS += -Dmacos_clipboard_workaround=$(MACOS_CLIPBOARD_WORKAROUND)
 endif
 
-.PHONY: all asan run clean install uninstall deb app dmg appimage
+.PHONY: all asan tsan run clean install uninstall deb app dmg appimage
 
 all:
 	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); fi
@@ -22,8 +23,13 @@ all:
 
 asan: BUILD_DIR=builddir-asan
 asan: BUILDTYPE=debug
-asan: MESON_OPTIONS += -Db_sanitize=address -Dstrip=false -Dvala_args=--debug -Dc_args=-g
+asan: MESON_OPTIONS += -Db_sanitize=address $(SANITIZER_DEBUG_OPTIONS)
 asan: all
+
+tsan: BUILD_DIR=builddir-tsan
+tsan: BUILDTYPE=debug
+tsan: MESON_OPTIONS += -Db_sanitize=thread $(SANITIZER_DEBUG_OPTIONS)
+tsan: all
 
 ifeq ($(UNAME_S),Darwin)
 run: all
@@ -35,7 +41,7 @@ run: all
 endif
 
 clean:
-	rm -rf builddir builddir-asan dist/macos
+	rm -rf builddir builddir-asan builddir-tsan dist/macos
 
 install: all
 	DESTDIR="$(DESTDIR)" meson install -C "$(BUILD_DIR)"
