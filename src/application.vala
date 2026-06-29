@@ -35,6 +35,22 @@ namespace Dc {
             rpc = new RpcClient ();
         }
 
+        public void apply_theme_override (ThemeOverride theme) {
+            var style = Adw.StyleManager.get_default ();
+            switch (theme) {
+            case ThemeOverride.LIGHT:
+                style.color_scheme = Adw.ColorScheme.FORCE_LIGHT;
+                break;
+            case ThemeOverride.DARK:
+                style.color_scheme = Adw.ColorScheme.FORCE_DARK;
+                break;
+            case ThemeOverride.SYSTEM:
+            default:
+                style.color_scheme = Adw.ColorScheme.DEFAULT;
+                break;
+            }
+        }
+
         public void reset_rpc_client () {
             rpc.stop ();
             rpc = new RpcClient ();
@@ -212,6 +228,7 @@ namespace Dc {
                build_ui) leaves already-styled widgets blue until a re-apply. */
             var settings = new SettingsManager ();
             settings.load ();
+            apply_theme_override (settings.theme_override);
             apply_accent_color (settings.accent_color);
             apply_background (settings.background_mode, settings.background_color);
             apply_font (

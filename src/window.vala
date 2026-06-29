@@ -205,6 +205,7 @@ namespace Dc {
             MessageRow.set_media_scale (
                 settings.font_size,
                 SettingsManager.system_font_size ());
+            app.apply_theme_override (settings.theme_override);
             app.apply_accent_color (settings.accent_color);
             app.apply_background (
                 settings.background_mode, settings.background_color);

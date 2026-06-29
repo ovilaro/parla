@@ -13,6 +13,12 @@ namespace Dc {
         HIDDEN = 2
     }
 
+    public enum ThemeOverride {
+        SYSTEM = 0,
+        LIGHT = 1,
+        DARK = 2;
+    }
+
     public enum MessageStyle {
         BUBBLES = 0,
         IRC = 1;
@@ -73,6 +79,7 @@ namespace Dc {
         public bool rpc_check_updates_on_startup { get; set; default = true; }
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
         public string default_account_addr { get; set; default = ""; }
+        public ThemeOverride theme_override { get; set; default = ThemeOverride.SYSTEM; }
         public MessageStyle message_style { get; set; default = MessageStyle.BUBBLES; }
         public BubbleAvatarDisplay bubble_avatar_display { get; set; default = BubbleAvatarDisplay.NONE; }
         public bool bubble_avatars_in_direct_chats { get; set; default = false; }
@@ -136,6 +143,9 @@ namespace Dc {
             int sb = kf_enum (kf, "sidebar_mode", (int) SidebarMode.FULL, 2);
             sidebar_mode = (SidebarMode) sb;
             default_account_addr = kf_str (kf, "default_account_addr", "");
+            int theme = kf_enum (kf, "theme_override",
+                                 (int) ThemeOverride.SYSTEM, 2);
+            theme_override = (ThemeOverride) theme;
             int ms = kf_enum (kf, "message_style",
                               (int) MessageStyle.BUBBLES, 1);
             message_style = (MessageStyle) ms;
@@ -228,6 +238,11 @@ namespace Dc {
         public void save_default_account_addr (string v) {
             default_account_addr = v;
             save_string ("default_account_addr", v);
+        }
+
+        public void save_theme_override (ThemeOverride v) {
+            theme_override = v;
+            save_int ("theme_override", (int) v);
         }
 
         public void save_message_style (MessageStyle v) {
@@ -514,6 +529,20 @@ namespace Dc {
             }
 
             var appearance_list = settings_list ("Appearance");
+
+            var theme_row = action_row (
+                "GTK theme",
+                "Override the system light or dark theme");
+
+            string[] theme_labels = { "System", "Light", "Dark" };
+            var theme_combo = row_dropdown (theme_row, theme_labels,
+                (uint) app_window.settings.theme_override);
+            theme_combo.notify["selected"].connect (() => {
+                app_window.settings.save_theme_override (
+                    (ThemeOverride) theme_combo.selected);
+                apply_theme_override ();
+            });
+            appearance_list.append (theme_row);
 
             var style_row = action_row (
                 "Message style",
@@ -1200,6 +1229,11 @@ namespace Dc {
             ((Dc.Application) app_window.application).apply_background (
                 app_window.settings.background_mode,
                 app_window.settings.background_color);
+        }
+
+        private void apply_theme_override () {
+            ((Dc.Application) app_window.application).apply_theme_override (
+                app_window.settings.theme_override);
         }
 
         private static void apply_hex_to_button (Gtk.ColorDialogButton btn,
