@@ -2171,6 +2171,11 @@ namespace Dc {
             case Gdk.Key.r:
                 refresh_current_chat ();
                 return true;
+            case Gdk.Key.i:
+                if (current_chat_id > 0 && chat_menu != null) {
+                    chat_menu.show_info (current_chat_id);
+                }
+                return true;
             case Gdk.Key.s:
                 if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
                     toggle_sidebar_width ();
@@ -2389,6 +2394,7 @@ namespace Dc {
             "Increase font size",     "<Primary>plus",
             "Decrease font size",     "<Primary>minus",
             "Reset font size",        "<Primary>0",
+            "Open chat info",        "<Primary>i",
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
             "Account menu",          "<Primary><Shift>a",

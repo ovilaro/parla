@@ -72,6 +72,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 | Next conversation | `Ctrl+Page Down` | `Command+Page Down` |
 | Previous conversation | `Ctrl+Page Up` | `Command+Page Up` |
 | Search in conversation | `Ctrl+F` | `Command+F` |
+| Open chat info | `Ctrl+I` | `Command+I` |
 | Focus compose entry | `Esc` | `Esc` |
 | Refresh | `Ctrl+R` | `Command+R` |
 | Toggle sidebar | `Ctrl+S` | `Command+S` |

@@ -234,7 +234,7 @@ namespace Dc {
             append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
                 () => { toggle_pin.begin (chat_id, is_pinned); });
             append_menu_button (box, popover, "Details…",
-                () => { show_info.begin (chat_id); });
+                () => { show_info (chat_id); });
             append_menu_button (box, popover, "Delete…",
                 () => { confirm_delete.begin (chat_id); }, true);
 
@@ -275,7 +275,7 @@ namespace Dc {
             }
         }
 
-        private async void show_info (int chat_id) {
+        public void show_info (int chat_id) {
             var dialog = new ChatInfoDialog (rpc, chat_id);
 
             dialog.chat_deleted.connect ((cid) => {
