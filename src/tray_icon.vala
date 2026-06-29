@@ -236,11 +236,25 @@ namespace Dc {
             conn = connection;
             item = new StatusNotifierItem ();
             menu = new TrayMenu ();
-            item.activate_requested.connect (() => show_requested ());
-            menu.show_requested.connect (() => show_requested ());
-            menu.quit_requested.connect (() => quit_requested ());
-            menu.notifications_toggle_requested.connect (
-                (v) => notifications_toggle_requested (v));
+            item.activate_requested.connect (() => {
+                emit_on_main (() => { show_requested (); });
+            });
+            menu.show_requested.connect (() => {
+                emit_on_main (() => { show_requested (); });
+            });
+            menu.quit_requested.connect (() => {
+                emit_on_main (() => { quit_requested (); });
+            });
+            menu.notifications_toggle_requested.connect ((v) => {
+                emit_on_main (() => { notifications_toggle_requested (v); });
+            });
+        }
+
+        private void emit_on_main (owned VoidFunc action) {
+            Idle.add (() => {
+                action ();
+                return Source.REMOVE;
+            });
         }
 
         public void set_notifications_enabled (bool enabled) {
