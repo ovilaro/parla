@@ -26,6 +26,7 @@ namespace Dc {
                                        double x, double y,
                                        Gtk.Widget parent) {
             var popover = new Gtk.Popover ();
+            popover.autohide = false;
 
             var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
             vbox.margin_start = 4;
