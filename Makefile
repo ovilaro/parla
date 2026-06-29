@@ -14,11 +14,16 @@ MACOS_CLIPBOARD_WORKAROUND?=true
 MESON_OPTIONS += -Dmacos_clipboard_workaround=$(MACOS_CLIPBOARD_WORKAROUND)
 endif
 
-.PHONY: all run clean install uninstall deb app dmg appimage
+.PHONY: all asan run clean install uninstall deb app dmg appimage
 
 all:
 	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); fi
 	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
+
+asan: BUILD_DIR=builddir-asan
+asan: BUILDTYPE=debug
+asan: MESON_OPTIONS += -Db_sanitize=address -Dstrip=false -Dvala_args=--debug -Dc_args=-g
+asan: all
 
 ifeq ($(UNAME_S),Darwin)
 run: all
@@ -30,7 +35,7 @@ run: all
 endif
 
 clean:
-	rm -rf builddir dist/macos
+	rm -rf builddir builddir-asan dist/macos
 
 install: all
 	DESTDIR="$(DESTDIR)" meson install -C "$(BUILD_DIR)"
