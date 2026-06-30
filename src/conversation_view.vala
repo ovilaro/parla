@@ -179,7 +179,7 @@ namespace Dc {
                 /* Let clicks on the selectable message text fall through to
                    the label so it can position the cursor and select words,
                    instead of triggering the reply/react action. */
-                if (pointer_on_selectable_text (x, y) || pointer_on_media (x, y)) {
+                if (pointer_on_selectable_text (x, y) || pointer_on_audio (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -197,7 +197,11 @@ namespace Dc {
                     dc_last_id = row.message_id;
                     dc_last_time = now;
                     var msg = find_message (message_store, row.message_id);
-                    if (msg != null) on_message_activated (msg);
+                    if (msg != null &&
+                        should_activate_message_at_pointer (
+                            msg, pointer_on_visual_media (x, y))) {
+                        on_message_activated (msg);
+                    }
                 }
             });
             message_listview.add_controller (dc);
@@ -928,13 +932,33 @@ namespace Dc {
         /* True when the pointer sits over the inline audio player. Its own
            play/stop button drives playback, so the press must reach it rather
            than triggering the row action or arming a double-click reaction. */
-        private bool pointer_on_media (double x, double y) {
+        private bool pointer_on_audio (double x, double y) {
             var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
             while (w != null && !(w is MessageRow)) {
                 if (w is AudioPlayer) return true;
                 w = w.get_parent ();
             }
             return false;
+        }
+
+        private bool pointer_on_visual_media (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                if (w.has_css_class ("message-image") ||
+                    w.has_css_class ("message-video-frame")) {
+                    return true;
+                }
+                w = w.get_parent ();
+            }
+            return false;
+        }
+
+        private bool should_activate_message_at_pointer (
+                Message msg, bool pointer_on_media) {
+            if (msg.is_image_file () || msg.is_video_file ()) {
+                return pointer_on_media;
+            }
+            return true;
         }
 
         private void on_message_activated (Message msg) {
