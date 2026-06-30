@@ -477,6 +477,17 @@ namespace Dc {
             return ids;
         }
 
+        private bool selected_messages_all_outgoing () {
+            bool found = false;
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                if (!msg.selected) continue;
+                found = true;
+                if (!msg.is_outgoing) return false;
+            }
+            return found;
+        }
+
         private void update_selection_actions () {
             if (selection_delete_btn == null || selection_forward_btn == null) {
                 return;
@@ -496,18 +507,34 @@ namespace Dc {
         private void delete_selected_messages () {
             int[] ids = selected_message_ids ();
             if (ids.length == 0) return;
-            string body = ids.length == 1
-                ? "Delete the selected message from your device? This cannot be undone."
-                : "Delete %d selected messages from your device? This cannot be undone.".printf (ids.length);
-            confirm_action (window, "Delete Messages?", body, "delete",
-                "Delete", () => {
-                    delete_selected_messages_confirmed.begin (ids);
-                });
+            string title = ids.length == 1
+                ? "Delete Message?"
+                : "Delete Messages?";
+            if (selected_messages_all_outgoing ()) {
+                string body = ids.length == 1
+                    ? "Delete the selected message from your device only, or from all participants? This cannot be undone."
+                    : "Delete %d selected messages from your device only, or from all participants? This cannot be undone.".printf (ids.length);
+                confirm_delete_options (window, title, body,
+                    () => { delete_selected_messages_confirmed.begin (ids, false); },
+                    () => { delete_selected_messages_confirmed.begin (ids, true); });
+            } else {
+                string body = ids.length == 1
+                    ? "Delete the selected message from your device? This cannot be undone."
+                    : "Delete %d selected messages from your device? This cannot be undone.".printf (ids.length);
+                confirm_delete_options (window, title, body,
+                    () => { delete_selected_messages_confirmed.begin (ids, false); },
+                    null);
+            }
         }
 
-        private async void delete_selected_messages_confirmed (int[] ids) {
+        private async void delete_selected_messages_confirmed (int[] ids,
+                                                               bool for_all) {
             try {
-                yield rpc.delete_messages (ids);
+                if (for_all) {
+                    yield rpc.delete_messages_for_all (ids);
+                } else {
+                    yield rpc.delete_messages (ids);
+                }
                 for (int i = ids.length - 1; i >= 0; i--) {
                     int idx = find_message_index (message_store, ids[i]);
                     if (idx >= 0) message_store.remove (idx);
