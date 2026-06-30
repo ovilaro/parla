@@ -530,7 +530,7 @@ namespace Dc {
                 var tray_switch = row_switch (
                     tray_row, app_window.settings.minimize_to_tray);
                 tray_switch.notify["active"].connect (() => {
-                    app_window.settings.save_minimize_to_tray (tray_switch.active);
+                    app_window.set_minimize_to_tray (tray_switch.active);
                 });
 
                 behavior_list.append (tray_row);
@@ -1229,7 +1229,7 @@ namespace Dc {
                 "Your Delta Chat accounts and messages are not affected.",
                 "reset", "Reset & Close", () => {
                     delete_parla_config ();
-                    app_window.application.quit ();
+                    app_window.quit_application ();
                 });
         }
 

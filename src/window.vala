@@ -127,6 +127,7 @@ namespace Dc {
 
         private TrayIcon? tray = null;
         private bool held_in_background = false;
+        private bool quit_requested = false;
         private NativeFileDropTarget? native_file_drop_target;
 
         /* Set after an Escape that had nothing transient to dismiss while a
@@ -226,18 +227,42 @@ namespace Dc {
         }
 
         private bool on_close_request () {
+            if (quit_requested) return false;
+
             /* No tray on macOS (see sync_tray) — hiding the window with the
                app held would leave it running with no way back and crashes
                the GTK macOS backend, so always do a normal close there. */
-            if (Platform.is_macos ()) return false;
-            if (!settings.minimize_to_tray && !settings.notifications_enabled)
-                return false;
-            this.set_visible (false);
-            if (!held_in_background) {
-                this.application.hold ();
-                held_in_background = true;
+            if (!Platform.is_macos () && ensure_tray_visible ()) {
+                minimize_to_tray ();
+                return true;
             }
-            return true;
+            release_background_hold ();
+            return false;
+        }
+
+        public void set_minimize_to_tray (bool enabled) {
+            settings.save_minimize_to_tray (enabled);
+            sync_tray ();
+        }
+
+        public void quit_application () { handle_primary_q (); }
+
+        public void handle_primary_q () {
+            quit_requested = true;
+            release_background_hold ();
+            close_active_modal ();
+            if (tray != null) tray.hide ();
+            var app = this.application;
+            this.close ();
+            if (app != null) app.quit ();
+        }
+
+        public void handle_primary_w () {
+            if (ensure_tray_visible ()) {
+                minimize_to_tray ();
+                return;
+            }
+            handle_primary_q ();
         }
 
         private void handle_native_file_drop (string path) {
@@ -255,23 +280,51 @@ namespace Dc {
             /* StatusNotifierItem is a freedesktop/D-Bus protocol with no
                watcher on macOS — the icon can never show up there. */
             if (Platform.is_macos ()) return;
-            if (tray == null && settings.minimize_to_tray) {
+
+            if (!settings.minimize_to_tray) {
+                if (tray != null) tray.hide ();
+                if (held_in_background || !this.visible) restore_from_tray ();
+                else release_background_hold ();
+                return;
+            }
+
+            ensure_tray_visible ();
+        }
+
+        private bool ensure_tray_visible () {
+            if (Platform.is_macos () || !settings.minimize_to_tray) return false;
+
+            if (tray == null) {
                 var conn = this.application.get_dbus_connection ();
-                if (conn == null) return;
+                if (conn == null) return false;
                 tray = new TrayIcon (conn);
                 tray.show_requested.connect (restore_from_tray);
                 tray.quit_requested.connect (() => {
-                    release_background_hold ();
-                    this.application.quit ();
+                    handle_primary_q ();
                 });
                 tray.notifications_toggle_requested.connect ((enabled) => {
                     set_notifications_enabled (enabled);
                 });
             }
-            if (tray == null) return;
+            if (tray == null) return false;
             tray.set_notifications_enabled (settings.notifications_enabled);
-            if (settings.minimize_to_tray) tray.show ();
-            else { tray.hide (); restore_from_tray (); }
+            return tray.show ();
+        }
+
+        private void minimize_to_tray () {
+            close_active_modal ();
+            this.set_visible (false);
+            if (!held_in_background) {
+                this.application.hold ();
+                held_in_background = true;
+            }
+        }
+
+        private void close_active_modal () {
+            if (active_modal == null) return;
+            var dialog = active_modal;
+            active_modal = null;
+            dialog.close ();
         }
 
         public void restore_from_tray () {
@@ -1682,7 +1735,7 @@ namespace Dc {
             window_action ("settings").activate.connect (() => { show_settings_dialog (); });
             window_action ("shortcuts").activate.connect (() => { show_keyboard_shortcuts_dialog (); });
             window_action ("about").activate.connect (() => { show_about_dialog (); });
-            window_action ("quit").activate.connect (() => { this.application.quit (); });
+            window_action ("quit").activate.connect (() => { handle_primary_q (); });
             window_action ("font-increase").activate.connect (() => { adjust_font_size (1); });
             window_action ("font-decrease").activate.connect (() => { adjust_font_size (-1); });
             window_action ("font-reset").activate.connect (() => {
@@ -2215,10 +2268,10 @@ namespace Dc {
                 }
                 return true;
             case Gdk.Key.w:
-                this.close ();
+                handle_primary_w ();
                 return true;
             case Gdk.Key.q:
-                this.application.quit ();
+                handle_primary_q ();
                 return true;
             }
             return false;
