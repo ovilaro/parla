@@ -69,6 +69,7 @@ namespace Dc {
             var m = find_message (message_store, msg_id);
             if (m != null) {
                 m.is_pinned = is_pinned (msg_id);
+                m.notify_property ("is-pinned");
                 refresh_in_store (msg_id);
             }
             update_bar.begin ();

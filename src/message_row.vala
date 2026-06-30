@@ -196,14 +196,9 @@ namespace Dc {
                 bubble.append (build_text_widget (msg, 50));
             }
 
-            /* Timestamp + pin indicator + delivery/read tick */
+            /* Timestamp + delivery/read tick + pin indicator */
             var footer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
             footer.halign = Gtk.Align.END;
-            if (msg.is_pinned) {
-                var pin_icon = new Gtk.Label ("📌");
-                pin_icon.add_css_class ("message-time");
-                footer.append (pin_icon);
-            }
             if (msg.is_edited) {
                 footer.append (build_edited_indicator ("Edited"));
             }
@@ -216,6 +211,7 @@ namespace Dc {
                 var tick = build_tick_indicator (msg);
                 if (tick != null) footer.append (tick);
             }
+            footer.append (build_pin_indicator (msg));
             bubble.append (footer);
 
             /* Reactions */
@@ -330,12 +326,9 @@ namespace Dc {
                     this.append (tick);
                 }
             }
-            if (msg.is_pinned) {
-                var pin_icon = new Gtk.Label ("📌");
-                pin_icon.add_css_class ("message-time");
-                pin_icon.valign = Gtk.Align.START;
-                this.append (pin_icon);
-            }
+            var pin_icon = build_pin_indicator (msg);
+            pin_icon.valign = Gtk.Align.START;
+            this.append (pin_icon);
         }
 
         private void append_attachment (Gtk.Box box, Message msg, bool irc,
@@ -663,6 +656,15 @@ namespace Dc {
             lbl.add_css_class (extra_class);
             if (tooltip != null) lbl.tooltip_text = tooltip;
             return lbl;
+        }
+
+        private static Gtk.Label build_pin_indicator (Message msg) {
+            var pin = new Gtk.Label ("📌");
+            pin.add_css_class ("message-pin");
+            pin.tooltip_text = "Pinned";
+            msg.bind_property ("is-pinned", pin, "visible",
+                               BindingFlags.SYNC_CREATE);
+            return pin;
         }
 
         private Gtk.Button build_quote_block (Message msg,

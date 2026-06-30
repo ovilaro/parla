@@ -623,6 +623,10 @@ namespace Dc {
                 opacity: 1;
                 margin-left: 2px;
             }
+            .message-pin {
+                font-size: small;
+                margin-left: 2px;
+            }
             /* Floating "disconnected" pill over the chat area. */
             .connection-banner {
                 background-color: alpha(@view_fg_color, 0.80);
