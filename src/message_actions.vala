@@ -275,21 +275,23 @@ namespace Dc {
 
         public void start_forwarding_many (int[] msg_ids) {
             if (msg_ids.length == 0) return;
+            int[] forward_ids = msg_ids.copy ();
             var picker = new ContactPickerDialog (rpc, window.chat_store,
                                                   "Forward To");
             picker.chat_picked.connect ((chat_id) => {
-                forward_to_chat.begin (msg_ids, chat_id);
+                forward_to_chat.begin (forward_ids.copy (), chat_id);
             });
             picker.contact_picked.connect ((contact_id, email) => {
-                forward_to_contact.begin (msg_ids, contact_id, email);
+                forward_to_contact.begin (forward_ids.copy (), contact_id, email);
             });
             picker.present (window);
         }
 
-        private async void forward_to_chat (int[] msg_ids, int chat_id) {
+        private async void forward_to_chat (owned int[] msg_ids, int chat_id) {
             try {
                 yield rpc.forward_messages (msg_ids, chat_id);
                 window.request_reload_chats ();
+                window.request_chat_messages_reload (chat_id);
                 window.show_toast (msg_ids.length == 1
                     ? "Message forwarded" : "Messages forwarded");
             } catch (Error e) {
@@ -297,7 +299,7 @@ namespace Dc {
             }
         }
 
-        private async void forward_to_contact (int[] msg_ids, int contact_id,
+        private async void forward_to_contact (owned int[] msg_ids, int contact_id,
                                                 string email) {
             try {
                 int cid = contact_id;
@@ -307,6 +309,7 @@ namespace Dc {
                 int chat_id = yield rpc.get_or_create_chat_by_contact (cid);
                 yield rpc.forward_messages (msg_ids, chat_id);
                 window.request_reload_chats ();
+                window.request_chat_messages_reload (chat_id);
                 window.show_toast (msg_ids.length == 1
                     ? "Message forwarded" : "Messages forwarded");
             } catch (Error e) {

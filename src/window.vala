@@ -842,6 +842,12 @@ namespace Dc {
             if (events != null) events.schedule_messages_reload ();
         }
 
+        public void request_chat_messages_reload (int chat_id) {
+            if (chat_id <= 0) return;
+            var v = views.lookup (chat_id);
+            if (v != null) v.reload_messages.begin ();
+        }
+
         public async void load_chats () {
             if (rpc.account_id <= 0) return;
 
