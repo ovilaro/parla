@@ -82,38 +82,26 @@ namespace Dc {
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            /* Reply + Forward on the same row */
-            var reply_forward_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
-            reply_forward_row.homogeneous = true;
-
-            reply_forward_row.append (menu_button (popover, "Reply", () => {
+            vbox.append (menu_button (popover, "Reply", () => {
                 start_replying (msg_id);
-            }, true));
+            }));
 
-            reply_forward_row.append (menu_button (popover, "Forward\u2026", () => {
+            vbox.append (menu_button (popover, "Forward\u2026", () => {
                 start_forwarding (msg_id);
-            }, true));
-
-            vbox.append (reply_forward_row);
-
-            /* Pin / Edit on the same row, Select below */
-            var message_actions_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
-            message_actions_row.homogeneous = true;
+            }));
 
             bool msg_is_pinned = pinned.is_pinned (msg_id);
-            message_actions_row.append (menu_button (popover,
+            vbox.append (menu_button (popover,
                 msg_is_pinned ? "Unpin" : "Pin",
                 () => {
                     pinned.toggle_pin (msg_id);
-                }, true));
+                }));
 
             if (msg != null && msg.can_edit_text) {
-                message_actions_row.append (menu_button (popover, "Edit", () => {
+                vbox.append (menu_button (popover, "Edit", () => {
                     start_editing (msg_id);
-                }, true));
+                }));
             }
-
-            vbox.append (message_actions_row);
 
             vbox.append (menu_button (popover, "Select...", () => {
                 select_requested (msg_id);
