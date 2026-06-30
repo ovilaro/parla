@@ -127,6 +127,55 @@ namespace Dc {
             });
         }
 
+        public bool has_selectable_text () {
+            return has_selectable_text_in (this);
+        }
+
+        public bool select_all_text () {
+            bool selected = false;
+            bool focused = false;
+            select_all_text_in (this, ref selected, ref focused);
+            return selected;
+        }
+
+        private static bool has_selectable_text_in (Gtk.Widget? widget) {
+            if (widget == null) return false;
+            var label = widget as Gtk.Label;
+            if (label != null && label.selectable &&
+                    label.get_text ().length > 0) {
+                return true;
+            }
+
+            for (Gtk.Widget? child = widget.get_first_child ();
+                    child != null;
+                    child = child.get_next_sibling ()) {
+                if (has_selectable_text_in (child)) return true;
+            }
+            return false;
+        }
+
+        private static void select_all_text_in (Gtk.Widget? widget,
+                                                ref bool selected,
+                                                ref bool focused) {
+            if (widget == null) return;
+            var label = widget as Gtk.Label;
+            if (label != null && label.selectable &&
+                    label.get_text ().length > 0) {
+                if (!focused) {
+                    label.grab_focus ();
+                    focused = true;
+                }
+                label.select_region (0, -1);
+                selected = true;
+            }
+
+            for (Gtk.Widget? child = widget.get_first_child ();
+                    child != null;
+                    child = child.get_next_sibling ()) {
+                select_all_text_in (child, ref selected, ref focused);
+            }
+        }
+
         public MessageRow (Message msg, Message? prev = null,
                            GLib.GenericArray<Message>? trailing_images = null,
                            bool is_image_continuation = false,

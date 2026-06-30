@@ -178,8 +178,8 @@ namespace Dc {
                claims double-click presses before they bubble up, so a
                bubble-phase gesture never sees the second press of a real
                double click. Capturing lets us observe every press first.
-               We still detect the double click by timing consecutive
-               presses on the same row rather than trusting n_press. */
+               Keep the row action timing separate from the standard
+               multi-press text selection count. */
             dc.propagation_phase = Gtk.PropagationPhase.CAPTURE;
             int dc_last_id = -1;
             int64 dc_last_time = 0;
@@ -191,12 +191,17 @@ namespace Dc {
                     dc_last_time = 0;
                     return;
                 }
-                /* Let clicks on selectable message text fall through for
-                   text selection, except when the configured action is to
-                   open the message context menu. */
-                if ((settings.double_click_action != 5 &&
-                        pointer_on_selectable_text (x, y)) ||
-                    pointer_on_audio (x, y)) {
+                bool text_selection_area = pointer_on_selectable_text (x, y) ||
+                    (row.has_selectable_text () &&
+                        pointer_on_message_bubble (x, y));
+                if (n >= 3 && text_selection_area && row.select_all_text ()) {
+                    dc.set_state (Gtk.EventSequenceState.CLAIMED);
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
+                /* Let selectable message text own multi-click selection. */
+                if (text_selection_area || pointer_on_audio (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -1091,6 +1096,11 @@ namespace Dc {
                 w = w.get_parent ();
             }
             return false;
+        }
+
+        private bool pointer_on_message_bubble (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            return w != null && w.has_css_class ("message-bubble");
         }
 
         /* True when the pointer sits over the inline audio player. Its own
