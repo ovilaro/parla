@@ -176,10 +176,12 @@ namespace Dc {
             dc.pressed.connect ((n, x, y) => {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
-                /* Let clicks on the selectable message text fall through to
-                   the label so it can position the cursor and select words,
-                   instead of triggering the reply/react action. */
-                if (pointer_on_selectable_text (x, y) || pointer_on_audio (x, y)) {
+                /* Let clicks on selectable message text fall through for
+                   text selection, except when the configured action is to
+                   open the message context menu. */
+                if ((settings.double_click_action != 5 &&
+                        pointer_on_selectable_text (x, y)) ||
+                    pointer_on_audio (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -192,7 +194,8 @@ namespace Dc {
                 if (row.message_id == dc_last_id && now - dc_last_time <= dct) {
                     dc_last_id = -1;
                     dc_last_time = 0;
-                    msg_actions.handle_double_click (row.message_id);
+                    msg_actions.handle_double_click (row.message_id,
+                        row.is_outgoing, x, y, message_listview);
                 } else {
                     dc_last_id = row.message_id;
                     dc_last_time = now;

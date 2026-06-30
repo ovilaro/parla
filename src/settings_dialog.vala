@@ -126,7 +126,7 @@ namespace Dc {
             var kf = new KeyFile ();
             try { kf.load_from_file (get_config_path (), KeyFileFlags.NONE); }
             catch (Error e) { /* file may not exist — helpers return defaults */ }
-            double_click_action = kf_int (kf, "double_click_action", 0);
+            double_click_action = kf_enum (kf, "double_click_action", 0, 5);
             markdown_rendering = kf_bool (kf, "markdown_rendering", false);
             Markdown.enabled = markdown_rendering;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
@@ -457,13 +457,21 @@ namespace Dc {
                 "React with ❤️",
                 "React with 👍",
                 "Open user profile",
+                "Open context menu",
                 "Do nothing"
             };
 
+            uint dblclick_selected = (uint) app_window.settings.double_click_action;
+            if (dblclick_selected == 4) dblclick_selected = 5;
+            else if (dblclick_selected == 5) dblclick_selected = 4;
             var dblclick_combo = row_dropdown (dblclick_row, dblclick_labels,
-                (uint) app_window.settings.double_click_action);
+                dblclick_selected);
             dblclick_combo.notify["selected"].connect (() => {
-                app_window.settings.save_double_click_action ((int) dblclick_combo.selected);
+                uint selected = dblclick_combo.selected;
+                int action = (int) selected;
+                if (selected == 4) action = 5;
+                else if (selected == 5) action = 4;
+                app_window.settings.save_double_click_action (action);
             });
 
             behavior_list.append (dblclick_row);

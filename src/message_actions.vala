@@ -25,19 +25,17 @@ namespace Dc {
         public void show_context_menu (int msg_id, bool is_outgoing,
                                        double x, double y,
                                        Gtk.Widget parent) {
-            var dialog = new Adw.Dialog ();
-            dialog.title = "Message";
-            dialog.content_width = 340;
+            var popover = new Gtk.Popover ();
+            popover.has_arrow = false;
+            popover.set_parent (parent);
+            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
 
             var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            vbox.add_css_class ("menu");
             vbox.margin_start = 8;
             vbox.margin_end = 8;
             vbox.margin_top = 8;
             vbox.margin_bottom = 8;
-
-            var header = new Adw.HeaderBar ();
-            header.show_end_title_buttons = true;
-            vbox.append (header);
 
             /* Reactions — first so they are most easily reachable */
             string[] emojis = { "\xf0\x9f\x91\x8d", "\xe2\x9d\xa4\xef\xb8\x8f",
@@ -58,7 +56,7 @@ namespace Dc {
                 if (is_more) {
                     btn.tooltip_text = "More emojis…";
                     btn.clicked.connect (() => {
-                        dialog.close ();
+                        popover.popdown ();
                         Idle.add (() => {
                             show_emoji_picker (msg_id, parent, x, y);
                             return Source.REMOVE;
@@ -67,7 +65,7 @@ namespace Dc {
                 } else {
                     if (has_my_reaction (msg, emoji)) btn.add_css_class ("suggested-action");
                     btn.clicked.connect (() => {
-                        dialog.close ();
+                        popover.popdown ();
                         Idle.add (() => {
                             send_reaction.begin (msg_id, emoji);
                             return Source.REMOVE;
@@ -86,11 +84,11 @@ namespace Dc {
             var reply_forward_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             reply_forward_row.homogeneous = true;
 
-            reply_forward_row.append (menu_button (dialog, "Reply", () => {
+            reply_forward_row.append (menu_button (popover, "Reply", () => {
                 start_replying (msg_id);
             }, true));
 
-            reply_forward_row.append (menu_button (dialog, "Forward\u2026", () => {
+            reply_forward_row.append (menu_button (popover, "Forward\u2026", () => {
                 start_forwarding (msg_id);
             }, true));
 
@@ -98,7 +96,7 @@ namespace Dc {
 
             /* Pin / Unpin */
             bool msg_is_pinned = pinned.is_pinned (msg_id);
-            vbox.append (menu_button (dialog,
+            vbox.append (menu_button (popover,
                 msg_is_pinned ? "Unpin from conversation" : "Pin in conversation",
                 () => {
                     pinned.toggle_pin (msg_id);
@@ -109,20 +107,20 @@ namespace Dc {
                 msg.file_path.length > 0) {
                 string fpath = msg.file_path;
                 string? fname = msg.file_name;
-                vbox.append (menu_button (dialog, "Save file", () => {
+                vbox.append (menu_button (popover, "Save file", () => {
                     window.save_attachment.begin (fpath, fname);
                 }));
             }
 
             if (msg != null && msg.can_edit_text) {
-                vbox.append (menu_button (dialog, "Edit", () => {
+                vbox.append (menu_button (popover, "Edit", () => {
                     start_editing (msg_id);
                 }));
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            vbox.append (menu_button (dialog, "Delete…", () => {
+            vbox.append (menu_button (popover, "Delete…", () => {
                 if (is_outgoing) {
                     confirm_delete_options (window, "Delete Message?",
                         "Delete this message from your device only, or from all participants? This cannot be undone.",
@@ -136,39 +134,31 @@ namespace Dc {
                 }
             }));
 
-            dialog.child = vbox;
-            install_escape_close (dialog);
-            preserve_scroll_until_dialog_closed (dialog);
-            dialog.present (window);
+            popover.child = vbox;
+            preserve_scroll_until_closed (popover);
+            popover.popup ();
         }
 
-        private Gtk.Button menu_button (Adw.Dialog dialog, string label,
+        private Gtk.Button menu_button (Gtk.Popover popover, string label,
                                         owned VoidFunc action,
                                         bool hexpand = false) {
             var btn = new Gtk.Button.with_label (label);
             btn.add_css_class ("flat");
+            var child = btn.child as Gtk.Label;
+            if (child != null) {
+                child.xalign = 0;
+                child.halign = Gtk.Align.START;
+            }
             btn.hexpand = hexpand;
             btn.clicked.connect (() => {
                 btn.sensitive = false;
-                dialog.close ();
+                popover.popdown ();
                 Idle.add (() => {
                     action ();
                     return Source.REMOVE;
                 });
             });
             return btn;
-        }
-
-        private void preserve_scroll_until_dialog_closed (Adw.Dialog dialog) {
-            var view = window.current_view ();
-            double saved_scroll = view != null ? view.get_scroll_value () : 0;
-            if (view != null) view.freeze_scroll_handler (1500);
-            dialog.closed.connect (() => {
-                if (view != null) {
-                    view.restore_scroll_value (saved_scroll);
-                    view.restore_scroll_value_deferred (saved_scroll);
-                }
-            });
         }
 
         private void preserve_scroll_until_closed (Gtk.Popover popover,
@@ -334,7 +324,9 @@ namespace Dc {
             }
         }
 
-        public void handle_double_click (int msg_id) {
+        public void handle_double_click (int msg_id, bool is_outgoing,
+                                         double x, double y,
+                                         Gtk.Widget parent) {
             switch (settings.double_click_action) {
             case 0: /* Reply */
                 start_replying (msg_id);
@@ -350,6 +342,12 @@ namespace Dc {
                 break;
             case 4: /* Nothing */
                 break;
+            case 5: /* Open context menu */
+                Idle.add (() => {
+                    show_context_menu (msg_id, is_outgoing, x, y, parent);
+                    return Source.REMOVE;
+                });
+                return;
             }
             compose_bar.grab_entry_focus ();
         }
