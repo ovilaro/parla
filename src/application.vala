@@ -411,6 +411,9 @@ namespace Dc {
                 background-color: alpha(black, 0.75);
             }
             .compose-bar { border-top: none; }
+            .selection-action-bar {
+                padding: 4px 8px;
+            }
             .compose-entry {
                 min-height: 36px;
                 border-radius: 18px;
@@ -567,6 +570,9 @@ namespace Dc {
             }
             .contact-request-bar {
                 padding: 4px 8px;
+            }
+            .message-select-check {
+                margin-left: 2px;
             }
             .message-new {
                 background-color: alpha(@accent_bg_color, 0.15);

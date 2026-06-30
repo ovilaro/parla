@@ -222,6 +222,8 @@ namespace Dc {
         public string? quote_sender_name { get; set; default = null; }
         public bool is_pinned { get; set; default = false; }
         public bool highlighted { get; set; default = false; }
+        public bool selection_visible { get; set; default = false; }
+        public bool selected { get; set; default = false; }
 
         /* Delivery state — one of MessageState. */
         public int state { get; set; default = 0; }

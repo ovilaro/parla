@@ -9,6 +9,8 @@ namespace Dc {
         private unowned ComposeBar compose_bar;
         private unowned SettingsManager settings;
 
+        public signal void select_requested (int msg_id);
+
         public MessageActions (Window window, RpcClient rpc,
                                GLib.ListStore message_store,
                                PinnedMessagesManager pinned,
@@ -94,13 +96,28 @@ namespace Dc {
 
             vbox.append (reply_forward_row);
 
-            /* Pin / Unpin */
+            /* Pin / Edit on the same row, Select below */
+            var message_actions_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            message_actions_row.homogeneous = true;
+
             bool msg_is_pinned = pinned.is_pinned (msg_id);
-            vbox.append (menu_button (popover,
-                msg_is_pinned ? "Unpin from conversation" : "Pin in conversation",
+            message_actions_row.append (menu_button (popover,
+                msg_is_pinned ? "Unpin" : "Pin",
                 () => {
                     pinned.toggle_pin (msg_id);
-                }));
+                }, true));
+
+            if (msg != null && msg.can_edit_text) {
+                message_actions_row.append (menu_button (popover, "Edit", () => {
+                    start_editing (msg_id);
+                }, true));
+            }
+
+            vbox.append (message_actions_row);
+
+            vbox.append (menu_button (popover, "Select...", () => {
+                select_requested (msg_id);
+            }));
 
             /* Save file (for messages with attachments) */
             if (msg != null && msg.file_path != null &&
@@ -109,12 +126,6 @@ namespace Dc {
                 string? fname = msg.file_name;
                 vbox.append (menu_button (popover, "Save file", () => {
                     window.save_attachment.begin (fpath, fname);
-                }));
-            }
-
-            if (msg != null && msg.can_edit_text) {
-                vbox.append (menu_button (popover, "Edit", () => {
-                    start_editing (msg_id);
                 }));
             }
 
@@ -259,28 +270,34 @@ namespace Dc {
         }
 
         public void start_forwarding (int msg_id) {
+            start_forwarding_many (new int[] { msg_id });
+        }
+
+        public void start_forwarding_many (int[] msg_ids) {
+            if (msg_ids.length == 0) return;
             var picker = new ContactPickerDialog (rpc, window.chat_store,
                                                   "Forward To");
             picker.chat_picked.connect ((chat_id) => {
-                forward_to_chat.begin (msg_id, chat_id);
+                forward_to_chat.begin (msg_ids, chat_id);
             });
             picker.contact_picked.connect ((contact_id, email) => {
-                forward_to_contact.begin (msg_id, contact_id, email);
+                forward_to_contact.begin (msg_ids, contact_id, email);
             });
             picker.present (window);
         }
 
-        private async void forward_to_chat (int msg_id, int chat_id) {
+        private async void forward_to_chat (int[] msg_ids, int chat_id) {
             try {
-                yield rpc.forward_messages (new int[] { msg_id }, chat_id);
+                yield rpc.forward_messages (msg_ids, chat_id);
                 window.request_reload_chats ();
-                window.show_toast ("Message forwarded");
+                window.show_toast (msg_ids.length == 1
+                    ? "Message forwarded" : "Messages forwarded");
             } catch (Error e) {
                 window.show_toast ("Forward failed: " + e.message);
             }
         }
 
-        private async void forward_to_contact (int msg_id, int contact_id,
+        private async void forward_to_contact (int[] msg_ids, int contact_id,
                                                 string email) {
             try {
                 int cid = contact_id;
@@ -288,9 +305,10 @@ namespace Dc {
                     cid = yield rpc.get_or_create_contact (email);
                 }
                 int chat_id = yield rpc.get_or_create_chat_by_contact (cid);
-                yield rpc.forward_messages (new int[] { msg_id }, chat_id);
+                yield rpc.forward_messages (msg_ids, chat_id);
                 window.request_reload_chats ();
-                window.show_toast ("Message forwarded");
+                window.show_toast (msg_ids.length == 1
+                    ? "Message forwarded" : "Messages forwarded");
             } catch (Error e) {
                 window.show_toast ("Forward failed: " + e.message);
             }

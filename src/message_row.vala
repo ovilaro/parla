@@ -107,6 +107,7 @@ namespace Dc {
 
         public signal void quote_clicked (int quoted_msg_id);
         public signal void full_message_requested (int msg_id);
+        public signal void selection_toggled (int msg_id, bool selected);
 
         public static void set_media_scale (int font_size, int system_font_size) {
             media_scale = font_size > 0 && system_font_size > 0
@@ -137,6 +138,13 @@ namespace Dc {
             this.is_outgoing = msg.is_outgoing;
             hexpand = true;
             halign = Gtk.Align.FILL;
+
+            if (style == MessageStyle.IRC && is_image_continuation) {
+                build_irc_row (msg, prev, trailing_images, is_image_continuation);
+                return;
+            }
+
+            append_selection_checkbox (msg);
 
             /* Info messages (system notifications) get centered styling */
             if (msg.is_info) {
@@ -329,6 +337,24 @@ namespace Dc {
             var pin_icon = build_pin_indicator (msg);
             pin_icon.valign = Gtk.Align.START;
             this.append (pin_icon);
+        }
+
+        private void append_selection_checkbox (Message msg) {
+            var check = new Gtk.CheckButton ();
+            check.add_css_class ("message-select-check");
+            check.valign = Gtk.Align.CENTER;
+            check.margin_end = 6;
+            msg.bind_property ("selection-visible", check, "visible",
+                               BindingFlags.SYNC_CREATE);
+            msg.bind_property ("selected", check, "active",
+                               BindingFlags.SYNC_CREATE);
+            check.toggled.connect (() => {
+                if (msg.selected != check.active) {
+                    msg.selected = check.active;
+                }
+                selection_toggled (msg.id, check.active);
+            });
+            this.append (check);
         }
 
         private void append_attachment (Gtk.Box box, Message msg, bool irc,

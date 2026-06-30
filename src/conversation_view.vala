@@ -21,8 +21,12 @@ namespace Dc {
         private Gtk.FilterListModel filtered_message_store;
         private Gtk.CustomFilter message_filter;
         private ComposeBar compose_bar;
+        private Gtk.Box selection_bar;
+        private Gtk.Button selection_delete_btn;
+        private Gtk.Button selection_forward_btn;
         private Gtk.Box request_bar;
         private bool is_contact_request = false;
+        private bool selection_mode = false;
         private Gtk.Button scroll_down_btn;
         private Gtk.Revealer loading_more_revealer;
         private Gtk.Spinner loading_more_spinner;
@@ -76,6 +80,9 @@ namespace Dc {
 
             msg_actions = new MessageActions (window, rpc, message_store,
                                               pinned, compose_bar, settings);
+            msg_actions.select_requested.connect ((mid) => {
+                begin_selection_mode (mid);
+            });
         }
 
         private void build_ui () {
@@ -125,6 +132,9 @@ namespace Dc {
                     msg, prev, trailing, is_img_continuation,
                     settings.bubble_avatar_display,
                     bubble_avatars_apply_to_this_chat ());
+                row.selection_toggled.connect ((mid, active) => {
+                    update_selection_actions ();
+                });
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
                 row.full_message_requested.connect ((mid) => {
                     load_full_message.begin (mid);
@@ -176,6 +186,11 @@ namespace Dc {
             dc.pressed.connect ((n, x, y) => {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
+                if (selection_mode) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
                 /* Let clicks on selectable message text fall through for
                    text selection, except when the configured action is to
                    open the message context menu. */
@@ -284,6 +299,9 @@ namespace Dc {
             });
             append (compose_bar);
 
+            selection_bar = build_selection_bar ();
+            append (selection_bar);
+
             /* For contact-request chats the compose bar is hidden and this
                Accept/Block bar takes its place until the request is resolved
                (see set_contact_request / accept_request / block_request). */
@@ -317,6 +335,42 @@ namespace Dc {
                 trailing.add (next);
             }
             return trailing;
+        }
+
+        private Gtk.Box build_selection_bar () {
+            var bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            bar.add_css_class ("selection-action-bar");
+            bar.margin_start = 8;
+            bar.margin_end = 8;
+            bar.margin_top = 8;
+            bar.margin_bottom = 8;
+            bar.halign = Gtk.Align.FILL;
+            bar.hexpand = true;
+            bar.visible = false;
+
+            selection_delete_btn = new Gtk.Button.with_label ("Delete");
+            selection_delete_btn.add_css_class ("destructive-action");
+            selection_delete_btn.hexpand = true;
+            selection_delete_btn.clicked.connect (() => {
+                delete_selected_messages ();
+            });
+            bar.append (selection_delete_btn);
+
+            selection_forward_btn = new Gtk.Button.with_label ("Forward");
+            selection_forward_btn.hexpand = true;
+            selection_forward_btn.clicked.connect (() => {
+                forward_selected_messages ();
+            });
+            bar.append (selection_forward_btn);
+
+            var cancel_btn = new Gtk.Button.with_label ("Cancel");
+            cancel_btn.hexpand = true;
+            cancel_btn.clicked.connect (() => {
+                end_selection_mode ();
+            });
+            bar.append (cancel_btn);
+
+            return bar;
         }
 
         /* Bottom bar shown instead of the compose box while the chat is an
@@ -363,8 +417,100 @@ namespace Dc {
            request has been accepted. */
         public void set_contact_request (bool is_request) {
             is_contact_request = is_request;
-            request_bar.visible = is_request;
-            compose_bar.visible = !is_request;
+            sync_bottom_bars ();
+        }
+
+        private void sync_bottom_bars () {
+            selection_bar.visible = selection_mode;
+            request_bar.visible = !selection_mode && is_contact_request;
+            compose_bar.visible = !selection_mode && !is_contact_request;
+        }
+
+        private void begin_selection_mode (int initial_msg_id) {
+            selection_mode = true;
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                msg.selection_visible = true;
+                msg.notify_property ("selection-visible");
+                if (msg.id == initial_msg_id) {
+                    msg.selected = true;
+                    msg.notify_property ("selected");
+                }
+            }
+            sync_bottom_bars ();
+            update_selection_actions ();
+        }
+
+        private void end_selection_mode () {
+            selection_mode = false;
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                msg.selected = false;
+                msg.selection_visible = false;
+                msg.notify_property ("selected");
+                msg.notify_property ("selection-visible");
+            }
+            sync_bottom_bars ();
+            update_selection_actions ();
+        }
+
+        private int selected_message_count () {
+            int count = 0;
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                if (msg.selected) count++;
+            }
+            return count;
+        }
+
+        private int[] selected_message_ids () {
+            int[] ids = {};
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                if (msg.selected) ids += msg.id;
+            }
+            return ids;
+        }
+
+        private void update_selection_actions () {
+            if (selection_delete_btn == null || selection_forward_btn == null) {
+                return;
+            }
+            bool has_selection = selected_message_count () > 0;
+            selection_delete_btn.sensitive = has_selection;
+            selection_forward_btn.sensitive = has_selection;
+        }
+
+        private void forward_selected_messages () {
+            int[] ids = selected_message_ids ();
+            if (ids.length == 0) return;
+            msg_actions.start_forwarding_many (ids);
+            end_selection_mode ();
+        }
+
+        private void delete_selected_messages () {
+            int[] ids = selected_message_ids ();
+            if (ids.length == 0) return;
+            string body = ids.length == 1
+                ? "Delete the selected message from your device? This cannot be undone."
+                : "Delete %d selected messages from your device? This cannot be undone.".printf (ids.length);
+            confirm_action (window, "Delete Messages?", body, "delete",
+                "Delete", () => {
+                    delete_selected_messages_confirmed.begin (ids);
+                });
+        }
+
+        private async void delete_selected_messages_confirmed (int[] ids) {
+            try {
+                yield rpc.delete_messages (ids);
+                for (int i = ids.length - 1; i >= 0; i--) {
+                    int idx = find_message_index (message_store, ids[i]);
+                    if (idx >= 0) message_store.remove (idx);
+                }
+                end_selection_mode ();
+            } catch (Error e) {
+                window.show_toast ("Delete failed: " + e.message);
+            }
         }
 
         public void set_chat_kind (ChatKind kind) {
@@ -405,12 +551,12 @@ namespace Dc {
                 messages_loaded = true;
                 load_messages.begin ();
             }
-            if (!is_contact_request) compose_bar.grab_entry_focus ();
+            if (!is_contact_request && !selection_mode) compose_bar.grab_entry_focus ();
         }
 
         public void on_reselected () {
             scroll_to_bottom ();
-            compose_bar.grab_entry_focus ();
+            if (!selection_mode) compose_bar.grab_entry_focus ();
         }
 
         public void attach_dropped_file_path (string path) {
@@ -418,22 +564,29 @@ namespace Dc {
         }
 
         public void focus_entry () {
+            if (selection_mode) return;
             compose_bar.grab_entry_focus ();
         }
 
         public bool has_active_compose_mode () {
-            return compose_bar.has_active_mode ();
+            return selection_mode || compose_bar.has_active_mode ();
         }
 
         public bool compose_entry_has_focus () {
+            if (selection_mode) return true;
             return compose_bar.entry_has_focus ();
         }
 
         public void cancel_active_compose_mode () {
+            if (selection_mode) {
+                end_selection_mode ();
+                return;
+            }
             compose_bar.cancel_active_mode ();
         }
 
         public void type_into_entry (string text) {
+            if (selection_mode) return;
             compose_bar.type_text (text);
         }
 
@@ -448,6 +601,7 @@ namespace Dc {
                 bool is_current = (window.current_chat_id == this.chat_id);
                 if (is_current) msg.highlighted = true;
                 msg.is_pinned = pinned.is_pinned (msg.id);
+                msg.selection_visible = selection_mode;
                 insert_message_sorted (msg);
                 if (is_current && window.is_active) {
                     yield rpc.mark_seen_msgs (new int[] { msg_id });
@@ -498,6 +652,10 @@ namespace Dc {
         public void replace_message (int msg_id, Message new_msg) {
             int idx = find_message_index (message_store, msg_id);
             if (idx < 0) return;
+            var old_msg = (Message) message_store.get_item (idx);
+            new_msg.is_pinned = old_msg.is_pinned;
+            new_msg.selection_visible = old_msg.selection_visible;
+            new_msg.selected = old_msg.selected;
 
             var adj = message_scroll.vadjustment;
             double saved_value = adj.value;
@@ -755,6 +913,7 @@ namespace Dc {
             var batch = new GLib.Object[messages.length];
             for (uint i = 0; i < messages.length; i++) {
                 messages[i].is_pinned = pinned.is_pinned (messages[i].id);
+                messages[i].selection_visible = selection_mode;
                 batch[i] = messages[i];
             }
             return batch;
@@ -874,6 +1033,7 @@ namespace Dc {
                 if (msg_id > 0) {
                     var msg = yield rpc.fetch_message (msg_id);
                     if (msg != null) {
+                        msg.selection_visible = selection_mode;
                         insert_message_sorted (msg);
                         scroll_to_bottom ();
                     }
@@ -884,7 +1044,8 @@ namespace Dc {
         }
 
         private bool can_accept_file_attachment () {
-            return !is_contact_request && compose_bar.can_accept_attachment ();
+            return !selection_mode && !is_contact_request &&
+                compose_bar.can_accept_attachment ();
         }
 
         private void attach_local_file (string path, string name) {
