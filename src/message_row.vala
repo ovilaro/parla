@@ -50,8 +50,9 @@ namespace Dc {
             }
 
             if (for_size > 0) {
+                int allocated_width = int.min (for_size, width);
                 int h = int.max (1,
-                    (int) (((int64) height * for_size + width / 2) / width));
+                    (int) (((int64) height * allocated_width + width / 2) / width));
                 minimum = natural = h;
             } else {
                 minimum = 1;
@@ -522,8 +523,7 @@ namespace Dc {
                 picture.halign = Gtk.Align.FILL;
                 picture.valign = Gtk.Align.FILL;
 
-                var frame = new ScaledPreviewFrame (
-                    pixbuf.width, pixbuf.height, "message-image");
+                var frame = new ScaledPreviewFrame (dw, dh, "message-image");
                 frame.child = picture;
                 frame.halign = Gtk.Align.START;
                 frame.valign = Gtk.Align.START;
