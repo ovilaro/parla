@@ -395,6 +395,10 @@ namespace Dc {
 
             /* ---- Content area ---- */
             var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            content_box.hexpand = true;
+            content_box.vexpand = true;
+            content_box.halign = Gtk.Align.FILL;
+            content_box.valign = Gtk.Align.FILL;
 
             content_header = new Adw.HeaderBar ();
             content_title_label = new Gtk.Label ("Select a chat");
@@ -420,7 +424,10 @@ namespace Dc {
 
             /* Stack: empty status + one child per chat view (added lazily) */
             content_stack = new Gtk.Stack ();
+            content_stack.hexpand = true;
             content_stack.vexpand = true;
+            content_stack.halign = Gtk.Align.FILL;
+            content_stack.valign = Gtk.Align.FILL;
 
             empty_status = new Adw.StatusPage ();
             empty_status.icon_name = "parla-welcome";

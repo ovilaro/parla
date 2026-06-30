@@ -42,6 +42,8 @@ namespace Dc {
                 spacing: 0
             );
             add_css_class ("compose-bar");
+            hexpand = true;
+            halign = Gtk.Align.FILL;
             margin_start = 8;
             margin_end = 8;
             margin_top = 6;
@@ -113,6 +115,8 @@ namespace Dc {
             append (attachment_bar);
 
             var input_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            input_row.hexpand = true;
+            input_row.halign = Gtk.Align.FILL;
 
             attach_button = flat_icon_button (
                 "mail-attachment-symbolic", "Attach file", on_attach_clicked);
@@ -179,6 +183,7 @@ namespace Dc {
             entry_overlay.child = text_view;
             entry_overlay.add_overlay (placeholder_label);
             entry_overlay.hexpand = true;
+            entry_overlay.halign = Gtk.Align.FILL;
             entry_overlay.valign = Gtk.Align.CENTER;
 
             text_view.buffer.changed.connect (update_placeholder);

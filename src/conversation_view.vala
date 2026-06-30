@@ -56,6 +56,10 @@ namespace Dc {
             this.settings = settings;
             this.chat_kind = chat_kind;
             this.chat_kind_loaded = chat_kind != ChatKind.UNKNOWN;
+            hexpand = true;
+            vexpand = true;
+            halign = Gtk.Align.FILL;
+            valign = Gtk.Align.FILL;
 
             /* Marker for the custom-background rules (see
                Application.apply_background): when a custom window background
@@ -76,7 +80,10 @@ namespace Dc {
 
         private void build_ui () {
             message_scroll = new Gtk.ScrolledWindow ();
+            message_scroll.hexpand = true;
             message_scroll.vexpand = true;
+            message_scroll.halign = Gtk.Align.FILL;
+            message_scroll.valign = Gtk.Align.FILL;
             message_scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
 
             message_scroll.vadjustment.notify["upper"].connect (on_scroll_bounds_changed);
@@ -136,6 +143,10 @@ namespace Dc {
 
             var selection = new Gtk.NoSelection (filtered_message_store);
             message_listview = new Gtk.ListView (selection, factory);
+            message_listview.hexpand = true;
+            message_listview.vexpand = true;
+            message_listview.halign = Gtk.Align.FILL;
+            message_listview.valign = Gtk.Align.FILL;
             message_listview.add_css_class ("boxed-list-separate");
 
             /* One gesture pair on the listview, not per-row: a per-row
@@ -244,12 +255,17 @@ namespace Dc {
 
             var scroll_overlay = new Gtk.Overlay ();
             scroll_overlay.child = message_scroll;
+            scroll_overlay.hexpand = true;
             scroll_overlay.vexpand = true;
+            scroll_overlay.halign = Gtk.Align.FILL;
+            scroll_overlay.valign = Gtk.Align.FILL;
             scroll_overlay.add_overlay (scroll_down_btn);
             scroll_overlay.add_overlay (loading_more_revealer);
             append (scroll_overlay);
 
             compose_bar = new ComposeBar ();
+            compose_bar.hexpand = true;
+            compose_bar.halign = Gtk.Align.FILL;
             settings.bind_property ("shift-enter-sends", compose_bar,
                                     "shift-enter-sends", BindingFlags.SYNC_CREATE);
             compose_bar.send_message.connect (on_send_message);

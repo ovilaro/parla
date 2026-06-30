@@ -135,6 +135,8 @@ namespace Dc {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
+            hexpand = true;
+            halign = Gtk.Align.FILL;
 
             /* Info messages (system notifications) get centered styling */
             if (msg.is_info) {
@@ -452,13 +454,8 @@ namespace Dc {
                 picture.halign = Gtk.Align.FILL;
                 picture.valign = Gtk.Align.FILL;
 
-                var frame = new Gtk.AspectFrame (
-                    0.0f, 0.0f,
-                    (float) pixbuf.width / (float) pixbuf.height,
-                    false);
-                frame.add_css_class ("message-image");
-                frame.overflow = Gtk.Overflow.HIDDEN;
-                frame.set_size_request (pixbuf.width, pixbuf.height);
+                var frame = new ScaledPreviewFrame (
+                    pixbuf.width, pixbuf.height, "message-image");
                 frame.child = picture;
                 frame.halign = Gtk.Align.START;
                 frame.valign = Gtk.Align.START;
