@@ -57,6 +57,7 @@ namespace Dc {
         private unowned RpcClient rpc;
         private int _current_chat_id = 0;
         private bool suppress_reselect_scroll = false;
+        private bool suppress_chat_selection = false;
         public int current_chat_id {
             get { return _current_chat_id; }
             private set {
@@ -817,7 +818,12 @@ namespace Dc {
 
         public void clear_chat_view () {
             current_chat_id = 0;
-            content_stack.visible_child_name = "empty";
+            suppress_chat_selection = true;
+            chat_listbox.select_row (null);
+            suppress_chat_selection = false;
+            content_title_label.label = "Select a chat";
+            show_empty_status ("parla-welcome", "Parla",
+                "Select a chat to start messaging.");
         }
 
         public ConversationView? current_view () {
@@ -858,6 +864,10 @@ namespace Dc {
                 var items = yield rpc.get_chatlist_items_by_entries_for (
                     rpc.account_id, entries);
 
+                int desired_chat_id = current_chat_id;
+                bool keep_empty_selection = desired_chat_id <= 0;
+                suppress_chat_selection = true;
+
                 chat_store.remove_all ();
                 clear_listbox (chat_listbox);
 
@@ -877,18 +887,24 @@ namespace Dc {
                         row.child = chat_row;
                         chat_listbox.append (row);
 
-                        if (chat_id == current_chat_id) {
+                        if (chat_id == desired_chat_id) {
                             reselect_row = row;
                         }
                     }
                 }
 
+                suppress_chat_selection = false;
                 if (reselect_row != null) {
                     suppress_reselect_scroll = true;
                     chat_listbox.select_row (reselect_row);
                     suppress_reselect_scroll = false;
+                } else if (keep_empty_selection) {
+                    chat_listbox.select_row (null);
+                } else {
+                    clear_chat_view ();
                 }
             } catch (Error e) {
+                suppress_chat_selection = false;
                 show_toast ("Failed to load chats: " + e.message);
             }
         }
@@ -908,6 +924,7 @@ namespace Dc {
         }
 
         private void on_chat_selected (Gtk.ListBoxRow? row) {
+            if (suppress_chat_selection) return;
             if (row == null) return;
 
             var chat_row = row.child as ChatRow;
