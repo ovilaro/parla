@@ -29,6 +29,20 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.6.0" date="2026-07-02">
+      <description>
+        <ul>
+          <li>Delete/Forward multiple messages</li>
+          <li>Fix media bubble size in hidpi</li>
+          <li>Fix close window behaviour when tray icon is disabled</li>
+          <li>Triple click selects all the text</li>
+          <li>Cleaner action menu</li>
+          <li>Show pin indicator in pinned messages</li>
+          <li>Fix crashes using UI from non-main thread</li>
+          <li>Allow to override system light/dark theme</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.8" date="2026-06-23">
       <description>
         <ul>
