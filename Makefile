@@ -10,11 +10,6 @@ MACOS_APP_DIR?=dist/macos/Parla.app
 MESON_OPTIONS?=
 SANITIZER_DEBUG_OPTIONS=-Dstrip=false -Dvala_args=--debug -Dc_args=-g
 
-ifeq ($(UNAME_S),Darwin)
-MACOS_CLIPBOARD_WORKAROUND?=true
-MESON_OPTIONS += -Dmacos_clipboard_workaround=$(MACOS_CLIPBOARD_WORKAROUND)
-endif
-
 .PHONY: all asan tsan run clean install uninstall deb app dmg appimage
 
 all:

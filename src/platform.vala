@@ -11,11 +11,6 @@ namespace Dc.Platform {
     [CCode (cheader_filename = "platform.h", cname = "parla_setup_macos_bundle_environment")]
     private extern void platform_setup_macos_bundle_environment ();
 
-#if PARLA_MACOS_CLIPBOARD_WORKAROUND
-    [CCode (cheader_filename = "platform.h", cname = "parla_macos_read_pasteboard_text")]
-    private extern string? platform_macos_read_pasteboard_text ();
-#endif
-
     [CCode (cheader_filename = "platform.h", cname = "parla_macos_install_file_drop_handler")]
     private extern void platform_macos_install_file_drop_handler (
         Gtk.Widget widget,
@@ -32,15 +27,6 @@ namespace Dc.Platform {
 
     public void setup_macos_bundle_environment () {
         platform_setup_macos_bundle_environment ();
-    }
-
-    public string? read_macos_pasteboard_text () {
-#if PARLA_MACOS_CLIPBOARD_WORKAROUND
-        if (!is_macos ()) return null;
-        return platform_macos_read_pasteboard_text ();
-#else
-        return null;
-#endif
     }
 
     public void install_macos_file_drop_handler (Gtk.Widget widget,

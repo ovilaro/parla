@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 #include <gdk/macos/gdkmacos.h>
 
+
 static char parla_drop_handler_key;
 static char parla_drop_subclass_key;
 
@@ -107,39 +108,6 @@ parla_pasteboard_has_file_url (NSPasteboard *pasteboard)
 	G_GNUC_END_IGNORE_DEPRECATIONS
 	return [pasteboard availableTypeFromArray:types] != nil;
 }
-
-#if defined(PARLA_MACOS_CLIPBOARD_WORKAROUND)
-/* Temporary fallback for a GTK4 macOS backend issue where text copied from
-   native apps may not reach GtkTextView through GdkClipboard. Disable with
-   -Dmacos_clipboard_workaround=false once GTK imports NSPasteboard text
-   reliably. */
-gchar *
-parla_macos_read_pasteboard_text (void)
-{
-	NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
-	if (pasteboard == nil) {
-		return NULL;
-	}
-
-	NSArray *types = @[
-		NSPasteboardTypeString,
-		@"public.utf8-plain-text",
-		@"public.utf16-plain-text",
-		@"public.plain-text",
-	];
-	NSString *type = [pasteboard availableTypeFromArray:types];
-	if (type == nil) {
-		return NULL;
-	}
-
-	NSString *text = [pasteboard stringForType:type];
-	if (text == nil || [text length] == 0) {
-		return NULL;
-	}
-
-	return g_strdup ([text UTF8String]);
-}
-#endif
 
 @implementation ParlaMacosFileDropHandler
 
