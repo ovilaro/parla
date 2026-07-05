@@ -28,6 +28,7 @@ namespace Dc {
         private bool is_contact_request = false;
         private bool selection_mode = false;
         private Gtk.Button scroll_down_btn;
+        private Gtk.Label loading_pill_label;
         private Gtk.Revealer loading_more_revealer;
         private Gtk.Spinner loading_more_spinner;
         private Gtk.Revealer message_search_revealer;
@@ -100,6 +101,7 @@ namespace Dc {
                 if (GLib.get_monotonic_time () < scroll_freeze_until_us) return;
                 stick_to_bottom = is_near_bottom ();
                 scroll_down_btn.visible = !stick_to_bottom;
+                update_date_pill ();
                 if (is_near_top () && !loading_more && loaded_start_index > 0) {
                     load_earlier_messages.begin ();
                 }
@@ -272,13 +274,16 @@ namespace Dc {
             scroll_down_btn.clicked.connect (() => { scroll_to_bottom (); });
 
             /* "Loading…" pill shown at the top while older messages are
-               pulled from the JSON-RPC server (see load_earlier_messages). */
+               pulled from the JSON-RPC server (see load_earlier_messages).
+               Reused as the floating date pill when scrolled away from
+               the bottom. */
             var loading_pill = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             loading_pill.add_css_class ("osd");
             loading_pill.add_css_class ("loading-pill");
             loading_more_spinner = new Gtk.Spinner ();
             loading_pill.append (loading_more_spinner);
-            loading_pill.append (new Gtk.Label ("Loading…"));
+            loading_pill_label = new Gtk.Label ("Loading…");
+            loading_pill.append (loading_pill_label);
 
             loading_more_revealer = new Gtk.Revealer ();
             loading_more_revealer.child = loading_pill;
@@ -331,6 +336,7 @@ namespace Dc {
             if (loading_chat) return;
             maybe_autoscroll ();
             scroll_down_btn.visible = !is_near_bottom ();
+            update_date_pill ();
         }
 
         private GLib.GenericArray<Message>? collect_trailing_irc_images (
@@ -1000,12 +1006,47 @@ namespace Dc {
            Spinning is tied to visibility so the animation only runs when shown. */
         private void set_loading_more_visible (bool visible) {
             loading_more_spinner.spinning = visible;
+            if (visible) {
+                loading_pill_label.label = "Loading…";
+            }
             loading_more_revealer.reveal_child = visible;
         }
 
         /* ================================================================
          *  Scroll helpers
          * ================================================================ */
+
+        /** Update the floating date pill to show the date of the first
+            visible message, or hide it when at the bottom. */
+        private void update_date_pill () {
+            if (stick_to_bottom || message_store.get_n_items () == 0) {
+                loading_more_revealer.reveal_child = false;
+                return;
+            }
+
+            /* Pick a widget near the top-center of the list view to find
+               the first visible message row. */
+            var w = message_listview.pick (
+                message_listview.get_width () / 2, 5, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                w = w.get_parent ();
+            }
+            var row = w as MessageRow;
+            if (row == null) {
+                loading_more_revealer.reveal_child = false;
+                return;
+            }
+
+            var msg = find_message (message_store, row.message_id);
+            if (msg == null) {
+                loading_more_revealer.reveal_child = false;
+                return;
+            }
+
+            loading_more_spinner.spinning = false;
+            loading_pill_label.label = MessageRow.format_date_label (msg.timestamp);
+            loading_more_revealer.reveal_child = true;
+        }
 
         private bool is_near_bottom () {
             var adj = message_scroll.vadjustment;
