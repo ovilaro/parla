@@ -128,6 +128,16 @@ namespace Dc {
                 var trailing = collect_trailing_irc_images (
                     msg, prev, pos, out is_img_continuation);
 
+                /* Wrap the row in a vertical box so we can prepend a date
+                   separator when the day changes. */
+                var container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+
+                /* Date separator: show when the day differs from the
+                   previous message (or for the very first message). */
+                if (prev == null || !MessageRow.same_day (msg.timestamp, prev.timestamp)) {
+                    container.append (MessageRow.build_date_separator (msg.timestamp));
+                }
+
                 var row = new MessageRow (
                     msg, prev, trailing, is_img_continuation,
                     settings.bubble_avatar_display,
@@ -143,7 +153,8 @@ namespace Dc {
                     msg.highlighted = false;
                     row.highlight ();
                 }
-                li.child = row;
+                container.append (row);
+                li.child = container;
                 /* Non-focusable rows: else a focused item gets re-scrolled into
                    view when a popover closes, jerking the chat to the top. */
                 li.selectable = false;

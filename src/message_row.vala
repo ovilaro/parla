@@ -1176,6 +1176,42 @@ namespace Dc {
             return dt.format ("%H:%M");
         }
 
+        /** Build a centered date-separator label, styled like info rows. */
+        internal static Gtk.Widget build_date_separator (int64 ts) {
+            var label = new Gtk.Label (format_date_label (ts));
+            label.add_css_class ("dim-label");
+            label.add_css_class ("caption");
+            label.hexpand = true;
+            label.halign = Gtk.Align.CENTER;
+            label.justify = Gtk.Justification.CENTER;
+            label.margin_top = 8;
+            label.margin_bottom = 4;
+            return label;
+        }
+
+        /** Format a timestamp as a date label: "3 June" (current year) or
+            "3 June 2023" (other years). */
+        internal static string format_date_label (int64 ts) {
+            if (ts <= 0) return "";
+            var dt = new DateTime.from_unix_local (ts);
+            var now = new DateTime.now_local ();
+            int day = dt.get_day_of_month ();
+            string month = dt.format ("%B");
+            if (dt.get_year () == now.get_year ()) {
+                return "%d %s".printf (day, month);
+            }
+            return "%d %s %d".printf (day, month, dt.get_year ());
+        }
+
+        /** True when two unix timestamps fall on the same calendar day. */
+        internal static bool same_day (int64 ts1, int64 ts2) {
+            if (ts1 <= 0 || ts2 <= 0) return false;
+            var dt1 = new DateTime.from_unix_local (ts1);
+            var dt2 = new DateTime.from_unix_local (ts2);
+            return dt1.get_year () == dt2.get_year () &&
+                   dt1.get_day_of_year () == dt2.get_day_of_year ();
+        }
+
     }
 
 }
