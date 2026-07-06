@@ -72,6 +72,7 @@ namespace Dc {
         public bool markdown_rendering { get; set; default = false; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
+        public bool show_notification_contents { get; set; default = true; }
         public bool share_online_status { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
@@ -132,6 +133,8 @@ namespace Dc {
             Markdown.enabled = markdown_rendering;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
+            show_notification_contents =
+                kf_bool (kf, "show_notification_contents", true);
             share_online_status = kf_bool (kf, "share_online_status", true);
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
@@ -204,6 +207,11 @@ namespace Dc {
         public void save_notifications_enabled (bool v) {
             notifications_enabled = v;
             save_bool ("notifications_enabled", v);
+        }
+
+        public void save_show_notification_contents (bool v) {
+            show_notification_contents = v;
+            save_bool ("show_notification_contents", v);
         }
 
         public void save_share_online_status (bool v) {
@@ -544,6 +552,18 @@ namespace Dc {
             }
 
             var privacy_list = settings_list ("Privacy");
+
+            var notification_contents_row = action_row (
+                "Show message contents in notifications",
+                "Include sender text and attachment names in desktop notifications");
+            var notification_contents_switch = row_switch (
+                notification_contents_row,
+                app_window.settings.show_notification_contents);
+            notification_contents_switch.notify["active"].connect (() => {
+                app_window.settings.save_show_notification_contents (
+                    notification_contents_switch.active);
+            });
+            privacy_list.append (notification_contents_row);
 
             var online_status_row = action_row (
                 "Share online status",

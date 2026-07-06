@@ -1100,7 +1100,8 @@ namespace Dc {
                     bool allow_send = id != rpc.account_id
                         || !this.get_visible ()
                         || !this.is_active;
-                    events.refresh_unread_notification.begin (id, allow_send);
+                    events.refresh_unread_notification.begin (id, allow_send,
+                        settings.show_notification_contents);
                 }
                 return Source.REMOVE;
             });

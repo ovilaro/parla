@@ -195,7 +195,8 @@ namespace Dc {
         }
 
         public async void refresh_unread_notification (int acct_id,
-                                                       bool allow_send) {
+                                                       bool allow_send,
+                                                       bool show_contents) {
             if (app == null) return;
             int generation = begin_notification_refresh (acct_id);
             try {
@@ -228,9 +229,13 @@ namespace Dc {
                         }
                     } catch (Error e) { /* fall back to sender */ }
 
-                    body = (msg.text != null && msg.text.length > 0) ? msg.text
-                        : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
-                        : "New message";
+                    if (show_contents) {
+                        body = (msg.text != null && msg.text.length > 0) ? msg.text
+                            : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
+                            : "New message";
+                    } else {
+                        body = "New message";
+                    }
                 } else {
                     title = "%d unread messages".printf (fresh_ids.length);
                     body = "Open Parla to read them";
