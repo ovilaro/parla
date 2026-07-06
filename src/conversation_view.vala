@@ -143,7 +143,8 @@ namespace Dc {
                 var row = new MessageRow (
                     msg, prev, trailing, is_img_continuation,
                     settings.bubble_avatar_display,
-                    bubble_avatars_apply_to_this_chat ());
+                    bubble_avatars_apply_to_this_chat (),
+                    chat_kind != ChatKind.DIRECT);
                 row.selection_toggled.connect ((mid, active) => {
                     update_selection_actions ();
                 });

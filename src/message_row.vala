@@ -182,7 +182,8 @@ namespace Dc {
                            bool is_image_continuation = false,
                            BubbleAvatarDisplay avatar_display =
                                BubbleAvatarDisplay.NONE,
-                           bool avatar_scope_enabled = false) {
+                           bool avatar_scope_enabled = false,
+                           bool show_sender_name = true) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
@@ -228,7 +229,7 @@ namespace Dc {
                (outgoing / unknown sender). */
             if (msg.is_forwarded) {
                 bubble.append (build_forwarded_indicator (msg));
-            } else if (!outgoing) {
+            } else if (!outgoing && show_sender_name) {
                 string? author = effective_author_name (msg);
                 if (author != null) {
                     var sender = new Gtk.Label (author);
