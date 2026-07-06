@@ -113,7 +113,8 @@ namespace Dc {
         return null;
     }
 
-    public static Adw.ActionRow contact_row (Contact c, bool activatable = false) {
+    public static Adw.ActionRow contact_row (Contact c, bool activatable = false,
+                                             bool show_presence = true) {
         string title = c.display_name.length > 0 ? c.display_name : c.address;
         string subtitle = c.display_name.length > 0 ? c.address : "";
         if (c.is_verified && subtitle.length > 0) subtitle += " (verified)";
@@ -128,7 +129,7 @@ namespace Dc {
         row.activatable = activatable;
 
         row.add_prefix (presence_avatar (32, title, c.profile_image,
-            c.was_seen_recently));
+            show_presence && c.was_seen_recently));
         return row;
     }
 

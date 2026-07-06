@@ -298,7 +298,7 @@ namespace Dc {
         }
 
         private Adw.ActionRow build_contact_row (Contact contact) {
-            var row = contact_row (contact);
+            var row = contact_row (contact, false, false);
 
             if (contact.address.length > 0) {
                 string addr = contact.address;
