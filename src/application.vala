@@ -327,6 +327,9 @@ namespace Dc {
                     0 0 0 1px alpha(#2ec27e, 0.18),
                     0 0 8px alpha(#2ec27e, 0.52);
             }
+            .list-presence-avatar-ring {
+                margin-left: -4px;
+            }
             .message-sender {
                 font-weight: bold;
                 font-size: small;

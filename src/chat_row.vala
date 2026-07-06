@@ -39,7 +39,7 @@ namespace Dc {
             /* Avatar circle wrapped in an overlay so we can stick compact-mode
                badge/pin markers on top of it. */
             var avatar = presence_avatar (40, entry.name, entry.avatar_path,
-                entry.was_seen_recently);
+                entry.was_seen_recently, null, "list-presence-avatar-ring");
 
             avatar_overlay = new Gtk.Overlay ();
             avatar_overlay.child = avatar;

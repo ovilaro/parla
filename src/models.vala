@@ -129,7 +129,8 @@ namespace Dc {
         row.activatable = activatable;
 
         row.add_prefix (presence_avatar (32, title, c.profile_image,
-            show_presence && c.was_seen_recently));
+            show_presence && c.was_seen_recently, null,
+            "list-presence-avatar-ring"));
         return row;
     }
 
@@ -146,13 +147,14 @@ namespace Dc {
         row.activatable = true;
 
         row.add_prefix (presence_avatar (32, chat.name, chat.avatar_path,
-            chat.was_seen_recently));
+            chat.was_seen_recently, null, "list-presence-avatar-ring"));
         return row;
     }
 
     public static Gtk.Widget presence_avatar (int size, string text,
                                                string? path, bool online,
-                                               string? avatar_css = null) {
+                                               string? avatar_css = null,
+                                               string? ring_css = null) {
         var avatar = new Adw.Avatar (size, text, true);
         avatar.custom_image = load_avatar (path);
         if (avatar_css != null && avatar_css.length > 0) {
@@ -163,6 +165,9 @@ namespace Dc {
         var ring = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
         ring.add_css_class ("presence-avatar-ring");
         if (size <= 24) ring.add_css_class ("presence-avatar-ring-small");
+        if (ring_css != null && ring_css.length > 0) {
+            ring.add_css_class (ring_css);
+        }
         ring.append (avatar);
         return ring;
     }
