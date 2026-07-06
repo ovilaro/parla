@@ -73,7 +73,6 @@ namespace Dc {
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool show_notification_contents { get; set; default = true; }
-        public bool share_online_status { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
         public string rpc_server_path { get; set; default = ""; }
@@ -135,7 +134,6 @@ namespace Dc {
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             show_notification_contents =
                 kf_bool (kf, "show_notification_contents", true);
-            share_online_status = kf_bool (kf, "share_online_status", true);
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
@@ -212,11 +210,6 @@ namespace Dc {
         public void save_show_notification_contents (bool v) {
             show_notification_contents = v;
             save_bool ("show_notification_contents", v);
-        }
-
-        public void save_share_online_status (bool v) {
-            share_online_status = v;
-            save_bool ("share_online_status", v);
         }
 
         public void save_minimize_to_tray (bool v) {
@@ -430,8 +423,13 @@ namespace Dc {
         private Gtk.Button rpc_choose_btn;
         private Gtk.Button rpc_download_btn;
         private Gtk.Button rpc_update_btn;
+        private Adw.ActionRow online_status_row;
+        private Gtk.Switch online_status_switch;
         private bool loading_proxy = false;
         private bool saving_proxy = false;
+        private bool loading_online_status = false;
+        private bool saving_online_status = false;
+        private bool saved_online_status = true;
         private bool saved_proxy_enabled = false;
         private string saved_proxy_url = "";
         private bool syncing_rpc_source = false;
@@ -565,15 +563,15 @@ namespace Dc {
             });
             privacy_list.append (notification_contents_row);
 
-            var online_status_row = action_row (
+            online_status_row = action_row (
                 "Share online status",
-                "Current chatmail JSON-RPC exposes contacts' recent presence, "
-                + "but not a writable setting for publishing your own");
-            var online_status_switch = row_switch (
-                online_status_row, app_window.settings.share_online_status);
-            online_status_switch.sensitive = false;
-            online_status_row.sensitive = false;
+                "Send read receipts when messages are read");
+            online_status_switch = row_switch (online_status_row, false);
+            online_status_switch.notify["active"].connect (() => {
+                if (!loading_online_status) save_online_status_settings.begin ();
+            });
             privacy_list.append (online_status_row);
+            load_online_status_settings.begin ();
 
             var appearance_list = settings_list ("Appearance");
 
@@ -883,6 +881,80 @@ namespace Dc {
             return "#%02x%02x%02x".printf (
                 (uint) (c.red * 255), (uint) (c.green * 255),
                 (uint) (c.blue * 255));
+        }
+
+        private async void load_online_status_settings () {
+            if (!rpc.is_connected || rpc.account_id <= 0) {
+                set_online_status_controls_sensitive (false);
+                online_status_row.subtitle = "No active profile";
+                return;
+            }
+
+            loading_online_status = true;
+            set_online_status_controls_sensitive (false);
+
+            try {
+                string? enabled = yield rpc.get_config ("mdns_enabled",
+                                                        rpc.account_id);
+                bool share = (enabled ?? "1") != "0";
+                online_status_switch.active = share;
+                saved_online_status = share;
+                update_online_status_subtitle (share);
+                online_status_row.tooltip_text = null;
+            } catch (Error e) {
+                online_status_row.subtitle = "Unable to read read receipt setting";
+                online_status_row.tooltip_text = e.message;
+            } finally {
+                loading_online_status = false;
+                set_online_status_controls_sensitive (true);
+            }
+        }
+
+        private async void save_online_status_settings () {
+            if (loading_online_status || saving_online_status) return;
+
+            if (!rpc.is_connected || rpc.account_id <= 0) {
+                app_window.show_toast ("No active profile");
+                return;
+            }
+
+            bool enabled = online_status_switch.active;
+            if (enabled == saved_online_status) return;
+
+            saving_online_status = true;
+            set_online_status_controls_sensitive (false);
+
+            try {
+                yield rpc.batch_set_config ("mdns_enabled",
+                                            enabled ? "1" : "0",
+                                            rpc.account_id);
+                saved_online_status = enabled;
+                update_online_status_subtitle (enabled);
+                online_status_row.tooltip_text = null;
+                app_window.show_toast (enabled
+                    ? "Read receipts enabled"
+                    : "Read receipts disabled");
+            } catch (Error e) {
+                loading_online_status = true;
+                online_status_switch.active = saved_online_status;
+                loading_online_status = false;
+                show_error (this, "Failed to save read receipt setting: " + e.message);
+            } finally {
+                saving_online_status = false;
+                set_online_status_controls_sensitive (true);
+            }
+        }
+
+        private void update_online_status_subtitle (bool enabled) {
+            online_status_row.subtitle = enabled
+                ? "Send read receipts when messages are read"
+                : "Do not send read receipts when messages are read";
+        }
+
+        private void set_online_status_controls_sensitive (bool sensitive) {
+            bool active = sensitive && rpc.is_connected && rpc.account_id > 0;
+            online_status_switch.sensitive = active;
+            online_status_row.sensitive = active;
         }
 
         private async void load_proxy_settings () {
