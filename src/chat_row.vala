@@ -220,8 +220,12 @@ namespace Dc {
 
         public void show (int chat_id, double x, double y, Gtk.Widget parent) {
             bool is_pinned = false;
+            bool has_unread = false;
             var entry = find_chat_entry (chat_store, chat_id);
-            if (entry != null) is_pinned = entry.is_pinned;
+            if (entry != null) {
+                is_pinned = entry.is_pinned;
+                has_unread = entry.unread_count > 0;
+            }
 
             var popover = new Gtk.Popover ();
             popover.has_arrow = false;
@@ -233,6 +237,10 @@ namespace Dc {
 
             append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
                 () => { toggle_pin.begin (chat_id, is_pinned); });
+            append_menu_button (box, popover,
+                has_unread ? "Mark as read" : "Mark as unread",
+                () => { set_unread_state.begin (chat_id, !has_unread); },
+                false, has_unread || chat_id != window.current_chat_id);
             append_menu_button (box, popover, "Details…",
                 () => { show_info (chat_id); });
             append_menu_button (box, popover, "Delete…",
@@ -255,9 +263,11 @@ namespace Dc {
                                                 Gtk.Popover popover,
                                                 string label,
                                                 owned VoidFunc action,
-                                                bool destructive = false) {
+                                                bool destructive = false,
+                                                bool sensitive = true) {
             var btn = make_menu_button (label);
             if (destructive) btn.add_css_class ("menu-destructive");
+            btn.sensitive = sensitive;
             btn.clicked.connect (() => {
                 popover.popdown ();
                 action ();
@@ -272,6 +282,20 @@ namespace Dc {
                 yield window.load_chats ();
             } catch (Error e) {
                 window.show_toast ("Failed to update pin: " + e.message);
+            }
+        }
+
+        private async void set_unread_state (int chat_id, bool unread) {
+            try {
+                if (unread) {
+                    yield rpc.markfresh_chat (chat_id);
+                } else {
+                    yield rpc.marknoticed_chat (chat_id);
+                }
+                window.request_reload_chats ();
+                window.show_toast (unread ? "Marked unread" : "Marked read");
+            } catch (Error e) {
+                window.show_toast ("Failed to update unread marker: " + e.message);
             }
         }
 

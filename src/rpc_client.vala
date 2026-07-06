@@ -393,6 +393,11 @@ namespace Dc {
                 Params.begin ().add_int (account_id).add_int (chat_id).build ());
         }
 
+        public async void markfresh_chat (int chat_id) throws Error {
+            yield call ("markfresh_chat",
+                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+        }
+
         public async void mark_seen_msgs (int[] msg_ids) throws Error {
             yield call ("markseen_msgs",
                 Params.begin ()
