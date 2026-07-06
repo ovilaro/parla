@@ -10,6 +10,9 @@ namespace Dc {
             c.profile_image = json_str (obj, "profileImage");
             c.is_verified = json_bool (obj, "isVerified");
             c.is_blocked = json_bool (obj, "isBlocked");
+            c.status = json_str (obj, "status");
+            c.last_seen = json_int (obj, "lastSeen");
+            c.was_seen_recently = json_bool (obj, "wasSeenRecently");
             return c;
         }
 
@@ -41,6 +44,14 @@ namespace Dc {
                     ?? json_str (sender, "name");
                 msg.sender_avatar_path = json_str (sender, "profileImage")
                     ?? json_str (sender, "avatarPath");
+                msg.sender_contact_id = (int) json_int (sender, "id");
+                msg.sender_last_seen = json_int (sender, "lastSeen");
+                msg.sender_was_seen_recently =
+                    json_bool (sender, "wasSeenRecently");
+            }
+
+            if (obj.has_member ("fromId")) {
+                msg.sender_contact_id = (int) obj.get_int_member ("fromId");
             }
 
             if (self_email != null && msg.sender_address != null) {
@@ -77,6 +88,15 @@ namespace Dc {
             entry.is_muted = json_bool (obj, "isMuted");
             entry.is_contact_request = json_bool (obj, "isContactRequest");
             entry.is_pinned = json_bool (obj, "isPinned");
+            entry.last_seen = json_int (obj, "lastSeen");
+            entry.was_seen_recently = json_bool (obj, "wasSeenRecently");
+            if (!entry.was_seen_recently && obj.has_member ("contact") &&
+                !obj.get_member ("contact").is_null ()) {
+                var contact = obj.get_object_member ("contact");
+                entry.last_seen = json_int (contact, "lastSeen");
+                entry.was_seen_recently =
+                    json_bool (contact, "wasSeenRecently");
+            }
             return entry;
         }
 

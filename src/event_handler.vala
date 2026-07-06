@@ -151,6 +151,11 @@ namespace Dc {
                 account_unread_changed (rpc.account_id);
                 break;
 
+            case "ContactsChanged":
+                schedule_messages_reload ();
+                schedule_chats_reload ();
+                break;
+
             default:
                 break;
             }

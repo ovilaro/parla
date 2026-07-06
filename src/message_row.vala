@@ -449,12 +449,12 @@ namespace Dc {
                 ? ((self_display_name != null && self_display_name.length > 0)
                     ? self_display_name : "me")
                 : (msg.sender_name ?? msg.sender_address ?? "?");
-            var avatar = new Adw.Avatar (20, text, true);
-            avatar.custom_image = load_avatar (msg.is_outgoing
-                ? self_avatar_path : msg.sender_avatar_path);
-            avatar.add_css_class ("message-avatar");
+            var avatar = presence_avatar (20, text,
+                msg.is_outgoing ? self_avatar_path : msg.sender_avatar_path,
+                msg.sender_is_online, "message-avatar");
             avatar.valign = Gtk.Align.END;
-            avatar.tooltip_text = text;
+            avatar.tooltip_text = msg.sender_is_online
+                ? "%s is online".printf (text) : text;
             if (msg.is_outgoing) {
                 avatar.margin_start = 4;
             } else {

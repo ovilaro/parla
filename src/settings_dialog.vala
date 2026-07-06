@@ -72,6 +72,7 @@ namespace Dc {
         public bool markdown_rendering { get; set; default = false; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
+        public bool share_online_status { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
         public string rpc_server_path { get; set; default = ""; }
@@ -131,6 +132,7 @@ namespace Dc {
             Markdown.enabled = markdown_rendering;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
+            share_online_status = kf_bool (kf, "share_online_status", true);
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
@@ -202,6 +204,11 @@ namespace Dc {
         public void save_notifications_enabled (bool v) {
             notifications_enabled = v;
             save_bool ("notifications_enabled", v);
+        }
+
+        public void save_share_online_status (bool v) {
+            share_online_status = v;
+            save_bool ("share_online_status", v);
         }
 
         public void save_minimize_to_tray (bool v) {
@@ -535,6 +542,18 @@ namespace Dc {
 
                 behavior_list.append (tray_row);
             }
+
+            var privacy_list = settings_list ("Privacy");
+
+            var online_status_row = action_row (
+                "Share online status",
+                "Current chatmail JSON-RPC exposes contacts' recent presence, "
+                + "but not a writable setting for publishing your own");
+            var online_status_switch = row_switch (
+                online_status_row, app_window.settings.share_online_status);
+            online_status_switch.sensitive = false;
+            online_status_row.sensitive = false;
+            privacy_list.append (online_status_row);
 
             var appearance_list = settings_list ("Appearance");
 

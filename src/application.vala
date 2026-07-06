@@ -311,6 +311,22 @@ namespace Dc {
             .message-avatar {
                 margin-bottom: 1px;
             }
+            .presence-avatar-ring {
+                padding: 2px;
+                border-radius: 9999px;
+                border: 2px solid #2ec27e;
+                background-color: alpha(#2ec27e, 0.16);
+                box-shadow:
+                    0 0 0 2px alpha(#2ec27e, 0.14),
+                    0 0 10px alpha(#2ec27e, 0.48);
+            }
+            .presence-avatar-ring-small {
+                padding: 1px;
+                border-width: 1px;
+                box-shadow:
+                    0 0 0 1px alpha(#2ec27e, 0.18),
+                    0 0 8px alpha(#2ec27e, 0.52);
+            }
             .message-sender {
                 font-weight: bold;
                 font-size: small;

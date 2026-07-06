@@ -38,8 +38,8 @@ namespace Dc {
 
             /* Avatar circle wrapped in an overlay so we can stick compact-mode
                badge/pin markers on top of it. */
-            var avatar = new Adw.Avatar (40, entry.name, true);
-            avatar.custom_image = load_avatar (entry.avatar_path);
+            var avatar = presence_avatar (40, entry.name, entry.avatar_path,
+                entry.was_seen_recently);
 
             avatar_overlay = new Gtk.Overlay ();
             avatar_overlay.child = avatar;

@@ -127,9 +127,8 @@ namespace Dc {
         row.subtitle = subtitle;
         row.activatable = activatable;
 
-        var avatar = new Adw.Avatar (32, title, true);
-        avatar.custom_image = load_avatar (c.profile_image);
-        row.add_prefix (avatar);
+        row.add_prefix (presence_avatar (32, title, c.profile_image,
+            c.was_seen_recently));
         return row;
     }
 
@@ -145,10 +144,26 @@ namespace Dc {
         row.name = chat.id.to_string ();
         row.activatable = true;
 
-        var avatar = new Adw.Avatar (32, chat.name, true);
-        avatar.custom_image = load_avatar (chat.avatar_path);
-        row.add_prefix (avatar);
+        row.add_prefix (presence_avatar (32, chat.name, chat.avatar_path,
+            chat.was_seen_recently));
         return row;
+    }
+
+    public static Gtk.Widget presence_avatar (int size, string text,
+                                               string? path, bool online,
+                                               string? avatar_css = null) {
+        var avatar = new Adw.Avatar (size, text, true);
+        avatar.custom_image = load_avatar (path);
+        if (avatar_css != null && avatar_css.length > 0) {
+            avatar.add_css_class (avatar_css);
+        }
+        if (!online) return avatar;
+
+        var ring = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+        ring.add_css_class ("presence-avatar-ring");
+        if (size <= 24) ring.add_css_class ("presence-avatar-ring-small");
+        ring.append (avatar);
+        return ring;
     }
 
     public class ChatEntry : Object {
@@ -163,6 +178,8 @@ namespace Dc {
         public bool is_muted { get; set; default = false; }
         public bool is_contact_request { get; set; default = false; }
         public bool is_pinned { get; set; default = false; }
+        public int64 last_seen { get; set; default = 0; }
+        public bool was_seen_recently { get; set; default = false; }
     }
 
     public enum ChatKind {
@@ -197,6 +214,9 @@ namespace Dc {
         public string? sender_address { get; set; default = null; }
         public string? sender_name { get; set; default = null; }
         public string? sender_avatar_path { get; set; default = null; }
+        public int sender_contact_id { get; set; default = 0; }
+        public int64 sender_last_seen { get; set; default = 0; }
+        public bool sender_was_seen_recently { get; set; default = false; }
         /* True when the message was forwarded into this chat. */
         public bool is_forwarded { get; set; default = false; }
         /* True when the message text was edited after sending. */
@@ -246,6 +266,9 @@ namespace Dc {
         }
         public bool is_failed {
             get { return state == MessageState.OUT_FAILED; }
+        }
+        public bool sender_is_online {
+            get { return !is_outgoing && sender_was_seen_recently; }
         }
         public bool has_text {
             get { return text != null && text.strip ().length > 0; }
@@ -325,6 +348,9 @@ namespace Dc {
         public string? profile_image { get; set; default = null; }
         public bool is_verified { get; set; default = false; }
         public bool is_blocked { get; set; default = false; }
+        public string? status { get; set; default = null; }
+        public int64 last_seen { get; set; default = 0; }
+        public bool was_seen_recently { get; set; default = false; }
     }
 
     public ChatEntry? find_chat_entry (GLib.ListStore store, int chat_id) {
