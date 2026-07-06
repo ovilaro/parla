@@ -637,8 +637,8 @@ namespace Dc {
             font_dialog.modal = true;
             font_btn = new Gtk.FontDialogButton (font_dialog);
             font_btn.valign = Gtk.Align.CENTER;
-            font_btn.use_font = true;
-            font_btn.use_size = true;
+            font_btn.use_font = false;
+            font_btn.use_size = false;
             font_btn.font_desc = app_window.settings.effective_font_description ();
             font_btn.notify["font-desc"].connect (() => {
                 if (syncing_font_controls) return;
