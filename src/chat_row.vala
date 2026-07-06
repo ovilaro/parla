@@ -306,10 +306,49 @@ namespace Dc {
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) chat_name = entry.name;
 
-            confirm_delete_options (window, "Delete Chat?",
-                "Remove \"%s\" from your chat list? You may still receive messages if you are a member.".printf (chat_name),
-                () => { do_delete.begin (chat_id); },
-                null);
+            var d = new Adw.AlertDialog (
+                "Clear or Delete Chat?",
+                "Choose what to do with \"%s\". Clearing history removes messages; deleting also removes the chat from your list.".printf (chat_name));
+            d.add_response ("cancel", "Cancel");
+            d.add_response ("clear_me", "Clear for Me");
+            d.add_response ("clear_all", "Clear for Everyone");
+            d.add_response ("delete_me", "Delete for Me");
+            d.set_response_appearance ("clear_me",
+                Adw.ResponseAppearance.DESTRUCTIVE);
+            d.set_response_appearance ("clear_all",
+                Adw.ResponseAppearance.DESTRUCTIVE);
+            d.set_response_appearance ("delete_me",
+                Adw.ResponseAppearance.DESTRUCTIVE);
+            d.default_response = "cancel";
+            d.close_response = "cancel";
+            d.response.connect ((r) => {
+                if (r == "clear_me") do_clear_history.begin (chat_id, false);
+                else if (r == "clear_all") do_clear_history.begin (chat_id, true);
+                else if (r == "delete_me") do_delete.begin (chat_id);
+            });
+            d.present (window);
+        }
+
+        private async void do_clear_history (int chat_id, bool for_all) {
+            try {
+                var msg_ids = yield rpc.get_message_ids_for (
+                    rpc.account_id, chat_id);
+                if (msg_ids != null && msg_ids.get_length () > 0) {
+                    int[] ids = new int[msg_ids.get_length ()];
+                    for (uint i = 0; i < msg_ids.get_length (); i++) {
+                        ids[i] = (int) msg_ids.get_int_element (i);
+                    }
+                    if (for_all) yield rpc.delete_messages_for_all (ids);
+                    else yield rpc.delete_messages (ids);
+                }
+                window.show_toast (for_all
+                    ? "Chat cleared for everyone" : "Chat cleared");
+                if (window.current_chat_id == chat_id)
+                    window.request_messages_reload ();
+                window.request_reload_chats ();
+            } catch (Error e) {
+                window.show_toast ("Clear failed: " + e.message);
+            }
         }
 
         private async void do_delete (int chat_id) {
