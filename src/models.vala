@@ -97,6 +97,32 @@ namespace Dc {
         }
     }
 
+    public static async int[] chat_message_ids_for_clear (RpcClient rpc,
+                                                           int account_id,
+                                                           int chat_id,
+                                                           bool for_all) throws Error {
+        var msg_ids = yield rpc.get_message_ids_for (account_id, chat_id);
+        if (msg_ids == null || msg_ids.get_length () == 0) return {};
+
+        int[] all_ids = new int[msg_ids.get_length ()];
+        for (uint i = 0; i < msg_ids.get_length (); i++) {
+            all_ids[i] = (int) msg_ids.get_int_element (i);
+        }
+        if (!for_all) return all_ids;
+
+        int[] ids = {};
+        var map = yield rpc.get_messages_for (account_id, all_ids);
+        if (map == null) return ids;
+        foreach (int msg_id in all_ids) {
+            string key = msg_id.to_string ();
+            if (!map.has_member (key)) continue;
+            var msg = RpcParsers.parse_message (
+                map.get_object_member (key), rpc.self_email);
+            if (msg.is_outgoing) ids += msg_id;
+        }
+        return ids;
+    }
+
     public static async string? pick_image_file (Gtk.Window parent, string title) {
         var chooser = new Gtk.FileDialog ();
         chooser.title = title;

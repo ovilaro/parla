@@ -332,10 +332,10 @@ namespace Dc {
 
             var d = new Adw.AlertDialog (
                 "Clear or Delete Chat?",
-                "Choose what to do with \"%s\". Clearing history removes messages; deleting also removes the chat from your list.".printf (chat_name));
+                "Choose what to do with \"%s\". Clearing for everyone only applies to messages you sent; deleting removes the chat from your list.".printf (chat_name));
             d.add_response ("cancel", "Cancel");
             d.add_response ("clear_me", "Clear for Me");
-            d.add_response ("clear_all", "Clear for Everyone");
+            d.add_response ("clear_all", "Clear Sent for Everyone");
             d.add_response ("delete_me", "Delete for Me");
             d.set_response_appearance ("clear_me",
                 Adw.ResponseAppearance.DESTRUCTIVE);
@@ -355,18 +355,17 @@ namespace Dc {
 
         private async void do_clear_history (int chat_id, bool for_all) {
             try {
-                var msg_ids = yield rpc.get_message_ids_for (
-                    rpc.account_id, chat_id);
-                if (msg_ids != null && msg_ids.get_length () > 0) {
-                    int[] ids = new int[msg_ids.get_length ()];
-                    for (uint i = 0; i < msg_ids.get_length (); i++) {
-                        ids[i] = (int) msg_ids.get_int_element (i);
-                    }
+                int[] ids = yield chat_message_ids_for_clear (
+                    rpc, rpc.account_id, chat_id, for_all);
+                if (ids.length > 0) {
                     if (for_all) yield rpc.delete_messages_for_all (ids);
                     else yield rpc.delete_messages (ids);
+                } else if (for_all) {
+                    window.show_toast ("No sent messages to clear for everyone");
+                    return;
                 }
                 window.show_toast (for_all
-                    ? "Chat cleared for everyone" : "Chat cleared");
+                    ? "Sent messages cleared for everyone" : "Chat cleared");
                 if (window.current_chat_id == chat_id)
                     window.request_messages_reload ();
                 window.request_reload_chats ();

@@ -263,7 +263,7 @@ namespace Dc {
 
                 clear_row.add_suffix (flat_button ("For Me",
                     () => { confirm_clear_history (false); }));
-                clear_row.add_suffix (flat_button ("For Everyone",
+                clear_row.add_suffix (flat_button ("Sent for Everyone",
                     () => { confirm_clear_history (true); }, true));
 
                 actions_list.append (clear_row);
@@ -522,11 +522,11 @@ namespace Dc {
         }
 
         private void confirm_clear_history (bool for_all) {
-            string title = for_all ? "Clear for Everyone" : "Clear History";
+            string title = for_all ? "Clear Sent Messages for Everyone" : "Clear History";
             string body = for_all
-                ? "Delete all messages for all participants? This cannot be undone."
+                ? "Delete messages you sent for all participants? Messages from other people can only be cleared from your device."
                 : "Delete all messages from your device? This cannot be undone.";
-            string action_label = for_all ? "Clear for Everyone" : "Clear";
+            string action_label = for_all ? "Clear Sent Messages" : "Clear";
             confirm_action (this, title, body, "clear", action_label, () => {
                 do_clear_history.begin (for_all);
             });
@@ -542,13 +542,9 @@ namespace Dc {
         }
 
         private async void delete_all_messages (bool for_all) throws Error {
-            var msg_ids = yield rpc.get_message_ids_for (
-                rpc.account_id, chat_id);
-            if (msg_ids == null || msg_ids.get_length () == 0) return;
-            int[] ids = new int[msg_ids.get_length ()];
-            for (uint i = 0; i < msg_ids.get_length (); i++) {
-                ids[i] = (int) msg_ids.get_int_element (i);
-            }
+            int[] ids = yield chat_message_ids_for_clear (
+                rpc, rpc.account_id, chat_id, for_all);
+            if (ids.length == 0) return;
             if (for_all) yield rpc.delete_messages_for_all (ids);
             else yield rpc.delete_messages (ids);
         }
@@ -571,7 +567,7 @@ namespace Dc {
 
         private void confirm_disband_group () {
             confirm_action (this, "Disband Group",
-                "Remove all members from \"%s\" and delete all messages? This cannot be undone.".printf (chat_name),
+                "Remove all members from \"%s\" and delete your sent messages for everyone? Other messages will only be removed locally.".printf (chat_name),
                 "disband", "Disband", () => { do_disband_group.begin (); });
         }
 
