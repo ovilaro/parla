@@ -243,8 +243,10 @@ namespace Dc {
                 false, has_unread || chat_id != window.current_chat_id);
             append_menu_button (box, popover, "Details…",
                 () => { show_info (chat_id); });
+            append_menu_button (box, popover, "Clear Chat…",
+                () => { confirm_clear_history (chat_id); }, true);
             append_menu_button (box, popover, "Delete…",
-                () => { confirm_delete.begin (chat_id); }, true);
+                () => { confirm_delete (chat_id); }, true);
 
             popover.child = box;
             popover.closed.connect (() => { popover.unparent (); });
@@ -325,32 +327,28 @@ namespace Dc {
             dialog.present (window);
         }
 
-        private async void confirm_delete (int chat_id) {
+        private void confirm_clear_history (int chat_id) {
             string chat_name = "this chat";
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) chat_name = entry.name;
 
-            var d = new Adw.AlertDialog (
-                "Clear or Delete Chat?",
-                "Choose what to do with \"%s\". Clearing for everyone only applies to messages you sent; deleting removes the chat from your list.".printf (chat_name));
-            d.add_response ("cancel", "Cancel");
-            d.add_response ("clear_me", "Clear for Me");
-            d.add_response ("clear_all", "Clear Sent for Everyone");
-            d.add_response ("delete_me", "Delete for Me");
-            d.set_response_appearance ("clear_me",
-                Adw.ResponseAppearance.DESTRUCTIVE);
-            d.set_response_appearance ("clear_all",
-                Adw.ResponseAppearance.DESTRUCTIVE);
-            d.set_response_appearance ("delete_me",
-                Adw.ResponseAppearance.DESTRUCTIVE);
-            d.default_response = "cancel";
-            d.close_response = "cancel";
-            d.response.connect ((r) => {
-                if (r == "clear_me") do_clear_history.begin (chat_id, false);
-                else if (r == "clear_all") do_clear_history.begin (chat_id, true);
-                else if (r == "delete_me") do_delete.begin (chat_id);
+            confirm_action (window, "Clear Chat",
+                "Remove all messages in \"%s\" from this device? The chat will stay in your conversation list.".printf (chat_name),
+                "clear", "Clear Chat", () => {
+                    do_clear_history.begin (chat_id, false);
+                });
+        }
+
+        private void confirm_delete (int chat_id) {
+            string chat_name = "this chat";
+            var entry = find_chat_entry (chat_store, chat_id);
+            if (entry != null) chat_name = entry.name;
+
+            confirm_action (window, "Delete Chat",
+                "Remove \"%s\" from your conversation list? You may still receive new messages if you are a member.".printf (chat_name),
+                "delete", "Delete", () => {
+                    do_delete.begin (chat_id);
             });
-            d.present (window);
         }
 
         private async void do_clear_history (int chat_id, bool for_all) {

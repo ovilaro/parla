@@ -258,15 +258,15 @@ namespace Dc {
 
                 var actions_list = boxed_list ();
 
-                var clear_row = new Adw.ActionRow ();
-                clear_row.title = "Clear History";
-
-                clear_row.add_suffix (flat_button ("For Me",
+                actions_list.append (action_row ("Clear Chat",
+                    "Remove messages from this device; keep the chat in your list",
+                    "edit-clear-symbolic",
                     () => { confirm_clear_history (false); }));
-                clear_row.add_suffix (flat_button ("Sent for Everyone",
-                    () => { confirm_clear_history (true); }, true));
 
-                actions_list.append (clear_row);
+                actions_list.append (action_row ("Clear Sent Messages for Everyone",
+                    "Delete messages you sent for all participants",
+                    "edit-delete-symbolic",
+                    () => { confirm_clear_history (true); }));
 
                 if (is_group) {
                     actions_list.append (action_row ("Leave Group",
@@ -522,11 +522,11 @@ namespace Dc {
         }
 
         private void confirm_clear_history (bool for_all) {
-            string title = for_all ? "Clear Sent Messages for Everyone" : "Clear History";
+            string title = for_all ? "Clear Sent Messages for Everyone" : "Clear Chat";
             string body = for_all
                 ? "Delete messages you sent for all participants? Messages from other people can only be cleared from your device."
-                : "Delete all messages from your device? This cannot be undone.";
-            string action_label = for_all ? "Clear Sent Messages" : "Clear";
+                : "Remove all messages from this device? The chat will stay in your conversation list.";
+            string action_label = for_all ? "Clear Sent Messages" : "Clear Chat";
             confirm_action (this, title, body, "clear", action_label, () => {
                 do_clear_history.begin (for_all);
             });
