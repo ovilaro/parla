@@ -13,6 +13,7 @@ namespace Dc {
         public signal void send_message (string text, string? file_path, string? file_name, int quote_msg_id);
         public signal void edit_message (int msg_id, string new_text);
         public signal void edit_last_requested ();
+        public signal void draft_changed (string text, string? file_path, string? file_name, int quote_msg_id);
 
         private Gtk.TextView text_view;
         private Gtk.Label placeholder_label;
@@ -35,6 +36,13 @@ namespace Dc {
         private bool pending_file_is_temp = false;
         private int editing_msg_id = 0;
         private int replying_msg_id = 0;
+        private bool suppress_draft_signal = false;
+        private bool has_suspended_draft = false;
+        private string suspended_draft_text = "";
+        private string? suspended_draft_file = null;
+        private string? suspended_draft_file_name = null;
+        private int suspended_replying_msg_id = 0;
+        private string suspended_reply_label = "";
 
         public ComposeBar () {
             Object (
@@ -186,7 +194,10 @@ namespace Dc {
             entry_overlay.halign = Gtk.Align.FILL;
             entry_overlay.valign = Gtk.Align.CENTER;
 
-            text_view.buffer.changed.connect (update_placeholder);
+            text_view.buffer.changed.connect (() => {
+                update_placeholder ();
+                notify_draft_changed ();
+            });
             update_placeholder ();
 
             var focus_ctrl = new Gtk.EventControllerFocus ();
@@ -272,6 +283,12 @@ namespace Dc {
             return text_view.buffer.get_text (start, end, false);
         }
 
+        private void notify_draft_changed () {
+            if (suppress_draft_signal || editing_msg_id > 0) return;
+            draft_changed (get_text (), pending_file, pending_file_name,
+                replying_msg_id);
+        }
+
         private void update_placeholder () {
             placeholder_label.visible = text_view.buffer.get_char_count () == 0;
         }
@@ -294,6 +311,7 @@ namespace Dc {
             pending_file_is_temp = false;
             populate_attachment_preview (file_path, pending_file_name);
             cancel_attach_button.visible = true;
+            notify_draft_changed ();
         }
 
         private void populate_attachment_preview (string file_path, string file_name) {
@@ -403,6 +421,7 @@ namespace Dc {
             attachment_name_label.label = "";
             attachment_meta_label.label = "";
             placeholder_label.label = placeholder_default;
+            notify_draft_changed ();
         }
 
         private void on_send () {
@@ -416,11 +435,14 @@ namespace Dc {
             if (text.length == 0 && pending_file == null) return;
             int qid = replying_msg_id;
             send_message (text, pending_file, pending_file_name, qid);
+            suppress_draft_signal = true;
             cancel_reply ();
             /* Hand temp-file ownership to the in-flight async RPC. */
             pending_file_is_temp = false;
             text_view.buffer.text = "";
             clear_attachment ();
+            suppress_draft_signal = false;
+            notify_draft_changed ();
         }
 
         public void begin_reply (int msg_id, string sender_name, string preview) {
@@ -429,6 +451,7 @@ namespace Dc {
             reply_label.label = "%s: %s".printf (sender_name, shorten_preview (preview));
             reply_bar.visible = true;
             text_view.grab_focus ();
+            notify_draft_changed ();
         }
 
         /* Keep at most 3 lines and bound total length so the reply bar
@@ -457,13 +480,17 @@ namespace Dc {
             replying_msg_id = 0;
             reply_bar.visible = false;
             reply_label.label = "";
+            notify_draft_changed ();
         }
 
         public void begin_edit (int msg_id, string current_text) {
+            suspend_current_draft ();
+            suppress_draft_signal = true;
             cancel_reply ();
             clear_attachment ();
             editing_msg_id = msg_id;
             text_view.buffer.text = current_text;
+            suppress_draft_signal = false;
             placeholder_label.label = "Edit message…";
             cancel_edit_button.visible = true;
             attach_button.sensitive = false;
@@ -482,16 +509,93 @@ namespace Dc {
 
         private void cancel_edit () {
             if (editing_msg_id == 0) return;
+            suppress_draft_signal = true;
             editing_msg_id = 0;
             text_view.buffer.text = "";
             placeholder_label.label = placeholder_default;
             cancel_edit_button.visible = false;
             attach_button.sensitive = true;
+            restore_suspended_draft ();
+            suppress_draft_signal = false;
+            notify_draft_changed ();
+        }
+
+        private void suspend_current_draft () {
+            has_suspended_draft = has_unsent_content ();
+            if (!has_suspended_draft) return;
+
+            suspended_draft_text = get_text ();
+            suspended_draft_file = pending_file;
+            suspended_draft_file_name = pending_file_name;
+            suspended_replying_msg_id = replying_msg_id;
+            suspended_reply_label = reply_label.label;
+        }
+
+        private void restore_suspended_draft () {
+            if (!has_suspended_draft) return;
+
+            text_view.buffer.text = suspended_draft_text;
+            if (suspended_draft_file != null &&
+                GLib.FileUtils.test (suspended_draft_file, GLib.FileTest.EXISTS)) {
+                set_pending_attachment (suspended_draft_file,
+                    suspended_draft_file_name);
+            }
+            if (suspended_replying_msg_id > 0) {
+                replying_msg_id = suspended_replying_msg_id;
+                reply_label.label = suspended_reply_label;
+                reply_bar.visible = true;
+            }
+
+            has_suspended_draft = false;
+            suspended_draft_text = "";
+            suspended_draft_file = null;
+            suspended_draft_file_name = null;
+            suspended_replying_msg_id = 0;
+            suspended_reply_label = "";
+        }
+
+        public void restore_draft (Message draft) {
+            if (editing_msg_id > 0 || has_unsent_content ()) return;
+
+            suppress_draft_signal = true;
+            cancel_reply ();
+            clear_attachment ();
+
+            text_view.buffer.text = draft.text ?? "";
+
+            if (draft.file_path != null && draft.file_path.length > 0 &&
+                GLib.FileUtils.test (draft.file_path, GLib.FileTest.EXISTS)) {
+                set_pending_attachment (draft.file_path, draft.file_name);
+            }
+
+            if (draft.quote_msg_id > 0) {
+                replying_msg_id = draft.quote_msg_id;
+                string sender = draft.quote_sender_name ?? "Message";
+                string preview = draft.quote_text ?? draft.quote_msg_id.to_string ();
+                reply_label.label = "%s: %s".printf (sender, shorten_preview (preview));
+                reply_bar.visible = true;
+            }
+
+            suppress_draft_signal = false;
+            update_placeholder ();
+
+            Gtk.TextIter end_iter;
+            text_view.buffer.get_end_iter (out end_iter);
+            text_view.buffer.place_cursor (end_iter);
+            GLib.Idle.add (() => {
+                text_view.scroll_mark_onscreen (text_view.buffer.get_insert ());
+                return GLib.Source.REMOVE;
+            });
         }
 
         public bool has_active_mode () {
             return editing_msg_id != 0 || replying_msg_id != 0
                 || pending_file != null;
+        }
+
+        public bool has_unsent_content () {
+            return text_view.buffer.get_char_count () > 0
+                || replying_msg_id != 0 || pending_file != null;
         }
 
         public bool entry_has_focus () {

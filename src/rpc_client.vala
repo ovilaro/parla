@@ -370,6 +370,37 @@ namespace Dc {
             return 0;
         }
 
+        public async Message? get_draft (int chat_id) throws Error {
+            var result = yield call ("get_draft",
+                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+            if (result == null || result.is_null () ||
+                result.get_node_type () != Json.NodeType.OBJECT)
+                return null;
+            return RpcParsers.parse_message (result.get_object (), self_email);
+        }
+
+        public async void set_draft (int chat_id, string? text,
+                                      string? file_path = null,
+                                      string? file_name = null,
+                                      int quoted_msg_id = 0,
+                                      string? view_type = null) throws Error {
+            var p = Params.begin ()
+                .add_int (account_id)
+                .add_int (chat_id)
+                .add_string (text)
+                .add_string (file_path)
+                .add_string (file_name);
+            if (quoted_msg_id > 0) p.add_int (quoted_msg_id);
+            else p.add_null ();
+            p.add_string (view_type);
+            yield call ("misc_set_draft", p.build ());
+        }
+
+        public async void remove_draft (int chat_id) throws Error {
+            yield call ("remove_draft",
+                Params.begin ().add_int (account_id).add_int (chat_id).build ());
+        }
+
         public async void send_edit_request (int msg_id, string new_text) throws Error {
             yield call ("send_edit_request",
                 Params.begin ()

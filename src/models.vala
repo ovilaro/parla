@@ -196,6 +196,7 @@ namespace Dc {
 
     /* Delivery state values from deltachat-core that the UI renders. */
     public enum MessageState {
+        OUT_DRAFT     = 10,
         OUT_PREPARING = 18,
         OUT_PENDING   = 20,
         OUT_FAILED    = 24,

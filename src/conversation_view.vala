@@ -43,6 +43,9 @@ namespace Dc {
         private bool loading_more = false;
         private bool loading_chat = false;
         private bool messages_loaded = false;
+        private bool draft_loaded = false;
+        private bool draft_rpc_available = true;
+        private uint draft_save_timer = 0;
         private int64 scroll_freeze_until_us = 0;
 
         private PinnedMessagesManager pinned;
@@ -313,6 +316,7 @@ namespace Dc {
             settings.bind_property ("shift-enter-sends", compose_bar,
                                     "shift-enter-sends", BindingFlags.SYNC_CREATE);
             compose_bar.send_message.connect (on_send_message);
+            compose_bar.draft_changed.connect (on_draft_changed);
             compose_bar.edit_message.connect ((msg_id, new_text) => {
                 msg_actions.edit_message.begin (msg_id, new_text);
             });
@@ -600,6 +604,10 @@ namespace Dc {
             if (!messages_loaded) {
                 messages_loaded = true;
                 load_messages.begin ();
+            }
+            if (!draft_loaded) {
+                draft_loaded = true;
+                load_draft.begin ();
             }
             if (!is_contact_request && !selection_mode) compose_bar.grab_entry_focus ();
         }
@@ -951,8 +959,11 @@ namespace Dc {
                 foreach (int mid in ids) {
                     string k = mid.to_string ();
                     if (map.has_member (k)) {
-                        result.add (RpcParsers.parse_message (
-                            map.get_object_member (k), rpc.self_email));
+                        var msg = RpcParsers.parse_message (
+                            map.get_object_member (k), rpc.self_email);
+                        if (msg.state != MessageState.OUT_DRAFT) {
+                            result.add (msg);
+                        }
                     }
                 }
             }
@@ -1106,6 +1117,8 @@ namespace Dc {
          * ================================================================ */
 
         private void on_send_message (string text, string? file_path, string? file_name, int quote_msg_id) {
+            cancel_pending_draft_save ();
+            remove_draft.begin ();
             do_send.begin (text, file_path, file_name, quote_msg_id);
         }
 
@@ -1126,6 +1139,76 @@ namespace Dc {
             } catch (Error e) {
                 window.show_toast ("Send failed: " + e.message);
             }
+        }
+
+        private void on_draft_changed (string text, string? file_path,
+                                       string? file_name, int quote_msg_id) {
+            if (!draft_rpc_available || rpc.account_id <= 0) return;
+            cancel_pending_draft_save ();
+            draft_save_timer = Timeout.add (600, () => {
+                draft_save_timer = 0;
+                save_draft.begin (text, file_path, file_name, quote_msg_id);
+                return Source.REMOVE;
+            });
+        }
+
+        private void cancel_pending_draft_save () {
+            if (draft_save_timer == 0) return;
+            Source.remove (draft_save_timer);
+            draft_save_timer = 0;
+        }
+
+        private async void load_draft () {
+            if (!draft_rpc_available || rpc.account_id <= 0) return;
+            try {
+                var draft = yield rpc.get_draft (chat_id);
+                if (draft == null || compose_bar.has_unsent_content ()) return;
+                compose_bar.restore_draft (draft);
+            } catch (Error e) {
+                draft_rpc_available = !is_missing_draft_rpc (e);
+                if (draft_rpc_available) warning ("load_draft: %s", e.message);
+            }
+        }
+
+        private async void save_draft (string text, string? file_path,
+                                       string? file_name, int quote_msg_id) {
+            if (!draft_rpc_available || rpc.account_id <= 0) return;
+            try {
+                bool has_text = text.length > 0;
+                bool has_file = file_path != null && file_path.length > 0;
+                bool has_quote = quote_msg_id > 0;
+                if (!has_text && !has_file && !has_quote) {
+                    yield rpc.remove_draft (chat_id);
+                } else {
+                    yield rpc.set_draft (chat_id,
+                        has_text ? text : null,
+                        has_file ? file_path : null,
+                        has_file ? file_name : null,
+                        quote_msg_id);
+                }
+                window.request_reload_chats ();
+            } catch (Error e) {
+                draft_rpc_available = !is_missing_draft_rpc (e);
+                if (draft_rpc_available) warning ("save_draft: %s", e.message);
+            }
+        }
+
+        private async void remove_draft () {
+            if (!draft_rpc_available || rpc.account_id <= 0) return;
+            try {
+                yield rpc.remove_draft (chat_id);
+                window.request_reload_chats ();
+            } catch (Error e) {
+                draft_rpc_available = !is_missing_draft_rpc (e);
+                if (draft_rpc_available) warning ("remove_draft: %s", e.message);
+            }
+        }
+
+        private bool is_missing_draft_rpc (Error e) {
+            string msg = e.message.down ();
+            return "method not found" in msg
+                || "procedure not found" in msg
+                || "unknown method" in msg;
         }
 
         private bool can_accept_file_attachment () {
