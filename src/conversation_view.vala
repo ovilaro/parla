@@ -1,5 +1,20 @@
 namespace Dc {
 
+    private class PendingSend : Object {
+        public string text;
+        public string? file_path;
+        public string? file_name;
+        public int quote_msg_id;
+
+        public PendingSend (string text, string? file_path,
+                            string? file_name, int quote_msg_id) {
+            this.text = text;
+            this.file_path = file_path;
+            this.file_name = file_name;
+            this.quote_msg_id = quote_msg_id;
+        }
+    }
+
     /**
      * Per-chat conversation view. One instance per chat, cached by the
      * window so each conversation keeps its own draft, scroll position,
@@ -47,6 +62,8 @@ namespace Dc {
         private bool draft_rpc_available = true;
         private uint draft_save_timer = 0;
         private int64 scroll_freeze_until_us = 0;
+        private Queue<PendingSend> send_queue = new Queue<PendingSend> ();
+        private bool sending_queue = false;
 
         private PinnedMessagesManager pinned;
         private MessageActions msg_actions;
@@ -1188,13 +1205,28 @@ namespace Dc {
          *  Sending & attachments
          * ================================================================ */
 
-        private void on_send_message (string text, string? file_path, string? file_name, int quote_msg_id) {
+        private void on_send_message (string text, string? file_path,
+                                      string? file_name, int quote_msg_id) {
             cancel_pending_draft_save ();
             remove_draft.begin ();
-            do_send.begin (text, file_path, file_name, quote_msg_id);
+            send_queue.push_tail (new PendingSend (text, file_path, file_name,
+                quote_msg_id));
+            process_send_queue.begin ();
         }
 
-        private async void do_send (string text, string? file_path, string? file_name, int quote_msg_id) {
+        private async void process_send_queue () {
+            if (sending_queue) return;
+            sending_queue = true;
+            while (!send_queue.is_empty ()) {
+                var job = send_queue.pop_head ();
+                yield do_send (job.text, job.file_path, job.file_name,
+                    job.quote_msg_id);
+            }
+            sending_queue = false;
+        }
+
+        private async void do_send (string text, string? file_path,
+                                    string? file_name, int quote_msg_id) {
             try {
                 string? send_text = text.length > 0 ? text : null;
                 int msg_id = yield rpc.send_msg (chat_id,

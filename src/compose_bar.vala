@@ -34,6 +34,9 @@ namespace Dc {
         private string? pending_file = null;
         private string? pending_file_name = null;
         private bool pending_file_is_temp = false;
+        private string[] extra_pending_files = {};
+        private string[] extra_pending_file_names = {};
+        private string[] extra_pending_temp_files = {};
         private int editing_msg_id = 0;
         private int replying_msg_id = 0;
         private MentionRoster? mention_roster = null;
@@ -48,6 +51,8 @@ namespace Dc {
         private string suspended_draft_text = "";
         private string? suspended_draft_file = null;
         private string? suspended_draft_file_name = null;
+        private string[] suspended_extra_draft_files = {};
+        private string[] suspended_extra_draft_file_names = {};
         private int suspended_replying_msg_id = 0;
         private string suspended_reply_label = "";
 
@@ -535,11 +540,29 @@ namespace Dc {
             return editing_msg_id == 0;
         }
 
-        public void set_pending_attachment (string file_path, string? file_name = null) {
-            pending_file = file_path;
-            pending_file_name = file_name ?? Path.get_basename (file_path);
-            pending_file_is_temp = false;
-            populate_attachment_preview (file_path, pending_file_name);
+        public void set_pending_attachment (string file_path,
+                                            string? file_name = null,
+                                            bool is_temp = false) {
+            string name = file_name ?? Path.get_basename (file_path);
+            if (pending_file == null) {
+                pending_file = file_path;
+                pending_file_name = name;
+                pending_file_is_temp = is_temp;
+                populate_attachment_preview (file_path, name);
+            } else {
+                extra_pending_files += file_path;
+                extra_pending_file_names += name;
+                if (is_temp) extra_pending_temp_files += file_path;
+                int count = 1 + extra_pending_files.length;
+                attachment_picture.paintable = null;
+                attachment_picture.visible = false;
+                attachment_icon.icon_name = "mail-attachment-symbolic";
+                attachment_icon.visible = true;
+                attachment_name_label.label = "%d attachments".printf (count);
+                attachment_meta_label.label = "%s + %d more".printf (
+                    pending_file_name, count - 1);
+                attachment_bar.visible = true;
+            }
             cancel_attach_button.visible = true;
             notify_draft_changed ();
         }
@@ -645,6 +668,16 @@ namespace Dc {
             pending_file = null;
             pending_file_name = null;
             pending_file_is_temp = false;
+            foreach (string path in extra_pending_temp_files) {
+                try {
+                    var f = GLib.File.new_for_path (path);
+                    f.@delete ();
+                } catch (Error e) {
+                }
+            }
+            extra_pending_files = {};
+            extra_pending_file_names = {};
+            extra_pending_temp_files = {};
             cancel_attach_button.visible = false;
             attachment_bar.visible = false;
             attachment_picture.paintable = null;
@@ -665,11 +698,21 @@ namespace Dc {
             }
             if (text.length == 0 && pending_file == null) return;
             int qid = replying_msg_id;
-            send_message (text, pending_file, pending_file_name, qid);
+            if (pending_file != null) {
+                send_message (text, pending_file,
+                    pending_file_name ?? Path.get_basename (pending_file), qid);
+            } else {
+                send_message (text, null, null, qid);
+            }
+            for (int i = 0; i < extra_pending_files.length; i++) {
+                send_message ("", extra_pending_files[i],
+                    extra_pending_file_names[i], 0);
+            }
             suppress_draft_signal = true;
             cancel_reply ();
             /* Hand temp-file ownership to the in-flight async RPC. */
             pending_file_is_temp = false;
+            extra_pending_temp_files = {};
             text_view.buffer.text = "";
             clear_attachment ();
             suppress_draft_signal = false;
@@ -768,6 +811,8 @@ namespace Dc {
             suspended_draft_text = get_text ();
             suspended_draft_file = pending_file;
             suspended_draft_file_name = pending_file_name;
+            suspended_extra_draft_files = extra_pending_files;
+            suspended_extra_draft_file_names = extra_pending_file_names;
             suspended_replying_msg_id = replying_msg_id;
             suspended_reply_label = reply_label.label;
         }
@@ -781,6 +826,14 @@ namespace Dc {
                 set_pending_attachment (suspended_draft_file,
                     suspended_draft_file_name);
             }
+            for (int i = 0; i < suspended_extra_draft_files.length; i++) {
+                string path = suspended_extra_draft_files[i];
+                if (!GLib.FileUtils.test (path, GLib.FileTest.EXISTS)) continue;
+                set_pending_attachment (path,
+                    i < suspended_extra_draft_file_names.length
+                        ? suspended_extra_draft_file_names[i]
+                        : Path.get_basename (path));
+            }
             if (suspended_replying_msg_id > 0) {
                 replying_msg_id = suspended_replying_msg_id;
                 reply_label.label = suspended_reply_label;
@@ -791,6 +844,8 @@ namespace Dc {
             suspended_draft_text = "";
             suspended_draft_file = null;
             suspended_draft_file_name = null;
+            suspended_extra_draft_files = {};
+            suspended_extra_draft_file_names = {};
             suspended_replying_msg_id = 0;
             suspended_reply_label = "";
         }
@@ -862,12 +917,14 @@ namespace Dc {
 
         private void on_attach_clicked () {
             var dialog = new Gtk.FileDialog ();
-            dialog.title = "Select file to attach";
+            dialog.title = "Select files to attach";
             var window = (Gtk.Window) get_root ();
-            dialog.open.begin (window, null, (obj, res) => {
+            dialog.open_multiple.begin (window, null, (obj, res) => {
                 try {
-                    var file = dialog.open.end (res);
-                    if (file != null) {
+                    var files = dialog.open_multiple.end (res);
+                    for (uint i = 0; i < files.get_n_items (); i++) {
+                        var file = files.get_item (i) as GLib.File;
+                        if (file == null) continue;
                         var path = file.get_path ();
                         if (path != null)
                             set_pending_attachment (path, file.get_basename ());
@@ -1050,8 +1107,8 @@ namespace Dc {
                 var tmp = GLib.File.new_tmp ("parla-XXXXXX.png", out stream);
                 stream.close ();
                 if (texture.save_to_png (tmp.get_path ())) {
-                    set_pending_attachment (tmp.get_path (), "pasted-image.png");
-                    pending_file_is_temp = true;
+                    set_pending_attachment (tmp.get_path (), "pasted-image.png",
+                        true);
                 }
             } catch (Error e) {
             }
