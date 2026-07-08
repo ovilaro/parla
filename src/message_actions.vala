@@ -8,6 +8,7 @@ namespace Dc {
         private unowned PinnedMessagesManager pinned;
         private unowned ComposeBar compose_bar;
         private unowned SettingsManager settings;
+        private MentionRoster? reaction_roster = null;
 
         public signal void select_requested (int msg_id);
 
@@ -22,6 +23,10 @@ namespace Dc {
             this.pinned = pinned;
             this.compose_bar = compose_bar;
             this.settings = settings;
+        }
+
+        public void set_reaction_roster (MentionRoster? roster) {
+            reaction_roster = roster;
         }
 
         public void show_context_menu (int msg_id, bool is_outgoing,
@@ -105,6 +110,10 @@ namespace Dc {
 
             vbox.append (menu_button (popover, "Select...", () => {
                 select_requested (msg_id);
+            }));
+
+            vbox.append (menu_button (popover, "Details...", () => {
+                show_details (msg_id);
             }));
 
             /* Save file (for messages with attachments) */
@@ -365,6 +374,39 @@ namespace Dc {
                 return;
             }
             compose_bar.grab_entry_focus ();
+        }
+
+        public void show_details (int msg_id) {
+            var m = find_message (message_store, msg_id);
+            if (m == null) return;
+            var dialog = new MessageDetailsDialog (
+                window, rpc, this, m, reaction_roster);
+            dialog.present (window);
+        }
+
+        public async void open_sender_chat (int msg_id) {
+            var m = find_message (message_store, msg_id);
+            if (m == null) return;
+
+            try {
+                int contact_id = m.sender_contact_id;
+                string? address = m.sender_address;
+                if (m.is_outgoing && (address == null || address.length == 0)) {
+                    address = rpc.self_email;
+                }
+                if (contact_id <= 0 && address != null && address.length > 0) {
+                    contact_id = yield rpc.get_or_create_contact (address);
+                }
+                if (contact_id <= 0) return;
+
+                int chat_id = yield rpc.get_or_create_chat_by_contact (contact_id);
+                if (chat_id > 0) {
+                    window.request_reload_chats ();
+                    window.select_chat_by_id (chat_id);
+                }
+            } catch (Error e) {
+                window.show_toast ("Could not open chat: " + e.message);
+            }
         }
 
         public async void open_sender_profile (int msg_id) {

@@ -92,6 +92,7 @@ namespace Dc {
 
             msg_actions = new MessageActions (window, rpc, message_store,
                                               pinned, compose_bar, settings);
+            msg_actions.set_reaction_roster (reaction_roster);
             msg_actions.select_requested.connect ((mid) => {
                 begin_selection_mode (mid);
             });
@@ -967,6 +968,8 @@ namespace Dc {
                 }
 
                 reaction_roster = roster;
+                if (msg_actions != null)
+                    msg_actions.set_reaction_roster (reaction_roster);
                 if (chat_kind == ChatKind.DIRECT) {
                     mention_roster = null;
                     compose_bar.set_mention_roster (null);
@@ -978,6 +981,8 @@ namespace Dc {
                 /* Non-critical: retry on the next reload. */
                 reaction_roster = null;
                 mention_roster = null;
+                if (msg_actions != null)
+                    msg_actions.set_reaction_roster (null);
                 compose_bar.set_mention_roster (null);
                 roster_loaded = false;
             }

@@ -686,6 +686,18 @@ namespace Dc {
             .reaction-user-name {
                 font-size: small;
             }
+            .message-details-sender {
+                padding: 8px;
+                border-radius: 8px;
+            }
+            .message-details-edit-view {
+                background-color: alpha(@view_fg_color, 0.04);
+                border-radius: 8px;
+            }
+            .message-details-reaction-emoji {
+                font-size: 1.4em;
+                min-width: 36px;
+            }
             /* Floating "disconnected" pill over the chat area. */
             .connection-banner {
                 background-color: alpha(@view_fg_color, 0.80);

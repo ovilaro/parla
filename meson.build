@@ -106,6 +106,7 @@ sources = files(
   'src/pinned_messages_manager.vala',
   'src/quick_switch_dialog.vala',
   'src/event_handler.vala',
+  'src/message_details_dialog.vala',
   'src/message_actions.vala',
   'src/account_creation.vala',
   'src/relay_picker.vala',
