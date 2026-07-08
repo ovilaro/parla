@@ -29,6 +29,22 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.6.2" date="2026-07-08">
+      <description>
+        <ul>
+          <li>Support draft messages</li>
+          <li>Optionally stop sharing online-status</li>
+          <li>Hide notification message (privacy)</li>
+          <li>Initial mark-as-unread feature</li>
+          <li>Visualize online status with a green aura</li>
+          <li>Show QR code to invite chat</li>
+          <li>Show pin indicator in pinned messages</li>
+          <li>Fix crashes using UI from non-main thread</li>
+          <li>Allow to override system light/dark theme</li>
+	  <li>Show date and time when scrolling in chats</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-07-02">
       <description>
         <ul>
