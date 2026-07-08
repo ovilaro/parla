@@ -36,6 +36,13 @@ namespace Dc {
         private bool pending_file_is_temp = false;
         private int editing_msg_id = 0;
         private int replying_msg_id = 0;
+        private MentionRoster? mention_roster = null;
+        private Gtk.Popover mention_popover;
+        private Gtk.ListBox mention_list;
+        private bool mention_popup_visible = false;
+        private int mention_index = 0;
+        private GenericArray<string> mention_tokens = new GenericArray<string> ();
+        private const string MENTION_ANCHOR_MARK = "parla-mention-anchor";
         private bool suppress_draft_signal = false;
         private bool has_suspended_draft = false;
         private string suspended_draft_text = "";
@@ -197,12 +204,16 @@ namespace Dc {
             text_view.buffer.changed.connect (() => {
                 update_placeholder ();
                 notify_draft_changed ();
+                update_mention_popup ();
             });
             update_placeholder ();
 
             var focus_ctrl = new Gtk.EventControllerFocus ();
             focus_ctrl.enter.connect (() => { set_entry_active (true); });
-            focus_ctrl.leave.connect (() => { set_entry_active (false); });
+            focus_ctrl.leave.connect (() => {
+                set_entry_active (false);
+                hide_mention_popup ();
+            });
             text_view.add_controller (focus_ctrl);
 
             /* A bare TextView reports the height of its last *validated*
@@ -242,6 +253,39 @@ namespace Dc {
             input_row.append (send_button);
 
             append (input_row);
+
+            build_mention_popover ();
+        }
+
+        private void build_mention_popover () {
+            mention_list = new Gtk.ListBox ();
+            mention_list.selection_mode = Gtk.SelectionMode.SINGLE;
+            mention_list.add_css_class ("menu");
+            mention_list.row_activated.connect ((row) => {
+                mention_index = row.get_index ();
+                accept_mention ();
+            });
+
+            var scroll = new Gtk.ScrolledWindow ();
+            scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
+            scroll.propagate_natural_height = true;
+            scroll.propagate_natural_width = true;
+            scroll.max_content_height = 260;
+            /* Without a floor the popover collapses to the widest glyph and the
+               names ellipsize to "…". */
+            scroll.min_content_width = 260;
+            scroll.max_content_width = 360;
+            scroll.child = mention_list;
+
+            mention_popover = new Gtk.Popover ();
+            /* autohide=false keeps focus in the entry so typing keeps filtering
+               the list; we drive show/hide ourselves. */
+            mention_popover.autohide = false;
+            mention_popover.has_arrow = false;
+            mention_popover.position = Gtk.PositionType.TOP;
+            mention_popover.add_css_class ("mention-popover");
+            mention_popover.child = scroll;
+            mention_popover.set_parent (text_view);
         }
 
         private Gtk.Button flat_icon_button (string icon_name, string tooltip,
@@ -254,6 +298,192 @@ namespace Dc {
             button.valign = Gtk.Align.CENTER;
             button.clicked.connect (() => { on_click (); });
             return button;
+        }
+
+        public void set_mention_roster (MentionRoster? roster) {
+            this.mention_roster = roster;
+            if (roster == null) hide_mention_popup ();
+        }
+
+        /* Show/refresh the mention popup when the caret sits in an "@query"
+           token that starts the message or follows whitespace. */
+        private void update_mention_popup () {
+            if (mention_roster == null || !mention_roster.has_members ()
+                || editing_msg_id > 0) {
+                hide_mention_popup ();
+                return;
+            }
+
+            Gtk.TextIter cursor;
+            text_view.buffer.get_iter_at_mark (out cursor,
+                                               text_view.buffer.get_insert ());
+
+            Gtk.TextIter at_iter = cursor;
+            bool found = false;
+            Gtk.TextIter probe = cursor;
+            int steps = 0;
+            while (probe.backward_char ()) {
+                unichar ch = probe.get_char ();
+                if (ch == '@') {
+                    Gtk.TextIter before = probe;
+                    bool boundary = !before.backward_char ()
+                        || before.get_char ().isspace ();
+                    if (boundary) {
+                        found = true;
+                        at_iter = probe;
+                    }
+                    break;
+                }
+                if (ch.isspace ()) break;
+                if (++steps > 64) break;
+            }
+
+            if (!found) {
+                hide_mention_popup ();
+                return;
+            }
+
+            Gtk.TextIter q = at_iter;
+            q.forward_char ();
+            string query = text_view.buffer.get_text (q, cursor, false);
+
+            populate_mention_list (query);
+            if (mention_tokens.length == 0) {
+                hide_mention_popup ();
+                return;
+            }
+
+            var buf = text_view.buffer;
+            var mark = buf.get_mark (MENTION_ANCHOR_MARK);
+            if (mark != null) buf.move_mark (mark, at_iter);
+            else buf.create_mark (MENTION_ANCHOR_MARK, at_iter, true);
+
+            position_and_show_mention_popup (cursor);
+        }
+
+        private void populate_mention_list (string query) {
+            clear_listbox (mention_list);
+            mention_tokens = new GenericArray<string> ();
+
+            string q = query.down ();
+            var members = mention_roster.members;
+            for (int i = 0; i < members.length && mention_tokens.length < 12; i++) {
+                var m = members[i];
+                if (m.is_self) continue;
+                string name = m.display_name;
+                if (name.length > 0
+                    && (q.length == 0 || name.down ().contains (q))) {
+                    add_mention_row (name, m.address.length > 0 ? m.address : null,
+                        name, m.avatar_path, name);
+                }
+                if (m.address.length > 0 && mention_tokens.length < 12
+                    && (q.length == 0 || m.address.down ().contains (q))) {
+                    add_mention_row (m.address, name.length > 0 ? name : null,
+                        m.address, m.avatar_path, name.length > 0 ? name : m.address);
+                }
+            }
+
+            mention_index = 0;
+            select_mention_index ();
+        }
+
+        private void add_mention_row (string title, string? subtitle,
+                                      string token, string? avatar_path,
+                                      string avatar_text) {
+            var row_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            row_box.margin_start = 8;
+            row_box.margin_end = 8;
+            row_box.margin_top = 4;
+            row_box.margin_bottom = 4;
+            row_box.hexpand = true;
+
+            row_box.append (presence_avatar (28, avatar_text, avatar_path, false));
+
+            var text_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            text_box.valign = Gtk.Align.CENTER;
+            text_box.hexpand = true;
+
+            var t = new Gtk.Label (title);
+            t.xalign = 0;
+            t.halign = Gtk.Align.START;
+            t.hexpand = true;
+            t.ellipsize = Pango.EllipsizeMode.END;
+            text_box.append (t);
+
+            if (subtitle != null && subtitle.length > 0) {
+                var s = new Gtk.Label (subtitle);
+                s.add_css_class ("dim-label");
+                s.add_css_class ("caption");
+                s.xalign = 0;
+                s.halign = Gtk.Align.START;
+                s.hexpand = true;
+                s.ellipsize = Pango.EllipsizeMode.END;
+                text_box.append (s);
+            }
+
+            row_box.append (text_box);
+
+            var row = new Gtk.ListBoxRow ();
+            row.child = row_box;
+            mention_list.append (row);
+            mention_tokens.add (token);
+        }
+
+        private void position_and_show_mention_popup (Gtk.TextIter cursor) {
+            Gdk.Rectangle loc;
+            text_view.get_iter_location (cursor, out loc);
+            int wx, wy;
+            text_view.buffer_to_window_coords (Gtk.TextWindowType.WIDGET,
+                loc.x, loc.y, out wx, out wy);
+            Gdk.Rectangle r = { wx, wy, 1, loc.height };
+            mention_popover.set_pointing_to (r);
+            if (!mention_popup_visible) {
+                mention_popover.popup ();
+                mention_popup_visible = true;
+            }
+        }
+
+        private void select_mention_index () {
+            var row = mention_list.get_row_at_index (mention_index);
+            if (row != null) mention_list.select_row (row);
+        }
+
+        private void move_mention_selection (int delta) {
+            int n = (int) mention_tokens.length;
+            if (n == 0) return;
+            mention_index = int.min (n - 1, int.max (0, mention_index + delta));
+            select_mention_index ();
+        }
+
+        private void accept_mention () {
+            if (mention_index < 0 || mention_index >= mention_tokens.length) {
+                hide_mention_popup ();
+                return;
+            }
+            string token = mention_tokens[mention_index];
+            var buf = text_view.buffer;
+            var mark = buf.get_mark (MENTION_ANCHOR_MARK);
+            if (mark == null) {
+                hide_mention_popup ();
+                return;
+            }
+            Gtk.TextIter at_iter, cursor;
+            buf.get_iter_at_mark (out at_iter, mark);
+            buf.get_iter_at_mark (out cursor, buf.get_insert ());
+            buf.@delete (ref at_iter, ref cursor);
+            string insert = "@" + token + " ";
+            buf.insert (ref at_iter, insert, insert.length);
+            hide_mention_popup ();
+            text_view.grab_focus ();
+        }
+
+        private void hide_mention_popup () {
+            if (mention_popup_visible) {
+                mention_popover.popdown ();
+                mention_popup_visible = false;
+            }
+            var mark = text_view.buffer.get_mark (MENTION_ANCHOR_MARK);
+            if (mark != null) text_view.buffer.delete_mark (mark);
         }
 
         public void grab_entry_focus () {
@@ -425,6 +655,7 @@ namespace Dc {
         }
 
         private void on_send () {
+            hide_mention_popup ();
             string text = get_text ().strip ();
             if (editing_msg_id > 0) {
                 if (text.length == 0) return;
@@ -445,11 +676,21 @@ namespace Dc {
             notify_draft_changed ();
         }
 
-        public void begin_reply (int msg_id, string sender_name, string preview) {
+        public void begin_reply (int msg_id, string sender_name, string preview,
+                                 string? mention_prefix = null) {
             cancel_edit ();
             replying_msg_id = msg_id;
             reply_label.label = "%s: %s".printf (sender_name, shorten_preview (preview));
             reply_bar.visible = true;
+            /* Seed an author mention only into an empty entry, so replying
+               never clobbers a draft the user already started. */
+            if (mention_prefix != null && mention_prefix.length > 0
+                && text_view.buffer.get_char_count () == 0) {
+                text_view.buffer.text = mention_prefix;
+                Gtk.TextIter end;
+                text_view.buffer.get_end_iter (out end);
+                text_view.buffer.place_cursor (end);
+            }
             text_view.grab_focus ();
             notify_draft_changed ();
         }
@@ -638,6 +879,28 @@ namespace Dc {
 
         private bool on_entry_key_pressed (uint keyval, uint keycode,
                                            Gdk.ModifierType state) {
+            /* While the mention autocomplete is open it owns navigation keys so
+               Return picks a suggestion instead of sending, etc. */
+            if (mention_popup_visible) {
+                if (keyval == Gdk.Key.Down || keyval == Gdk.Key.KP_Down) {
+                    move_mention_selection (1);
+                    return true;
+                }
+                if (keyval == Gdk.Key.Up || keyval == Gdk.Key.KP_Up) {
+                    move_mention_selection (-1);
+                    return true;
+                }
+                if (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter
+                    || keyval == Gdk.Key.ISO_Enter || keyval == Gdk.Key.Tab) {
+                    accept_mention ();
+                    return true;
+                }
+                if (keyval == Gdk.Key.Escape) {
+                    hide_mention_popup ();
+                    return true;
+                }
+            }
+
             /* Escape (and dropping the active reply/edit/attachment mode) is
                handled centrally in the window key handler so the two-press
                behavior is consistent. */

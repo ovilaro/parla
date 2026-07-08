@@ -106,6 +106,10 @@ namespace Dc {
         public int message_id { get; private set; }
         public bool is_outgoing { get; private set; }
 
+        /* Roster used to turn @name / @address tokens in the body into
+           clickable mention links; null in direct chats and when unavailable. */
+        private MentionRoster? mention_roster = null;
+
         public signal void quote_clicked (int quoted_msg_id);
         public signal void full_message_requested (int msg_id);
         public signal void selection_toggled (int msg_id, bool selected);
@@ -183,10 +187,12 @@ namespace Dc {
                            BubbleAvatarDisplay avatar_display =
                                BubbleAvatarDisplay.NONE,
                            bool avatar_scope_enabled = false,
-                           bool show_sender_name = true) {
+                           bool show_sender_name = true,
+                           MentionRoster? mention_roster = null) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
+            this.mention_roster = mention_roster;
             hexpand = true;
             halign = Gtk.Align.FILL;
 
@@ -786,10 +792,10 @@ namespace Dc {
             if (Markdown.enabled) {
                 var table_body = build_text_with_tables (msg.text, max_width_chars);
                 body = table_body ?? build_markup_label (msg.text, max_width_chars,
-                    is_single_emoji_text (msg.text));
+                    is_single_emoji_text (msg.text), mention_roster);
             } else {
                 body = build_markup_label (msg.text, max_width_chars,
-                    is_single_emoji_text (msg.text));
+                    is_single_emoji_text (msg.text), mention_roster);
             }
 
             if (!msg.has_full_message_action && !msg.is_downloading_full_message) return body;
@@ -822,10 +828,13 @@ namespace Dc {
 
         private static Gtk.Label build_markup_label (string raw,
                                                      int max_width_chars,
-                                                     bool big_emoji = false) {
+                                                     bool big_emoji = false,
+                                                     MentionRoster? roster = null) {
             var text = new Gtk.Label (raw);
             try {
-                string markup = Markdown.format (raw);
+                string markup = roster != null
+                    ? Mentions.render_markup (raw, roster)
+                    : Markdown.format (raw);
                 var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
                 Pango.AttrList attrs;
                 string parsed;
@@ -847,6 +856,10 @@ namespace Dc {
             /* Delta Chat invite links join in-app instead of bouncing through a
                browser; everything else falls through to the default handler. */
             text.activate_link.connect ((uri) => {
+                if (uri.has_prefix ("parla-mention:") && text.get_root () is Dc.Window) {
+                    ((Dc.Window) text.get_root ()).open_mention (uri);
+                    return true;
+                }
                 if (is_delta_invite_uri (uri) && text.get_root () is Dc.Window) {
                     ((Dc.Window) text.get_root ()).handle_invite_uri (uri);
                     return true;

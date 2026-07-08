@@ -85,6 +85,7 @@ sources = files(
   'src/models.vala',
   'src/chat_row.vala',
   'src/markdown.vala',
+  'src/mentions.vala',
   'src/image_utils.vala',
   'src/message_row.vala',
   'src/image_viewer.vala',
@@ -152,3 +153,13 @@ markdown_test = executable(
 )
 
 test('markdown', markdown_test)
+
+mentions_test = executable(
+  'mentions-test',
+  files('tests/mentions_test.vala', 'src/mentions.vala', 'src/markdown.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
+                 dependency('pango')],
+  install: false,
+)
+
+test('mentions', mentions_test)

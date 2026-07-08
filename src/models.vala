@@ -212,6 +212,9 @@ namespace Dc {
         public bool is_pinned { get; set; default = false; }
         public int64 last_seen { get; set; default = 0; }
         public bool was_seen_recently { get; set; default = false; }
+        /* Client-side flag: an unseen message in this chat mentions the local
+           user. Not persisted (see Window.mentioned_chats). */
+        public bool has_mention { get; set; default = false; }
     }
 
     public enum ChatKind {

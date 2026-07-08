@@ -16,6 +16,7 @@ namespace Dc {
         public signal void messages_reload_fired ();
         public signal void incoming_msg_received (int acct_id, int chat_id, int msg_id);
         public signal void account_unread_changed (int acct_id);
+        public signal void contacts_changed (int acct_id);
         public signal void imex_progress (int context_id, int progress);
         public signal void configure_progress (int context_id, int progress,
                                                 string? comment);
@@ -152,6 +153,7 @@ namespace Dc {
                 break;
 
             case "ContactsChanged":
+                contacts_changed (rpc.account_id);
                 schedule_messages_reload ();
                 schedule_chats_reload ();
                 break;
@@ -270,6 +272,25 @@ namespace Dc {
         public void clear_notifications_for_chat (int acct_id, int chat_id) {
             if (acct_id <= 0 || chat_id <= 0) return;
             withdraw_notification_id (notification_id (acct_id, chat_id));
+            withdraw_notification_id (mention_notification_id (acct_id, chat_id));
+        }
+
+        /* Notify about a mention regardless of the chat's mute state — a
+           dedicated, high-priority notification separate from the unread-count
+           one (which is suppressed for muted chats). */
+        public void send_mention_notification (int acct_id, int chat_id,
+                                               string title, string body) {
+            if (app == null || acct_id <= 0 || chat_id <= 0) return;
+            var n = new GLib.Notification (title);
+            n.set_body (body);
+            n.set_priority (GLib.NotificationPriority.HIGH);
+            n.set_default_action_and_target_value ("app.open-chat",
+                new Variant ("(ii)", acct_id, chat_id));
+            app.send_notification (mention_notification_id (acct_id, chat_id), n);
+        }
+
+        private static string mention_notification_id (int acct_id, int chat_id) {
+            return "dc-mention-%d-%d".printf (acct_id, chat_id);
         }
 
         private int begin_notification_refresh (int acct_id) {

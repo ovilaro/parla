@@ -469,6 +469,13 @@ namespace Dc {
                 box-shadow: inset 0 0 0 2px alpha(@accent_bg_color, 0.45);
             }
             .chat-row { border-radius: 8px; padding: 4px; }
+            .chat-row-mention {
+                background-color: alpha(@accent_bg_color, 0.16);
+            }
+            .mention-marker {
+                color: @accent_bg_color;
+                font-weight: bold;
+            }
             .chat-row-compact {
                 margin-left: 0;
                 margin-right: 0;

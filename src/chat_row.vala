@@ -19,6 +19,7 @@ namespace Dc {
         private bool is_muted;
         private bool is_pinned;
         private bool is_request;
+        private bool has_mention;
         private int unread_count;
         private bool compact = false;
 
@@ -29,8 +30,10 @@ namespace Dc {
             this.is_muted = entry.is_muted;
             this.is_pinned = entry.is_pinned;
             this.is_request = entry.is_contact_request;
+            this.has_mention = entry.has_mention;
             this.unread_count = entry.unread_count;
             add_css_class ("chat-row");
+            if (has_mention) add_css_class ("chat-row-mention");
             margin_start = 8;
             margin_end = 8;
             margin_top = 4;
@@ -90,6 +93,13 @@ namespace Dc {
                 var dot = new Gtk.Label ("●");
                 dot.add_css_class (is_muted ? "unread-dot-muted" : "unread-dot");
                 top.append (dot);
+            }
+
+            if (has_mention) {
+                var at = new Gtk.Label ("@");
+                at.add_css_class ("mention-marker");
+                at.tooltip_text = "You were mentioned";
+                top.append (at);
             }
 
             var name_label = new Gtk.Label (entry.name);

@@ -51,6 +51,11 @@ namespace Dc {
         private PinnedMessagesManager pinned;
         private MessageActions msg_actions;
 
+        /* Roster of chat members for mention rendering + composer autocomplete.
+           Built lazily for group chats; null for direct chats. */
+        private MentionRoster? mention_roster = null;
+        private bool roster_loaded = false;
+
         public ConversationView (int chat_id, Window window, RpcClient rpc,
                                  SettingsManager settings,
                                  ChatKind chat_kind = ChatKind.UNKNOWN) {
@@ -147,7 +152,8 @@ namespace Dc {
                     msg, prev, trailing, is_img_continuation,
                     settings.bubble_avatar_display,
                     bubble_avatars_apply_to_this_chat (),
-                    chat_kind != ChatKind.DIRECT);
+                    chat_kind != ChatKind.DIRECT,
+                    mention_roster);
                 row.selection_toggled.connect ((mid, active) => {
                     update_selection_actions ();
                 });
@@ -877,6 +883,7 @@ namespace Dc {
 
             try {
                 yield load_chat_kind_if_needed ();
+                yield ensure_mention_roster ();
 
                 bool was_near_bottom = stick_to_bottom;
                 double previous_scroll_value = 0;
@@ -920,6 +927,54 @@ namespace Dc {
             } catch (Error e) {
                 window.show_toast ("Failed to load messages: " + e.message);
             }
+        }
+
+        /* Build the mention roster once for group chats: chat members (for the
+           composer autocomplete + name/address resolution) plus the window's
+           self keys. Cheap to skip for direct chats. */
+        private async void ensure_mention_roster () {
+            if (roster_loaded) return;
+            roster_loaded = true;
+
+            if (chat_kind == ChatKind.DIRECT) {
+                mention_roster = null;
+                compose_bar.set_mention_roster (null);
+                return;
+            }
+
+            try {
+                var roster = new MentionRoster ();
+                foreach (string key in window.self_mention_keys ()) {
+                    roster.add_self_key (key);
+                }
+
+                var chat = yield rpc.get_full_chat_by_id_for (
+                    rpc.account_id, chat_id);
+                if (chat != null && chat.has_member ("contactIds")) {
+                    var ids = chat.get_array_member ("contactIds");
+                    for (uint i = 0; i < ids.get_length (); i++) {
+                        int cid = (int) ids.get_int_element (i);
+                        var cobj = yield rpc.get_contact_for (rpc.account_id, cid);
+                        if (cobj == null) continue;
+                        var c = RpcParsers.parse_contact (cid, cobj);
+                        roster.add_member (new MentionMember (
+                            cid, c.display_name, c.address, cid == 1,
+                            c.profile_image));
+                    }
+                }
+
+                mention_roster = roster;
+                compose_bar.set_mention_roster (roster);
+            } catch (Error e) {
+                /* Non-critical: retry on the next reload. */
+                roster_loaded = false;
+            }
+        }
+
+        /* Force the roster to rebuild on the next message load, e.g. after a
+           membership or contact change. */
+        public void invalidate_mention_roster () {
+            roster_loaded = false;
         }
 
         private async void load_chat_kind_if_needed () {

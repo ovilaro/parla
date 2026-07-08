@@ -53,6 +53,15 @@ namespace Dc {
         private int account_menu_load_gen = 0;
         private bool focus_current_account_on_menu_load = false;
 
+        /* Down-cased identifiers (display name + transport addresses) used to
+           detect when an incoming message mentions the local user. */
+        private string[] self_mention_keys_cache = {};
+
+        /* Chats of the current account with an unseen self-mention, kept in
+           memory (reset on restart). Drives the sidebar row highlight. */
+        private GenericSet<int> mentioned_chats = new GenericSet<int> (
+            direct_hash, direct_equal);
+
         /* State */
         private unowned RpcClient rpc;
         private int _current_chat_id = 0;
@@ -657,6 +666,10 @@ namespace Dc {
                 update_unread_indicators.begin ();
                 queue_unread_notification_refresh (acct_id);
             });
+            events.contacts_changed.connect ((acct_id) => {
+                invalidate_all_mention_rosters ();
+                refresh_self_mention_keys.begin ();
+            });
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
             if (rpc.account_id > 0) {
@@ -680,6 +693,140 @@ namespace Dc {
             rpc.self_email = null;
             MessageRow.self_display_name = null;
             MessageRow.self_avatar_path = null;
+            self_mention_keys_cache = {};
+            mentioned_chats.remove_all ();
+        }
+
+        /* Down-cased tokens that count as "me" for mention detection: the
+           display name plus every transport address of the current account. */
+        public string[] self_mention_keys () {
+            return self_mention_keys_cache;
+        }
+
+        private async void refresh_self_mention_keys () {
+            var keys = new GenericArray<string> ();
+            if (MessageRow.self_display_name != null
+                && MessageRow.self_display_name.strip ().length > 0) {
+                keys.add (MessageRow.self_display_name.strip ().down ());
+            }
+            if (rpc.self_email != null && rpc.self_email.length > 0) {
+                keys.add (rpc.self_email.down ());
+            }
+            try {
+                var transports = yield rpc.list_transports (rpc.account_id);
+                if (transports != null
+                    && transports.get_node_type () == Json.NodeType.ARRAY) {
+                    var arr = transports.get_array ();
+                    for (uint i = 0; i < arr.get_length (); i++) {
+                        var obj = arr.get_object_element (i);
+                        string? addr = obj != null ? json_str (obj, "addr") : null;
+                        if (addr != null && addr.length > 0) keys.add (addr.down ());
+                    }
+                }
+            } catch (Error e) { /* transports optional */ }
+
+            string[] result = {};
+            for (int i = 0; i < keys.length; i++) result += keys[i];
+            self_mention_keys_cache = result;
+        }
+
+        /* Detect whether an incoming message mentions the local user and, if so,
+           flag the chat in the sidebar and fire a notification that ignores mute
+           (mentions should always reach the user). Best-effort for background
+           accounts (name/address only, no transports). */
+        private async void check_mention (int acct_id, int chat_id, int msg_id) {
+            string[] keys = acct_id == rpc.account_id
+                ? self_mention_keys_cache
+                : yield background_self_keys (acct_id);
+            if (keys.length == 0) return;
+
+            Message? msg = null;
+            try {
+                msg = yield rpc.fetch_message_for (acct_id, msg_id, null);
+            } catch (Error e) {
+                return;
+            }
+            if (msg == null || msg.is_outgoing) return;
+            if (!Mentions.mentions_self (msg.text, keys)) return;
+
+            /* Already looking at it: nothing to flag or notify. */
+            bool looking = acct_id == rpc.account_id
+                && chat_id == current_chat_id && this.is_active;
+            if (looking) return;
+
+            if (acct_id == rpc.account_id && !mentioned_chats.contains (chat_id)) {
+                mentioned_chats.add (chat_id);
+                request_reload_chats ();
+            }
+
+            if (events != null && settings.notifications_enabled) {
+                string title = msg.sender_name ?? msg.sender_address
+                    ?? "New mention";
+                string body = (msg.text != null && msg.text.length > 0)
+                    ? msg.text : "Mentioned you";
+                events.send_mention_notification (acct_id, chat_id,
+                    "@ " + title, body);
+            }
+        }
+
+        private async string[] background_self_keys (int acct_id) {
+            string[] keys = {};
+            try {
+                string? dn = yield rpc.get_config ("displayname", acct_id);
+                if (dn != null && dn.strip ().length > 0)
+                    keys += dn.strip ().down ();
+            } catch (Error e) { }
+            try {
+                string? addr = yield rpc.get_config ("addr", acct_id);
+                if (addr != null && addr.length > 0) keys += addr.down ();
+            } catch (Error e) { }
+            return keys;
+        }
+
+        /* Rebuild mention rosters after a contact/membership change. */
+        public void invalidate_all_mention_rosters () {
+            var iter = HashTableIter<int, ConversationView> (views);
+            int key;
+            ConversationView v;
+            while (iter.next (out key, out v)) {
+                v.invalidate_mention_roster ();
+            }
+        }
+
+        /* Open (or create) a direct chat for a clicked mention link. The href
+           is "parla-mention:cid=N" or "parla-mention:addr=<email>". */
+        public void open_mention (string uri) {
+            if (!uri.has_prefix ("parla-mention:")) return;
+            string spec = uri.substring ("parla-mention:".length);
+            if (spec.has_prefix ("cid=")) {
+                int cid = int.parse (spec.substring (4));
+                if (cid > 0) open_mention_contact.begin (cid);
+            } else if (spec.has_prefix ("addr=")) {
+                string addr = Uri.unescape_string (spec.substring (5))
+                    ?? spec.substring (5);
+                open_mention_address.begin (addr);
+            }
+        }
+
+        private async void open_mention_contact (int contact_id) {
+            try {
+                int chat_id = yield rpc.get_or_create_chat_by_contact (contact_id);
+                if (chat_id <= 0) return;
+                yield load_chats ();
+                select_chat_by_id (chat_id);
+            } catch (Error e) {
+                show_toast ("Could not open chat: " + e.message);
+            }
+        }
+
+        private async void open_mention_address (string address) {
+            try {
+                int contact_id = yield rpc.get_or_create_contact (address);
+                if (contact_id <= 0) return;
+                yield open_mention_contact (contact_id);
+            } catch (Error e) {
+                show_toast ("Could not open chat: " + e.message);
+            }
         }
 
         private async void load_self_identity () {
@@ -700,6 +847,7 @@ namespace Dc {
             } catch (Error e) {
                 MessageRow.self_avatar_path = null;
             }
+            yield refresh_self_mention_keys ();
         }
 
         private void show_rpc_not_found () {
@@ -932,6 +1080,7 @@ namespace Dc {
                     if (items != null && items.has_member (id_str)) {
                         var item = items.get_object_member (id_str);
                         var entry = RpcParsers.parse_chat_item (chat_id, item);
+                        entry.has_mention = mentioned_chats.contains (chat_id);
                         chat_store.append (entry);
 
                         var row = new Gtk.ListBoxRow ();
@@ -1023,6 +1172,7 @@ namespace Dc {
         }
 
         private async void notice_chat (int chat_id) {
+            clear_chat_mention (chat_id);
             try {
                 yield rpc.marknoticed_chat (chat_id);
             } catch (Error e) {
@@ -1032,6 +1182,14 @@ namespace Dc {
                 events.clear_notifications_for_chat (rpc.account_id, chat_id);
             }
             queue_unread_notification_refresh (rpc.account_id);
+        }
+
+        /* Drop the unseen-mention highlight for a chat the user is now reading,
+           refreshing the sidebar so the tint/marker disappears. */
+        private void clear_chat_mention (int chat_id) {
+            if (mentioned_chats.remove (chat_id)) {
+                request_reload_chats ();
+            }
         }
 
         private void on_window_focused () {
@@ -1108,6 +1266,7 @@ namespace Dc {
         }
 
         private async void on_incoming_msg (int acct_id, int chat_id, int msg_id) {
+            check_mention.begin (acct_id, chat_id, msg_id);
             if (acct_id != rpc.account_id) {
                 queue_unread_notification_refresh (acct_id);
                 update_unread_indicators.begin ();
@@ -2408,6 +2567,11 @@ namespace Dc {
             });
             present_modal (dialog);
             dialog.focus_entry ();
+        }
+
+        public bool current_chat_is_group () {
+            var entry = find_chat_entry (chat_store, current_chat_id);
+            return entry != null && entry.kind == ChatKind.GROUP;
         }
 
         public bool select_chat_by_id (int chat_id) {
