@@ -127,6 +127,7 @@ namespace Dc {
                 return;
 
             var by_contact = reactions_obj.get_object_member ("reactionsByContact");
+            var reaction_details = new GenericArray<MessageReaction> ();
             string[] r_emojis = {};
             int[] r_counts = {};
             string[] my_emojis = {};
@@ -137,9 +138,17 @@ namespace Dc {
                 if (node.get_node_type () != Json.NodeType.ARRAY) continue;
                 var arr = node.get_array ();
                 bool is_self = (cid == "1");
+                int contact_id = int.parse (cid);
                 for (uint j = 0; j < arr.get_length (); j++) {
                     string emoji = arr.get_string_element (j);
                     if (is_self) my_emojis += emoji;
+                    var reaction = find_reaction (reaction_details, emoji);
+                    if (reaction == null) {
+                        reaction = new MessageReaction (emoji);
+                        reaction_details.add (reaction);
+                    }
+                    reaction.add_user (contact_id);
+
                     int found = -1;
                     for (int k = 0; k < r_emojis.length; k++) {
                         if (r_emojis[k] == emoji) {
@@ -162,12 +171,22 @@ namespace Dc {
 
             if (r_emojis.length == 0) return;
 
+            msg.reaction_details = reaction_details;
+
             var sb = new StringBuilder ();
             for (int k = 0; k < r_emojis.length; k++) {
                 if (sb.len > 0) sb.append (",");
                 sb.append_printf ("%s:%d", r_emojis[k], r_counts[k]);
             }
             msg.reactions = sb.str;
+        }
+
+        private static MessageReaction? find_reaction (
+                GenericArray<MessageReaction> reactions, string emoji) {
+            for (int i = 0; i < reactions.length; i++) {
+                if (reactions[i].emoji == emoji) return reactions[i];
+            }
+            return null;
         }
 
         private static void parse_quote (Json.Object obj, Message msg) {

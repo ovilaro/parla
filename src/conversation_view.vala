@@ -54,6 +54,9 @@ namespace Dc {
         /* Roster of chat members for mention rendering + composer autocomplete.
            Built lazily for group chats; null for direct chats. */
         private MentionRoster? mention_roster = null;
+        /* Contact metadata used by reaction popovers. Unlike mentions, this is
+           useful in both direct and group chats. */
+        private MentionRoster? reaction_roster = null;
         private bool roster_loaded = false;
 
         public ConversationView (int chat_id, Window window, RpcClient rpc,
@@ -153,7 +156,8 @@ namespace Dc {
                     settings.bubble_avatar_display,
                     bubble_avatars_apply_to_this_chat (),
                     chat_kind != ChatKind.DIRECT,
-                    mention_roster);
+                    mention_roster,
+                    reaction_roster);
                 row.selection_toggled.connect ((mid, active) => {
                     update_selection_actions ();
                 });
@@ -210,6 +214,11 @@ namespace Dc {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
                 if (selection_mode) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
+                if (pointer_on_reaction_badge (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -936,12 +945,6 @@ namespace Dc {
             if (roster_loaded) return;
             roster_loaded = true;
 
-            if (chat_kind == ChatKind.DIRECT) {
-                mention_roster = null;
-                compose_bar.set_mention_roster (null);
-                return;
-            }
-
             try {
                 var roster = new MentionRoster ();
                 foreach (string key in window.self_mention_keys ()) {
@@ -963,10 +966,19 @@ namespace Dc {
                     }
                 }
 
-                mention_roster = roster;
-                compose_bar.set_mention_roster (roster);
+                reaction_roster = roster;
+                if (chat_kind == ChatKind.DIRECT) {
+                    mention_roster = null;
+                    compose_bar.set_mention_roster (null);
+                } else {
+                    mention_roster = roster;
+                    compose_bar.set_mention_roster (roster);
+                }
             } catch (Error e) {
                 /* Non-critical: retry on the next reload. */
+                reaction_roster = null;
+                mention_roster = null;
+                compose_bar.set_mention_roster (null);
                 roster_loaded = false;
             }
         }
@@ -1328,6 +1340,15 @@ namespace Dc {
             var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
             while (w != null && !(w is MessageRow)) {
                 if (w is AudioPlayer) return true;
+                w = w.get_parent ();
+            }
+            return false;
+        }
+
+        private bool pointer_on_reaction_badge (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                if (w.has_css_class ("reaction-badge")) return true;
                 w = w.get_parent ();
             }
             return false;

@@ -94,6 +94,13 @@ namespace Dc {
             return members.length > 0;
         }
 
+        public MentionMember? lookup_contact (int contact_id) {
+            for (int i = 0; i < members.length; i++) {
+                if (members[i].contact_id == contact_id) return members[i];
+            }
+            return null;
+        }
+
         private bool key_is_self (string down_value) {
             for (int i = 0; i < self_keys.length; i++) {
                 if (self_keys[i] == down_value) return true;

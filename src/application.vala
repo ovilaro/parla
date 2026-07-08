@@ -659,6 +659,33 @@ namespace Dc {
                 font-size: small;
                 margin-left: 2px;
             }
+            .reaction-bar {
+                margin-top: 2px;
+            }
+            button.reaction-badge {
+                min-height: 22px;
+                min-width: 0;
+                padding: 1px 8px;
+                border-radius: 9999px;
+                background-color: alpha(@view_fg_color, 0.10);
+                color: @view_fg_color;
+            }
+            button.reaction-badge:hover {
+                background-color: alpha(@accent_bg_color, 0.22);
+            }
+            .reaction-users-pill {
+                padding: 7px 10px;
+                border-radius: 18px;
+                background-color: alpha(@view_fg_color, 0.88);
+                color: @view_bg_color;
+                box-shadow: 0 2px 8px alpha(@view_fg_color, 0.25);
+            }
+            .reaction-user-row {
+                min-height: 24px;
+            }
+            .reaction-user-name {
+                font-size: small;
+            }
             /* Floating "disconnected" pill over the chat area. */
             .connection-banner {
                 background-color: alpha(@view_fg_color, 0.80);

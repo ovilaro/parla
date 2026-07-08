@@ -39,8 +39,6 @@
           <li>Visualize online status with a green aura</li>
           <li>Show QR code to invite chat</li>
           <li>Show pin indicator in pinned messages</li>
-          <li>Fix crashes using UI from non-main thread</li>
-          <li>Allow to override system light/dark theme</li>
 	  <li>Show date and time when scrolling in chats</li>
         </ul>
       </description>

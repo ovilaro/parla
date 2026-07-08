@@ -109,6 +109,7 @@ namespace Dc {
         /* Roster used to turn @name / @address tokens in the body into
            clickable mention links; null in direct chats and when unavailable. */
         private MentionRoster? mention_roster = null;
+        private MentionRoster? reaction_roster = null;
 
         public signal void quote_clicked (int quoted_msg_id);
         public signal void full_message_requested (int msg_id);
@@ -188,11 +189,13 @@ namespace Dc {
                                BubbleAvatarDisplay.NONE,
                            bool avatar_scope_enabled = false,
                            bool show_sender_name = true,
-                           MentionRoster? mention_roster = null) {
+                           MentionRoster? mention_roster = null,
+                           MentionRoster? reaction_roster = null) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
             this.mention_roster = mention_roster;
+            this.reaction_roster = reaction_roster;
             hexpand = true;
             halign = Gtk.Align.FILL;
 
@@ -1168,19 +1171,154 @@ namespace Dc {
         }
 
         /** Reaction badge bar, or null when the message has no reactions. */
-        private static Gtk.Box? build_reactions_box (Message msg) {
-            if (msg.reactions == null || msg.reactions.length == 0) return null;
+        private Gtk.Box? build_reactions_box (Message msg) {
+            bool has_details = msg.reaction_details != null
+                && msg.reaction_details.length > 0;
+            if (!has_details &&
+                (msg.reactions == null || msg.reactions.length == 0)) {
+                return null;
+            }
+
             var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
             box.add_css_class ("reaction-bar");
             box.halign = Gtk.Align.START;
+
+            if (has_details) {
+                for (int i = 0; i < msg.reaction_details.length; i++) {
+                    box.append (build_reaction_badge (msg, msg.reaction_details[i]));
+                }
+                return box;
+            }
+
             foreach (string part in msg.reactions.split (",")) {
                 var kv = part.split (":", 2);
                 if (kv.length < 2) continue;
-                var badge = new Gtk.Label (kv[1] == "1" ? kv[0] : "%s %s".printf (kv[0], kv[1]));
-                badge.add_css_class ("reaction-badge");
-                box.append (badge);
+                var reaction = new MessageReaction (kv[0]);
+                reaction.count = int.parse (kv[1]);
+                box.append (build_reaction_badge (msg, reaction));
             }
             return box;
+        }
+
+        private Gtk.Widget build_reaction_badge (Message msg,
+                                                 MessageReaction reaction) {
+            string count = reaction.count.to_string ();
+            var badge = new Gtk.Button.with_label (
+                reaction.count == 1 ? reaction.emoji
+                                    : "%s %s".printf (reaction.emoji, count));
+            badge.add_css_class ("flat");
+            badge.add_css_class ("reaction-badge");
+            badge.tooltip_text = "Show reactions";
+
+            var popover = build_reaction_popover (badge, msg, reaction);
+            badge.clicked.connect (() => {
+                popover.popup ();
+            });
+
+            uint hide_id = 0;
+            var motion = new Gtk.EventControllerMotion ();
+            motion.enter.connect ((x, y) => {
+                if (hide_id != 0) {
+                    Source.remove (hide_id);
+                    hide_id = 0;
+                }
+                popover.popup ();
+            });
+            motion.leave.connect (() => {
+                if (hide_id != 0) Source.remove (hide_id);
+                hide_id = Timeout.add (180, () => {
+                    popover.popdown ();
+                    hide_id = 0;
+                    return Source.REMOVE;
+                });
+            });
+            badge.add_controller (motion);
+
+            return badge;
+        }
+
+        private Gtk.Popover build_reaction_popover (Gtk.Widget parent,
+                                                    Message msg,
+                                                    MessageReaction reaction) {
+            var popover = new Gtk.Popover ();
+            popover.has_arrow = false;
+            popover.autohide = true;
+            popover.position = Gtk.PositionType.TOP;
+            popover.set_parent (parent);
+
+            var pill = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            pill.add_css_class ("reaction-users-pill");
+
+            if (reaction.users.length == 0) {
+                var label = new Gtk.Label (reaction.count == 1
+                    ? "Unknown user"
+                    : "%d reactions".printf (reaction.count));
+                label.add_css_class ("reaction-user-name");
+                pill.append (label);
+            } else {
+                for (int i = 0; i < reaction.users.length; i++) {
+                    pill.append (build_reaction_user_row (
+                        msg, reaction.users[i].contact_id));
+                }
+            }
+
+            popover.child = pill;
+            return popover;
+        }
+
+        private Gtk.Widget build_reaction_user_row (Message msg,
+                                                    int contact_id) {
+            string name;
+            string? avatar_path;
+            reaction_user_identity (msg, contact_id, out name, out avatar_path);
+
+            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            row.add_css_class ("reaction-user-row");
+            row.append (presence_avatar (22, name, avatar_path, false));
+
+            var label = new Gtk.Label (name);
+            label.add_css_class ("reaction-user-name");
+            label.ellipsize = Pango.EllipsizeMode.END;
+            label.max_width_chars = 26;
+            label.xalign = 0;
+            row.append (label);
+            return row;
+        }
+
+        private void reaction_user_identity (Message msg, int contact_id,
+                                             out string name,
+                                             out string? avatar_path) {
+            avatar_path = null;
+
+            if (contact_id == 1) {
+                name = self_display_name != null && self_display_name.length > 0
+                    ? self_display_name : "You";
+                avatar_path = self_avatar_path;
+                return;
+            }
+
+            MentionMember? member = reaction_roster != null
+                ? reaction_roster.lookup_contact (contact_id) : null;
+            if (member != null) {
+                name = member.display_name.length > 0
+                    ? member.display_name
+                    : (member.address.length > 0
+                        ? member.address
+                        : "Contact %d".printf (contact_id));
+                avatar_path = member.avatar_path;
+                return;
+            }
+
+            if (!msg.is_outgoing && contact_id > 0 &&
+                contact_id == msg.sender_contact_id) {
+                string? author = effective_author_name (msg);
+                name = author ?? msg.sender_address ?? "Contact";
+                avatar_path = msg.sender_avatar_path;
+                return;
+            }
+
+            name = contact_id > 0 ? "Contact %d".printf (contact_id)
+                                  : "Unknown user";
         }
 
         private static string format_timestamp (int64 ts) {

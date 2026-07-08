@@ -223,6 +223,30 @@ namespace Dc {
         GROUP = 2;
     }
 
+    public class MessageReactionUser : Object {
+        public int contact_id { get; set; default = 0; }
+
+        public MessageReactionUser (int contact_id) {
+            this.contact_id = contact_id;
+        }
+    }
+
+    public class MessageReaction : Object {
+        public string emoji { get; set; default = ""; }
+        public int count { get; set; default = 0; }
+        public GenericArray<MessageReactionUser> users =
+            new GenericArray<MessageReactionUser> ();
+
+        public MessageReaction (string emoji) {
+            this.emoji = emoji;
+        }
+
+        public void add_user (int contact_id) {
+            users.add (new MessageReactionUser (contact_id));
+            count++;
+        }
+    }
+
     /* Delivery state values from deltachat-core that the UI renders. */
     public enum MessageState {
         OUT_DRAFT     = 10,
@@ -271,6 +295,7 @@ namespace Dc {
         public bool has_html { get; set; default = false; }
         public string download_state { get; set; default = "Done"; }
         public string? reactions { get; set; default = null; }
+        public GenericArray<MessageReaction>? reaction_details = null;
         /* Emojis the local user has reacted with (comma-separated). */
         public string? my_reactions { get; set; default = null; }
         public int quote_msg_id { get; set; default = 0; }
