@@ -151,10 +151,6 @@ namespace Dc {
                     if (chosen > 0) {
                         rpc.account_id = chosen;
                         yield rpc.select_account (chosen);
-                        /* Run IO for every account, not just the active one, so
-                           background accounts keep receiving messages and can
-                           raise notifications. */
-                        yield rpc.start_io_for_all_accounts ();
                         return chosen;
                     }
                 }

@@ -695,7 +695,7 @@ namespace Dc {
                 msg.selection_visible = selection_mode;
                 insert_message_sorted (msg);
                 if (is_current && window.is_active) {
-                    yield mark_messages_presented (new int[] { msg_id });
+                    yield rpc.mark_seen_msgs (new int[] { msg_id });
                 } else if (is_current) {
                     /* On screen but the window is unfocused: defer the seen
                        mark until the user actually looks at the chat. */
@@ -713,22 +713,13 @@ namespace Dc {
             if (pending_seen_ids.length == 0) return;
             int[] ids = pending_seen_ids;
             pending_seen_ids = {};
-            mark_messages_presented.begin (ids, (o, res) => {
+            rpc.mark_seen_msgs.begin (ids, (o, res) => {
                 try {
-                    mark_messages_presented.end (res);
+                    rpc.mark_seen_msgs.end (res);
                 } catch (Error e) {
                     /* non-critical */
                 }
             });
-        }
-
-        private async void mark_messages_presented (int[] ids) throws Error {
-            if (ids.length == 0) return;
-            if (settings.share_online_status) {
-                yield rpc.mark_seen_msgs (ids);
-            } else {
-                yield rpc.marknoticed_chat (chat_id);
-            }
         }
 
         public void toggle_search () {

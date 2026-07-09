@@ -33,7 +33,6 @@
       <description>
         <ul>
           <li>Support draft messages</li>
-          <li>Optionally stop sharing online-status</li>
           <li>Hide notification message (privacy)</li>
           <li>Initial mark-as-unread feature</li>
           <li>Visualize online status with a green aura</li>

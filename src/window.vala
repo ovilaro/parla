@@ -186,12 +186,6 @@ namespace Dc {
                     if (v != null) v.queue_resize ();
                 }
             });
-            settings.privacy_changed.connect (() => {
-                sync_online_status_policy.begin ();
-                request_reload_chats ();
-                request_messages_reload ();
-            });
-
             close_request.connect (on_close_request);
 
             /* Regaining focus with a chat on screen means the user has now
@@ -653,6 +647,13 @@ namespace Dc {
                                                     out acct_desc, out acct_toast);
             if (acct_toast != null) show_toast (acct_toast);
             if (acct_desc != null) empty_status.description = acct_desc;
+            if (rpc.account_id > 0) {
+                try {
+                    yield rpc.start_io_for_all_accounts ();
+                } catch (Error e) {
+                    show_toast ("Connection setup error: " + e.message);
+                }
+            }
 
             /* Create event handler and message actions now that rpc is ready */
             events = new EventHandler (rpc);
@@ -678,7 +679,6 @@ namespace Dc {
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
             if (rpc.account_id > 0) {
-                yield sync_online_status_policy ();
                 yield load_self_identity ();
                 yield load_chats ();
                 yield load_profile_avatar ();
@@ -854,31 +854,6 @@ namespace Dc {
                 MessageRow.self_avatar_path = null;
             }
             yield refresh_self_mention_keys ();
-        }
-
-        private async void sync_online_status_policy () {
-            RpcParsers.show_online_status = settings.share_online_status;
-            if (!rpc.is_connected || rpc.account_id <= 0) return;
-
-            try {
-                string? enabled = yield rpc.get_config ("mdns_enabled",
-                                                        rpc.account_id);
-                bool core_share = (enabled ?? "1") != "0";
-                bool share = settings.share_online_status && core_share;
-
-                if (share != settings.share_online_status) {
-                    settings.save_share_online_status (share);
-                }
-                if (!share && core_share) {
-                    yield rpc.batch_set_config ("mdns_enabled", "0",
-                                                rpc.account_id);
-                }
-            } catch (Error e) {
-                if (!settings.share_online_status) {
-                    warning ("Failed to enforce online-status privacy: %s",
-                             e.message);
-                }
-            }
         }
 
         private void show_rpc_not_found () {
@@ -1702,10 +1677,10 @@ namespace Dc {
                 int acct_id = yield rpc.add_account ();
                 yield rpc.add_or_update_transport (acct_id, email, password);
                 yield rpc.select_account (acct_id);
+                rpc.account_id = acct_id;
                 /* Pick up IO for the freshly added account (and keep the rest
                    running too). */
                 yield rpc.start_io_for_all_accounts ();
-                rpc.account_id = acct_id;
                 yield reload_active_account ();
             } catch (Error e) {
                 show_error (this, e.message);
@@ -1716,13 +1691,13 @@ namespace Dc {
             if (acct_id <= 0 || acct_id == rpc.account_id) return false;
 
             try {
+                yield rpc.select_account (acct_id);
+                rpc.account_id = acct_id;
                 /* IO stays running for every account, so switching only changes
                    which account is shown — the others keep fetching mail in the
                    background. Re-asserting all-accounts IO here is idempotent and
                    also covers accounts created during this session. */
                 yield rpc.start_io_for_all_accounts ();
-                yield rpc.select_account (acct_id);
-                rpc.account_id = acct_id;
                 yield reload_active_account ();
                 return true;
             } catch (Error e) {
@@ -2179,7 +2154,6 @@ namespace Dc {
 
             show_empty_status ("parla-welcome", "Parla",
                 "Select a chat to start messaging.");
-            yield sync_online_status_policy ();
             yield load_self_identity ();
             current_chat_id = 0;
             yield load_chats ();

@@ -210,7 +210,6 @@ namespace Dc {
         public bool is_muted { get; set; default = false; }
         public bool is_contact_request { get; set; default = false; }
         public bool is_pinned { get; set; default = false; }
-        public int64 last_seen { get; set; default = 0; }
         public bool was_seen_recently { get; set; default = false; }
         /* Client-side flag: an unseen message in this chat mentions the local
            user. Not persisted (see Window.mentioned_chats). */
@@ -275,7 +274,6 @@ namespace Dc {
         public string? sender_name { get; set; default = null; }
         public string? sender_avatar_path { get; set; default = null; }
         public int sender_contact_id { get; set; default = 0; }
-        public int64 sender_last_seen { get; set; default = 0; }
         public bool sender_was_seen_recently { get; set; default = false; }
         /* True when the message was forwarded into this chat. */
         public bool is_forwarded { get; set; default = false; }
@@ -327,9 +325,6 @@ namespace Dc {
         }
         public bool is_failed {
             get { return state == MessageState.OUT_FAILED; }
-        }
-        public bool sender_is_online {
-            get { return !is_outgoing && sender_was_seen_recently; }
         }
         public bool has_text {
             get { return text != null && text.strip ().length > 0; }
@@ -410,7 +405,6 @@ namespace Dc {
         public bool is_verified { get; set; default = false; }
         public bool is_blocked { get; set; default = false; }
         public string? status { get; set; default = null; }
-        public int64 last_seen { get; set; default = 0; }
         public bool was_seen_recently { get; set; default = false; }
     }
 
