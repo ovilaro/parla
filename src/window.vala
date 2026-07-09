@@ -186,6 +186,11 @@ namespace Dc {
                     if (v != null) v.queue_resize ();
                 }
             });
+            settings.privacy_changed.connect (() => {
+                sync_online_status_policy.begin ();
+                request_reload_chats ();
+                request_messages_reload ();
+            });
 
             close_request.connect (on_close_request);
 
@@ -673,6 +678,7 @@ namespace Dc {
 
             chat_menu = new ChatContextMenu (this, rpc, chat_store);
             if (rpc.account_id > 0) {
+                yield sync_online_status_policy ();
                 yield load_self_identity ();
                 yield load_chats ();
                 yield load_profile_avatar ();
@@ -848,6 +854,31 @@ namespace Dc {
                 MessageRow.self_avatar_path = null;
             }
             yield refresh_self_mention_keys ();
+        }
+
+        private async void sync_online_status_policy () {
+            RpcParsers.show_online_status = settings.share_online_status;
+            if (!rpc.is_connected || rpc.account_id <= 0) return;
+
+            try {
+                string? enabled = yield rpc.get_config ("mdns_enabled",
+                                                        rpc.account_id);
+                bool core_share = (enabled ?? "1") != "0";
+                bool share = settings.share_online_status && core_share;
+
+                if (share != settings.share_online_status) {
+                    settings.save_share_online_status (share);
+                }
+                if (!share && core_share) {
+                    yield rpc.batch_set_config ("mdns_enabled", "0",
+                                                rpc.account_id);
+                }
+            } catch (Error e) {
+                if (!settings.share_online_status) {
+                    warning ("Failed to enforce online-status privacy: %s",
+                             e.message);
+                }
+            }
         }
 
         private void show_rpc_not_found () {
@@ -2148,6 +2179,7 @@ namespace Dc {
 
             show_empty_status ("parla-welcome", "Parla",
                 "Select a chat to start messaging.");
+            yield sync_online_status_policy ();
             yield load_self_identity ();
             current_chat_id = 0;
             yield load_chats ();

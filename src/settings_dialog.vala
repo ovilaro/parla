@@ -67,12 +67,14 @@ namespace Dc {
 
         public signal void appearance_changed ();
         public signal void font_changed ();
+        public signal void privacy_changed ();
 
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool show_notification_contents { get; set; default = true; }
+        public bool share_online_status { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
         public string rpc_server_path { get; set; default = ""; }
@@ -134,6 +136,8 @@ namespace Dc {
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             show_notification_contents =
                 kf_bool (kf, "show_notification_contents", true);
+            share_online_status = kf_bool (kf, "share_online_status", true);
+            RpcParsers.show_online_status = share_online_status;
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
@@ -210,6 +214,17 @@ namespace Dc {
         public void save_show_notification_contents (bool v) {
             show_notification_contents = v;
             save_bool ("show_notification_contents", v);
+        }
+
+        public void save_share_online_status (bool v) {
+            if (share_online_status == v) {
+                RpcParsers.show_online_status = v;
+                return;
+            }
+            share_online_status = v;
+            RpcParsers.show_online_status = v;
+            save_bool ("share_online_status", v);
+            privacy_changed ();
         }
 
         public void save_minimize_to_tray (bool v) {
@@ -565,8 +580,9 @@ namespace Dc {
 
             online_status_row = action_row (
                 "Share online status",
-                "Send read receipts when messages are read");
-            online_status_switch = row_switch (online_status_row, false);
+                "Show recent activity and send read receipts");
+            online_status_switch = row_switch (
+                online_status_row, app_window.settings.share_online_status);
             online_status_switch.notify["active"].connect (() => {
                 if (!loading_online_status) save_online_status_settings.begin ();
             });
@@ -896,13 +912,21 @@ namespace Dc {
             try {
                 string? enabled = yield rpc.get_config ("mdns_enabled",
                                                         rpc.account_id);
-                bool share = (enabled ?? "1") != "0";
+                bool core_share = (enabled ?? "1") != "0";
+                bool share = app_window.settings.share_online_status && core_share;
                 online_status_switch.active = share;
                 saved_online_status = share;
+                if (share != app_window.settings.share_online_status) {
+                    app_window.settings.save_share_online_status (share);
+                }
+                if (!share && core_share) {
+                    yield rpc.batch_set_config ("mdns_enabled", "0",
+                                                rpc.account_id);
+                }
                 update_online_status_subtitle (share);
                 online_status_row.tooltip_text = null;
             } catch (Error e) {
-                online_status_row.subtitle = "Unable to read read receipt setting";
+                online_status_row.subtitle = "Unable to read online-status setting";
                 online_status_row.tooltip_text = e.message;
             } finally {
                 loading_online_status = false;
@@ -929,16 +953,17 @@ namespace Dc {
                                             enabled ? "1" : "0",
                                             rpc.account_id);
                 saved_online_status = enabled;
+                app_window.settings.save_share_online_status (enabled);
                 update_online_status_subtitle (enabled);
                 online_status_row.tooltip_text = null;
                 app_window.show_toast (enabled
-                    ? "Read receipts enabled"
-                    : "Read receipts disabled");
+                    ? "Online status sharing enabled"
+                    : "Online status sharing disabled");
             } catch (Error e) {
                 loading_online_status = true;
                 online_status_switch.active = saved_online_status;
                 loading_online_status = false;
-                show_error (this, "Failed to save read receipt setting: " + e.message);
+                show_error (this, "Failed to save online-status setting: " + e.message);
             } finally {
                 saving_online_status = false;
                 set_online_status_controls_sensitive (true);
@@ -947,8 +972,8 @@ namespace Dc {
 
         private void update_online_status_subtitle (bool enabled) {
             online_status_row.subtitle = enabled
-                ? "Send read receipts when messages are read"
-                : "Do not send read receipts when messages are read";
+                ? "Show recent activity and send read receipts"
+                : "Hide recent activity and avoid read receipts";
         }
 
         private void set_online_status_controls_sensitive (bool sensitive) {
