@@ -454,110 +454,6 @@ namespace Dc {
             content.margin_top = 12;
             content.margin_bottom = 16;
 
-            var behavior_list = settings_list ("Behavior");
-
-            var dblclick_row = action_row (
-                "Double-click on message",
-                "Action when a message is double-clicked");
-
-            string[] dblclick_labels = {
-                "Reply to message",
-                "React with ❤️",
-                "React with 👍",
-                "Open user profile",
-                "Open context menu",
-                "Do nothing"
-            };
-
-            uint dblclick_selected = (uint) app_window.settings.double_click_action;
-            if (dblclick_selected == 4) dblclick_selected = 5;
-            else if (dblclick_selected == 5) dblclick_selected = 4;
-            var dblclick_combo = row_dropdown (dblclick_row, dblclick_labels,
-                dblclick_selected);
-            dblclick_combo.notify["selected"].connect (() => {
-                uint selected = dblclick_combo.selected;
-                int action = (int) selected;
-                if (selected == 4) action = 5;
-                else if (selected == 5) action = 4;
-                app_window.settings.save_double_click_action (action);
-            });
-
-            behavior_list.append (dblclick_row);
-
-            var md_row = action_row (
-                "Markdown rendering",
-                "Format bold, italic, code and headings");
-            var md_switch = row_switch (md_row, Markdown.enabled);
-            md_switch.notify["active"].connect (() => {
-                app_window.settings.save_markdown_rendering (md_switch.active);
-            });
-
-            behavior_list.append (md_row);
-
-            var shift_row = action_row (
-                "Shift+Return sends message",
-                "When on, Return inserts a newline and Shift+Return sends");
-            var shift_switch = row_switch (
-                shift_row, app_window.settings.shift_enter_sends);
-            shift_switch.notify["active"].connect (() => {
-                app_window.settings.save_shift_enter_sends (shift_switch.active);
-            });
-
-            behavior_list.append (shift_row);
-
-            var notif_row = action_row (
-                "Desktop notifications",
-                "Notify on incoming messages when the window is not focused");
-            var notif_switch = row_switch (
-                notif_row, app_window.settings.notifications_enabled);
-            notif_switch.notify["active"].connect (() => {
-                app_window.set_notifications_enabled (notif_switch.active);
-            });
-
-            behavior_list.append (notif_row);
-
-            var audio_row = action_row (
-                "System audio player",
-                "Spawn afplay/gst-play/mpv to play voice messages instead of "
-                + "the built-in GTK media backend");
-            var audio_switch = row_switch (
-                audio_row, app_window.settings.system_audio_player);
-            audio_switch.notify["active"].connect (() => {
-                app_window.settings.save_system_audio_player (audio_switch.active);
-            });
-
-            behavior_list.append (audio_row);
-
-            /* The tray is a StatusNotifierItem exported over the session
-               D-Bus with no watcher on macOS, so the option is Linux-only. */
-            if (!Platform.is_macos ()) {
-                var tray_row = action_row (
-                    "Minimize to status bar",
-                    "Closing the window keeps Parla running in the status bar; "
-                    + "notifications still appear");
-                var tray_switch = row_switch (
-                    tray_row, app_window.settings.minimize_to_tray);
-                tray_switch.notify["active"].connect (() => {
-                    app_window.set_minimize_to_tray (tray_switch.active);
-                });
-
-                behavior_list.append (tray_row);
-            }
-
-            var privacy_list = settings_list ("Privacy");
-
-            var notification_contents_row = action_row (
-                "Show message contents in notifications",
-                "Include sender text and attachment names in desktop notifications");
-            var notification_contents_switch = row_switch (
-                notification_contents_row,
-                app_window.settings.show_notification_contents);
-            notification_contents_switch.notify["active"].connect (() => {
-                app_window.settings.save_show_notification_contents (
-                    notification_contents_switch.active);
-            });
-            privacy_list.append (notification_contents_row);
-
             var appearance_list = settings_list ("Appearance");
 
             var theme_row = action_row (
@@ -703,6 +599,106 @@ namespace Dc {
             bg_row.add_suffix (bg_color_btn);
             appearance_list.append (bg_row);
 
+            var behavior_list = settings_list ("Behavior");
+
+            var dblclick_row = action_row (
+                "Double-click on message",
+                "Action when a message is double-clicked");
+
+            string[] dblclick_labels = {
+                "Reply to message",
+                "React with ❤️",
+                "React with 👍",
+                "Open user profile",
+                "Open context menu",
+                "Do nothing"
+            };
+
+            uint dblclick_selected = (uint) app_window.settings.double_click_action;
+            if (dblclick_selected == 4) dblclick_selected = 5;
+            else if (dblclick_selected == 5) dblclick_selected = 4;
+            var dblclick_combo = row_dropdown (dblclick_row, dblclick_labels,
+                dblclick_selected);
+            dblclick_combo.notify["selected"].connect (() => {
+                uint selected = dblclick_combo.selected;
+                int action = (int) selected;
+                if (selected == 4) action = 5;
+                else if (selected == 5) action = 4;
+                app_window.settings.save_double_click_action (action);
+            });
+
+            behavior_list.append (dblclick_row);
+
+            var md_row = action_row (
+                "Markdown rendering",
+                "Format bold, italic, code and headings");
+            var md_switch = row_switch (md_row, Markdown.enabled);
+            md_switch.notify["active"].connect (() => {
+                app_window.settings.save_markdown_rendering (md_switch.active);
+            });
+
+            var shift_row = action_row (
+                "Shift+Return sends message",
+                "When on, Return inserts a newline and Shift+Return sends");
+            var shift_switch = row_switch (
+                shift_row, app_window.settings.shift_enter_sends);
+            shift_switch.notify["active"].connect (() => {
+                app_window.settings.save_shift_enter_sends (shift_switch.active);
+            });
+
+            behavior_list.append (shift_row);
+
+            var audio_row = action_row (
+                "System audio player",
+                "Spawn afplay/gst-play/mpv to play voice messages instead of "
+                + "the built-in GTK media backend");
+            var audio_switch = row_switch (
+                audio_row, app_window.settings.system_audio_player);
+            audio_switch.notify["active"].connect (() => {
+                app_window.settings.save_system_audio_player (audio_switch.active);
+            });
+
+            /* The tray is a StatusNotifierItem exported over the session
+               D-Bus with no watcher on macOS, so the option is Linux-only. */
+            if (!Platform.is_macos ()) {
+                var tray_row = action_row (
+                    "Minimize to status bar",
+                    "Closing the window keeps Parla running in the status bar; "
+                    + "notifications still appear");
+                var tray_switch = row_switch (
+                    tray_row, app_window.settings.minimize_to_tray);
+                tray_switch.notify["active"].connect (() => {
+                    app_window.set_minimize_to_tray (tray_switch.active);
+                });
+
+                behavior_list.append (tray_row);
+            }
+
+            var notifications_list = settings_list ("Notifications");
+            var notif_row = action_row (
+                "Desktop notifications",
+                "Notify on incoming messages when the window is not focused");
+            var notif_switch = row_switch (
+                notif_row, app_window.settings.notifications_enabled);
+            notif_switch.notify["active"].connect (() => {
+                app_window.set_notifications_enabled (notif_switch.active);
+            });
+
+            notifications_list.append (notif_row);
+
+
+            var notification_contents_row = action_row (
+                "Show message contents in notifications",
+                "Include sender text and attachment names in desktop notifications");
+            var notification_contents_switch = row_switch (
+                notification_contents_row,
+                app_window.settings.show_notification_contents);
+            notification_contents_switch.notify["active"].connect (() => {
+                app_window.settings.save_show_notification_contents (
+                    notification_contents_switch.active);
+            });
+            notifications_list.append (notification_contents_row);
+
             var network_list = settings_list ("Network");
 
             proxy_switch_row = action_row (
@@ -734,6 +730,9 @@ namespace Dc {
             load_proxy_settings.begin ();
 
             var advanced_list = settings_list ("Advanced");
+            advanced_list.append (md_row);
+            advanced_list.append (audio_row);
+            var chatmail_list = settings_list ("Chatmail");
 
             rpc_row = action_row ("Chatmail Server");
 
@@ -757,7 +756,7 @@ namespace Dc {
             rpc_download_btn.clicked.connect (() => { install_managed_server.begin (); });
             rpc_row.add_suffix (rpc_download_btn);
 
-            advanced_list.append (rpc_row);
+            chatmail_list.append (rpc_row);
 
             rpc_version_row = action_row ("Chatmail server version", "Checking...");
             rpc_update_btn = new Gtk.Button.with_label ("Check");
@@ -766,7 +765,7 @@ namespace Dc {
             rpc_update_btn.tooltip_text = "Check latest deltachat-rpc-server release";
             rpc_update_btn.clicked.connect (() => { check_rpc_updates.begin (); });
             rpc_version_row.add_suffix (rpc_update_btn);
-            advanced_list.append (rpc_version_row);
+            chatmail_list.append (rpc_version_row);
 
             var rpc_autocheck_row = action_row (
                 "Check for chatmail updates on startup",
@@ -780,7 +779,7 @@ namespace Dc {
             });
             /* Engine updates are off entirely when the server path is pinned. */
             rpc_autocheck_row.visible = !SettingsManager.rpc_server_path_is_fixed ();
-            advanced_list.append (rpc_autocheck_row);
+            chatmail_list.append (rpc_autocheck_row);
 
             update_rpc_row ();
 
