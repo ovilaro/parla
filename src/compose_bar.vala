@@ -722,21 +722,11 @@ namespace Dc {
             notify_draft_changed ();
         }
 
-        public void begin_reply (int msg_id, string sender_name, string preview,
-                                 string? mention_prefix = null) {
+        public void begin_reply (int msg_id, string sender_name, string preview) {
             cancel_edit ();
             replying_msg_id = msg_id;
             reply_label.label = "%s: %s".printf (sender_name, shorten_preview (preview));
             reply_bar.visible = true;
-            /* Seed an author mention only into an empty entry, so replying
-               never clobbers a draft the user already started. */
-            if (mention_prefix != null && mention_prefix.length > 0
-                && text_view.buffer.get_char_count () == 0) {
-                text_view.buffer.text = mention_prefix;
-                Gtk.TextIter end;
-                text_view.buffer.get_end_iter (out end);
-                text_view.buffer.place_cursor (end);
-            }
             text_view.grab_focus ();
             notify_draft_changed ();
         }

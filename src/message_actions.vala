@@ -269,14 +269,7 @@ namespace Dc {
             if (m == null) return;
             string sender = m.is_outgoing ? "You" : (m.sender_name ?? "");
             string preview = m.text ?? "(attachment)";
-            /* In a group, seed the reply with a mention of the author so it
-               notifies them (Telegram/Mastodon style). */
-            string? mention_prefix = null;
-            if (!m.is_outgoing && window.current_chat_is_group ()
-                && m.sender_name != null && m.sender_name.strip ().length > 0) {
-                mention_prefix = "@" + m.sender_name.strip () + " ";
-            }
-            compose_bar.begin_reply (msg_id, sender, preview, mention_prefix);
+            compose_bar.begin_reply (msg_id, sender, preview);
         }
 
         public void start_forwarding (int msg_id) {
