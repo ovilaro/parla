@@ -662,7 +662,6 @@ namespace Dc {
                 color: @success_color;
                 opacity: 1;
                 margin-left: 2px;
-                letter-spacing: -3px;
             }
             .message-tick-failed {
                 font-size: small;

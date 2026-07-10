@@ -167,7 +167,7 @@ namespace Dc {
         row.title_lines = 1;
         row.subtitle_lines = 1;
         if (chat.last_message != null && chat.last_message.length > 0) {
-            row.subtitle = chat.last_message;
+            row.subtitle = Markdown.single_line_preview (chat.last_message, 0);
         }
         row.name = chat.id.to_string ();
         row.activatable = true;
@@ -202,6 +202,7 @@ namespace Dc {
         public int id { get; set; default = 0; }
         public string name { get; set; default = ""; }
         public string? last_message { get; set; default = null; }
+        public int last_message_id { get; set; default = 0; }
         public string? summary_prefix { get; set; default = null; }
         public int64 timestamp { get; set; default = 0; }
         public int unread_count { get; set; default = 0; }
@@ -246,10 +247,14 @@ namespace Dc {
         }
     }
 
-    /* Delivery state values from deltachat-core that the UI renders. */
+    /* Message state values from Delta Chat JSON-RPC. */
     public enum MessageState {
-        OUT_DRAFT     = 10,
+        UNDEFINED     = 0,
+        IN_FRESH      = 10,
+        IN_NOTICED    = 13,
+        IN_SEEN       = 16,
         OUT_PREPARING = 18,
+        OUT_DRAFT     = 19,
         OUT_PENDING   = 20,
         OUT_FAILED    = 24,
         OUT_DELIVERED = 26,

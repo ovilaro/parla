@@ -130,6 +130,7 @@ namespace Dc {
 
             case "MsgDelivered":
             case "MsgRead":
+            case "MsgReadCountChanged":
             case "MsgFailed":
             case "MsgDeleted":
             case "ReactionsChanged":

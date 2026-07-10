@@ -91,6 +91,37 @@ namespace Dc {
             }
         }
 
+        /**
+         * Convert markdown to preview text, stripping markdown before line
+         * clamping so line-oriented syntax such as task checkboxes survives.
+         */
+        public static string preview (string input, int max_lines,
+                                      int max_chars) {
+            string result = strip (input);
+
+            if (max_lines > 0) {
+                string[] lines = result.split ("\n");
+                int n = (lines.length < max_lines) ? lines.length : max_lines;
+                var sb = new StringBuilder ();
+                for (int i = 0; i < n; i++) {
+                    if (i > 0) sb.append_c ('\n');
+                    sb.append (lines[i]);
+                }
+                if (lines.length > max_lines) sb.append ("…");
+                result = sb.str;
+            }
+
+            return clamp_chars (result, max_chars);
+        }
+
+        /**
+         * Convert markdown to a single-line preview, stripping markdown before
+         * collapsing newlines so task checkboxes still start at line scope.
+         */
+        public static string single_line_preview (string input, int max_chars) {
+            return clamp_chars (collapse_lines (strip (input)), max_chars);
+        }
+
         private static string format_markdown (string escaped) throws RegexError {
             ensure_regexes ();
             var segments = new GenericArray<string> ();
@@ -176,6 +207,28 @@ namespace Dc {
             }
 
             return work.strip ();
+        }
+
+        private static string collapse_lines (string input) {
+            string normalized = input.replace ("\r\n", "\n").replace ("\r", "\n");
+            string[] lines = normalized.split ("\n");
+            var sb = new StringBuilder ();
+
+            for (int i = 0; i < lines.length; i++) {
+                string line = lines[i].strip ();
+                if (line.length == 0) continue;
+                if (sb.len > 0) sb.append_c (' ');
+                sb.append (line);
+            }
+            return sb.str;
+        }
+
+        private static string clamp_chars (string input, int max_chars) {
+            if (max_chars > 0 && input.char_count () > max_chars) {
+                int byte_pos = input.index_of_nth_char (max_chars);
+                return input.substring (0, byte_pos) + "…";
+            }
+            return input;
         }
 
         private static string format_task_checkboxes (string input) {

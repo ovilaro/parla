@@ -702,7 +702,14 @@ namespace Dc {
 
         public async bool handle_incoming_msg (int msg_id) {
             try {
-                if (find_message (message_store, msg_id) != null) return true;
+                if (find_message (message_store, msg_id) != null) {
+                    if (window.is_chat_visible (this.chat_id)) {
+                        yield rpc.mark_seen_msgs (new int[] { msg_id });
+                    } else if (window.current_chat_id == this.chat_id) {
+                        queue_pending_seen (msg_id);
+                    }
+                    return true;
+                }
                 var msg = yield rpc.fetch_message (msg_id);
                 if (msg == null) {
                     mark_messages_stale ();
@@ -713,12 +720,13 @@ namespace Dc {
                 msg.is_pinned = pinned.is_pinned (msg.id);
                 msg.selection_visible = selection_mode;
                 insert_message_sorted (msg);
-                if (is_current && window.is_active) {
+                if (window.is_chat_visible (this.chat_id)
+                    && should_mark_message_seen (msg)) {
                     yield rpc.mark_seen_msgs (new int[] { msg_id });
-                } else if (is_current) {
+                } else if (is_current && should_mark_message_seen (msg)) {
                     /* On screen but the window is unfocused: defer the seen
                        mark until the user actually looks at the chat. */
-                    pending_seen_ids += msg_id;
+                    queue_pending_seen (msg_id);
                 }
                 return true;
             } catch (Error e) {
@@ -732,9 +740,46 @@ namespace Dc {
            window was unfocused. Called when the user is looking at this chat
            again (window refocused or chat re-entered). */
         public void flush_pending_seen () {
-            if (pending_seen_ids.length == 0) return;
-            int[] ids = pending_seen_ids;
+            if (!window.is_chat_visible (chat_id)) return;
+
+            int[] ids = loaded_incoming_message_ids ();
+            foreach (int msg_id in pending_seen_ids) {
+                if (!int_array_contains (ids, msg_id)) ids += msg_id;
+            }
             pending_seen_ids = {};
+            send_seen_ids (ids);
+        }
+
+        private int[] loaded_incoming_message_ids () {
+            int[] ids = {};
+            uint n = message_store.get_n_items ();
+            for (uint i = 0; i < n; i++) {
+                var msg = (Message) message_store.get_item (i);
+                if (!should_mark_message_seen (msg)) continue;
+                if (!int_array_contains (ids, msg.id)) ids += msg.id;
+            }
+            return ids;
+        }
+
+        private static bool should_mark_message_seen (Message msg) {
+            return msg.id > 0 && !msg.is_outgoing && !msg.is_info;
+        }
+
+        private void queue_pending_seen (int msg_id) {
+            if (msg_id <= 0 || int_array_contains (pending_seen_ids, msg_id))
+                return;
+            pending_seen_ids += msg_id;
+        }
+
+        private static bool int_array_contains (int[] ids, int needle) {
+            foreach (int id in ids) {
+                if (id == needle) return true;
+            }
+            return false;
+        }
+
+        private void send_seen_ids (int[] ids) {
+            if (ids.length == 0) return;
             rpc.mark_seen_msgs.begin (ids, (o, res) => {
                 try {
                     rpc.mark_seen_msgs.end (res);
@@ -961,6 +1006,7 @@ namespace Dc {
                 messages_loaded = true;
                 messages_stale = false;
                 loading_chat = false;
+                flush_pending_seen ();
                 if (messages.length > 0) {
                     if (!preserve_scroll || was_near_bottom) {
                         scroll_to_bottom ();
@@ -1112,6 +1158,7 @@ namespace Dc {
 
                 /* One splice avoids a per-row ListView relayout storm. */
                 message_store.splice (0, 0, pinned_message_batch (messages));
+                flush_pending_seen ();
 
                 loaded_start_index = new_start;
 

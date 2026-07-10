@@ -75,6 +75,14 @@ namespace Dc {
             }
         }
 
+        public bool is_chat_visible (int chat_id) {
+            if (chat_id <= 0 || chat_id != current_chat_id || !this.is_active)
+                return false;
+            if (split_view.collapsed && split_view.show_sidebar)
+                return false;
+            return true;
+        }
+
         /* Extracted managers */
         public SettingsManager settings;
         private ImageViewer image_viewer;
@@ -1078,10 +1086,8 @@ namespace Dc {
                 bool keep_empty_selection = desired_chat_id <= 0;
                 suppress_chat_selection = true;
 
-                chat_store.remove_all ();
-                clear_listbox (chat_listbox);
-
-                Gtk.ListBoxRow? reselect_row = null;
+                ChatEntry[] parsed_entries = {};
+                int[] preview_msg_ids = {};
                 for (uint i = 0; i < entries.get_length (); i++) {
                     int chat_id = (int) entries.get_int_element (i);
                     string id_str = chat_id.to_string ();
@@ -1090,17 +1096,30 @@ namespace Dc {
                         var item = items.get_object_member (id_str);
                         var entry = RpcParsers.parse_chat_item (chat_id, item);
                         entry.has_mention = mentioned_chats.contains (chat_id);
-                        chat_store.append (entry);
-
-                        var row = new Gtk.ListBoxRow ();
-                        var chat_row = new ChatRow (entry);
-                        chat_row.set_compact (settings.sidebar_mode == SidebarMode.COMPACT);
-                        row.child = chat_row;
-                        chat_listbox.append (row);
-
-                        if (chat_id == desired_chat_id) {
-                            reselect_row = row;
+                        parsed_entries += entry;
+                        if (entry.last_message_id > 0) {
+                            preview_msg_ids += entry.last_message_id;
                         }
+                    }
+                }
+                yield hydrate_chat_text_previews (parsed_entries,
+                    preview_msg_ids);
+
+                chat_store.remove_all ();
+                clear_listbox (chat_listbox);
+
+                Gtk.ListBoxRow? reselect_row = null;
+                foreach (var entry in parsed_entries) {
+                    chat_store.append (entry);
+
+                    var row = new Gtk.ListBoxRow ();
+                    var chat_row = new ChatRow (entry);
+                    chat_row.set_compact (settings.sidebar_mode == SidebarMode.COMPACT);
+                    row.child = chat_row;
+                    chat_listbox.append (row);
+
+                    if (entry.id == desired_chat_id) {
+                        reselect_row = row;
                     }
                 }
 
@@ -1118,6 +1137,40 @@ namespace Dc {
                 suppress_chat_selection = false;
                 show_toast ("Failed to load chats: " + e.message);
             }
+        }
+
+        private async void hydrate_chat_text_previews (ChatEntry[] entries,
+                                                       int[] msg_ids) {
+            if (entries.length == 0 || msg_ids.length == 0) return;
+
+            try {
+                var map = yield rpc.get_messages_for (rpc.account_id, msg_ids);
+                if (map == null) return;
+
+                foreach (var entry in entries) {
+                    if (entry.last_message_id <= 0) continue;
+                    string key = entry.last_message_id.to_string ();
+                    if (!map.has_member (key)) continue;
+
+                    var msg = RpcParsers.parse_message (
+                        map.get_object_member (key), rpc.self_email);
+                    if (!plain_text_preview_message (msg)) continue;
+                    entry.last_message = msg.text;
+                }
+            } catch (Error e) {
+                warning ("hydrate_chat_text_previews: %s", e.message);
+            }
+        }
+
+        private static bool plain_text_preview_message (Message msg) {
+            if (msg.text == null || msg.text.strip ().length == 0) return false;
+            if (msg.file_path != null && msg.file_path.length > 0) return false;
+            if (msg.file_name != null && msg.file_name.length > 0) return false;
+            if (msg.is_info) return false;
+
+            if (msg.view_type == null || msg.view_type.length == 0) return true;
+            string vt = msg.view_type.down ();
+            return vt == "text" || vt == "unknown";
         }
 
         private bool filter_chats (Gtk.ListBoxRow row) {
@@ -1170,14 +1223,15 @@ namespace Dc {
 
             content_stack.visible_child_name = "chat_%d".printf (chat_id);
             view.on_activated ();
-            if (this.is_active) view.flush_pending_seen ();
-
-            notice_chat.begin (current_chat_id);
 
             /* In narrow/mobile mode, hide the sidebar so the chat takes over */
             if (split_view.collapsed) {
                 split_view.show_sidebar = false;
             }
+
+            if (this.is_active) view.flush_pending_seen ();
+
+            notice_chat.begin (current_chat_id);
         }
 
         private async void notice_chat (int chat_id) {

@@ -132,6 +132,34 @@ private void test_strip_preserves_code_contents () {
     assert (plain == "**literal**\n* [x] literal");
 }
 
+private void test_preview_strips_before_newline_clamp () {
+    string preview = Dc.Markdown.preview (
+        "Intro\n" +
+        "* [x] Done\n" +
+        "* [ ] Todo\n" +
+        "Hidden", 3, 240);
+
+    assert (preview ==
+        "Intro\n" +
+        "✓ Done\n" +
+        "☐ Todo…");
+}
+
+private void test_preview_strips_before_char_clamp () {
+    string preview = Dc.Markdown.preview ("* [x] Done", 3, 3);
+
+    assert (preview == "✓ D…");
+}
+
+private void test_single_line_preview_strips_before_newline_trim () {
+    string preview = Dc.Markdown.single_line_preview (
+        "Intro\n" +
+        "* [x] Done\n" +
+        "* [ ] Todo", 0);
+
+    assert (preview == "Intro ✓ Done ☐ Todo");
+}
+
 public int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/markdown/table-grid", test_table_grid);
@@ -144,5 +172,8 @@ public int main (string[] args) {
     Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);
     Test.add_func ("/markdown/strip-task-checkboxes-standard-only", test_strip_task_checkboxes_standard_only);
     Test.add_func ("/markdown/strip-preserves-code-contents", test_strip_preserves_code_contents);
+    Test.add_func ("/markdown/preview-strips-before-newline-clamp", test_preview_strips_before_newline_clamp);
+    Test.add_func ("/markdown/preview-strips-before-char-clamp", test_preview_strips_before_char_clamp);
+    Test.add_func ("/markdown/single-line-preview-strips-before-newline-trim", test_single_line_preview_strips_before_newline_trim);
     return Test.run ();
 }

@@ -742,22 +742,7 @@ namespace Dc {
            never explodes when quoting long messages. The label itself
            also wraps + ellipsizes at 3 lines as a hard cap. */
         private static string shorten_preview (string text) {
-            string[] lines = text.split ("\n");
-            int max_lines = 3;
-            int n = (lines.length < max_lines) ? lines.length : max_lines;
-            var sb = new StringBuilder ();
-            for (int i = 0; i < n; i++) {
-                if (i > 0) sb.append_c ('\n');
-                sb.append (lines[i]);
-            }
-            if (lines.length > max_lines) sb.append ("…");
-            string result = sb.str;
-            int max_chars = 240;
-            if (result.char_count () > max_chars) {
-                int byte_pos = result.index_of_nth_char (max_chars);
-                result = result.substring (0, byte_pos) + "…";
-            }
-            return result;
+            return Markdown.preview (text, 3, 240);
         }
 
         private void cancel_reply () {

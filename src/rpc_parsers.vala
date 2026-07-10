@@ -72,18 +72,12 @@ namespace Dc {
             var s1 = json_str (obj, "summaryText1");
             if (s1 != null && s1.length > 0) entry.summary_prefix = s1;
 
-            var last = json_str (obj, "lastMessageText");
-            if (last != null && last.length > 0) {
-                entry.last_message = Markdown.strip (last);
+            var s2 = json_str (obj, "summaryText2");
+            if (s2 != null && s2.length > 0) {
+                entry.last_message = s2;
             }
 
-            if (entry.last_message == null) {
-                var s2 = json_str (obj, "summaryText2");
-                if (s2 != null && s2.length > 0) {
-                    entry.last_message = Markdown.strip (s2);
-                }
-            }
-
+            entry.last_message_id = (int) json_int (obj, "lastMessageId");
             entry.unread_count = (int) json_int (obj, "freshMessageCounter");
             entry.timestamp = json_int (obj, "lastMessageTimestamp");
             entry.avatar_path = json_str (obj, "avatarPath");
