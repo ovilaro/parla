@@ -2500,6 +2500,11 @@ namespace Dc {
             case Gdk.Key.k:
                 show_quick_switch_dialog ();
                 return true;
+            case Gdk.Key.l:
+                var v = current_view ();
+                if (v == null) return false;
+                v.focus_entry ();
+                return true;
             case Gdk.Key.r:
                 refresh_current_chat ();
                 return true;
@@ -2692,6 +2697,7 @@ namespace Dc {
             "Open chat info",        "<Primary>i",
             "Search in conversation","<Primary>f",
             "Quick switch chat",     "<Primary>k",
+            "Focus message entry",   "<Primary>l",
             "Account menu",          "<Primary><Shift>a",
             "Next conversation",     "<Primary>Page_Down",
             "Previous conversation", "<Primary>Page_Up",
