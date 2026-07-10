@@ -47,7 +47,7 @@
         <ul>
           <li>Delete/Forward multiple messages</li>
           <li>Fix media bubble size in hidpi</li>
-          <li>Fix close window behaviour when tray icon is disabled</li>
+          <li>Fix close window with disabled tray icon</li>
           <li>Triple click selects all the text</li>
           <li>Cleaner action menu</li>
           <li>Show pin indicator in pinned messages</li>
@@ -72,7 +72,7 @@
           <li>Highlight input field when in focus</li>
           <li>Fix message bubble containing pictures</li>
           <li>Fix audio messages playing muted</li>
-          <li>Workaround a macos/gtk4 clipboard bug (feature flag)</li>
+          <li>Workaround a macos/gtk4 clipboard bug</li>
           <li>Add compile time option to hardcode jsonrpc server path</li>
         </ul>
       </description>

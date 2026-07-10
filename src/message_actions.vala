@@ -145,7 +145,7 @@ namespace Dc {
                         () => { delete_message.begin (msg_id, false); },
                         null);
                 }
-            }));
+            }, true));
 
             popover.child = vbox;
             preserve_scroll_until_closed (popover);
@@ -154,9 +154,11 @@ namespace Dc {
 
         private Gtk.Button menu_button (Gtk.Popover popover, string label,
                                         owned VoidFunc action,
+                                        bool destructive = false,
                                         bool hexpand = false) {
             var btn = new Gtk.Button.with_label (label);
             btn.add_css_class ("flat");
+            if (destructive) btn.add_css_class ("menu-destructive");
             var child = btn.child as Gtk.Label;
             if (child != null) {
                 child.xalign = 0;
