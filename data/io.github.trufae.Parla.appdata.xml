@@ -29,6 +29,21 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.6.4" date="2026-07-10">
+      <description>
+        <ul>
+          <li>Move the read receipt option into the user profile</li>
+          <li>Strip markdown in message previews</li>
+          <li>Interactive markdown checkboxes</li>
+          <li>Delete context button in red</li>
+          <li>Reorganized settings dialog</li>
+          <li>Fix tray icon for XFCE and KDE</li>
+	  <li>Support attaching multiple files</li>
+	  <li>Display who reacted to a message</li>
+	  <li>Initial support for mentions</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-07-08">
       <description>
         <ul>
