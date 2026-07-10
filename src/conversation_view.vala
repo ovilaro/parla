@@ -1179,6 +1179,7 @@ namespace Dc {
         /* Toggle the top "Loading…" pill while older messages are fetched.
            Spinning is tied to visibility so the animation only runs when shown. */
         private void set_loading_more_visible (bool visible) {
+            loading_more_spinner.visible = visible;
             loading_more_spinner.spinning = visible;
             if (visible) {
                 loading_pill_label.label = "Loading…";
@@ -1218,6 +1219,7 @@ namespace Dc {
             }
 
             loading_more_spinner.spinning = false;
+            loading_more_spinner.visible = false;
             loading_pill_label.label = MessageRow.format_date_label (msg.timestamp);
             loading_more_revealer.reveal_child = true;
         }
