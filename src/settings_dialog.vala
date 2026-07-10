@@ -732,6 +732,7 @@ namespace Dc {
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
             advanced_list.append (audio_row);
+
             var chatmail_list = settings_list ("Chatmail");
 
             rpc_row = action_row ("Chatmail Server");

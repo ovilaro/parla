@@ -66,8 +66,13 @@ namespace Dc {
         private Gtk.Label connectivity_status_label;
         private Gtk.Label storage_summary_label;
         private Gtk.ProgressBar storage_progress;
+        private Gtk.Switch read_receipts_switch;
+        private Gtk.Label read_receipts_caption_label;
         private string? avatar_path = null;
         private bool avatar_changed = false;
+        private bool loading_read_receipts = false;
+        private bool saving_read_receipts = false;
+        private bool saved_read_receipts_enabled = true;
 
         public signal void profile_updated ();
         public signal void account_deleted (int acct_id);
@@ -153,6 +158,10 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
+            content.append (build_read_receipts_row ());
+
+            content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+
             content.append (build_connectivity_storage_section ());
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -179,6 +188,7 @@ namespace Dc {
             this.child = box;
 
             load_profile.begin ();
+            load_read_receipt_settings.begin ();
             load_connectivity_summary.begin ();
         }
 
@@ -221,6 +231,103 @@ namespace Dc {
 
             update_default_account_row ();
             return box;
+        }
+
+        private Gtk.Widget build_read_receipts_row () {
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            box.margin_top = 4;
+
+            var labels = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+            labels.hexpand = true;
+
+            var title = heading_label ("Read Receipts");
+            labels.append (title);
+
+            read_receipts_caption_label = dim_label (
+                "This affects this profile in every Delta Chat client, not only Parla.",
+                true);
+            labels.append (read_receipts_caption_label);
+            box.append (labels);
+
+            read_receipts_switch = new Gtk.Switch ();
+            read_receipts_switch.active = true;
+            read_receipts_switch.sensitive = false;
+            read_receipts_switch.valign = Gtk.Align.CENTER;
+            read_receipts_switch.notify["active"].connect (() => {
+                if (!loading_read_receipts) save_read_receipt_settings.begin ();
+            });
+            box.append (read_receipts_switch);
+
+            return box;
+        }
+
+        private async void load_read_receipt_settings () {
+            if (!rpc.is_connected || account_id <= 0) {
+                set_read_receipt_controls_sensitive (false);
+                read_receipts_caption_label.label = "No active profile";
+                return;
+            }
+
+            loading_read_receipts = true;
+            set_read_receipt_controls_sensitive (false);
+
+            try {
+                string? enabled = yield rpc.get_config ("mdns_enabled", account_id);
+                read_receipts_switch.active = enabled == null || enabled != "0";
+                saved_read_receipts_enabled = read_receipts_switch.active;
+                update_read_receipts_caption (read_receipts_switch.active);
+            } catch (Error e) {
+                read_receipts_caption_label.label =
+                    "Unable to read read receipt setting";
+                read_receipts_caption_label.tooltip_text = e.message;
+            } finally {
+                loading_read_receipts = false;
+                set_read_receipt_controls_sensitive (true);
+            }
+        }
+
+        private void set_read_receipt_controls_sensitive (bool sensitive) {
+            read_receipts_switch.sensitive =
+                sensitive && rpc.is_connected && account_id > 0;
+        }
+
+        private void update_read_receipts_caption (bool enabled) {
+            read_receipts_caption_label.label = enabled
+                ? "Enabled. This affects this profile in every Delta Chat client, not only Parla."
+                : "Disabled. This affects this profile in every Delta Chat client, not only Parla.";
+            read_receipts_caption_label.tooltip_text = null;
+        }
+
+        private async void save_read_receipt_settings () {
+            if (loading_read_receipts || saving_read_receipts) return;
+
+            if (!rpc.is_connected || account_id <= 0) {
+                show_error (this, "No active profile");
+                return;
+            }
+
+            bool enabled = read_receipts_switch.active;
+            if (enabled == saved_read_receipts_enabled) return;
+
+            saving_read_receipts = true;
+            set_read_receipt_controls_sensitive (false);
+
+            try {
+                yield rpc.batch_set_config ("mdns_enabled",
+                                            enabled ? "1" : "0",
+                                            account_id);
+                saved_read_receipts_enabled = enabled;
+                update_read_receipts_caption (enabled);
+            } catch (Error e) {
+                show_error (this, "Failed to save read receipt setting: "
+                    + e.message);
+                loading_read_receipts = true;
+                read_receipts_switch.active = saved_read_receipts_enabled;
+                loading_read_receipts = false;
+            } finally {
+                saving_read_receipts = false;
+                set_read_receipt_controls_sensitive (true);
+            }
         }
 
         /* Applies immediately: making an account the default is an explicit
