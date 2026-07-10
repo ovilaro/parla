@@ -402,6 +402,21 @@ namespace Dc {
                 font-weight: bold;
                 background-color: alpha(@view_fg_color, 0.06);
             }
+            .markdown-task-line {
+                margin-top: 1px;
+                margin-bottom: 1px;
+            }
+            .markdown-task-toggle {
+                min-width: 20px;
+                min-height: 20px;
+                padding: 0;
+                margin: 0;
+                font-size: inherit;
+            }
+            .markdown-task-glyph {
+                min-width: 20px;
+                opacity: 0.9;
+            }
             .message-image { border-radius: 12px; margin-top: 4px; }
             .message-video-frame {
                 border-radius: 12px;

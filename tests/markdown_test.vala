@@ -54,10 +54,33 @@ private void test_plain_pipe_text_is_not_table () {
     assert (markup == "hello | world\nnot a separator");
 }
 
+private void test_task_checkboxes () {
+    Dc.Markdown.enabled = true;
+
+    string markup = Dc.Markdown.format (
+        "* [ ] Todo\n" +
+        "* [x] Done\n" +
+        "  - [X] Nested");
+
+    assert (markup == "⬜ Todo\n✅ Done\n  ✅ Nested");
+    assert_valid_pango_markup (markup);
+}
+
+private void test_task_checkboxes_skip_code () {
+    Dc.Markdown.enabled = true;
+
+    string markup = Dc.Markdown.format ("`* [x] Done`");
+
+    assert (markup == "<tt>* [x] Done</tt>");
+    assert_valid_pango_markup (markup);
+}
+
 public int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/markdown/table-grid", test_table_grid);
     Test.add_func ("/markdown/table-inline-markup-link", test_table_with_inline_markup_and_link);
     Test.add_func ("/markdown/plain-pipe-text", test_plain_pipe_text_is_not_table);
+    Test.add_func ("/markdown/task-checkboxes", test_task_checkboxes);
+    Test.add_func ("/markdown/task-checkboxes-skip-code", test_task_checkboxes_skip_code);
     return Test.run ();
 }

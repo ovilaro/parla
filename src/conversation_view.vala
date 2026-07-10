@@ -183,6 +183,9 @@ namespace Dc {
                 row.full_message_requested.connect ((mid) => {
                     load_full_message.begin (mid);
                 });
+                row.checkbox_toggle_requested.connect ((mid, new_text) => {
+                    msg_actions.edit_message.begin (mid, new_text);
+                });
                 if (msg.highlighted) {
                     msg.highlighted = false;
                     row.highlight ();
@@ -237,6 +240,11 @@ namespace Dc {
                     return;
                 }
                 if (pointer_on_reaction_badge (x, y)) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
+                if (pointer_on_markdown_task_toggle (x, y)) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -1386,6 +1394,15 @@ namespace Dc {
             var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
             while (w != null && !(w is MessageRow)) {
                 if (w.has_css_class ("reaction-badge")) return true;
+                w = w.get_parent ();
+            }
+            return false;
+        }
+
+        private bool pointer_on_markdown_task_toggle (double x, double y) {
+            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
+            while (w != null && !(w is MessageRow)) {
+                if (w.has_css_class ("markdown-task-toggle")) return true;
                 w = w.get_parent ();
             }
             return false;

@@ -114,6 +114,7 @@ namespace Dc {
         public signal void quote_clicked (int quoted_msg_id);
         public signal void full_message_requested (int msg_id);
         public signal void selection_toggled (int msg_id, bool selected);
+        public signal void checkbox_toggle_requested (int msg_id, string new_text);
 
         public static void set_media_scale (int font_size, int system_font_size) {
             media_scale = font_size > 0 && system_font_size > 0
@@ -793,8 +794,8 @@ namespace Dc {
         private Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
             Gtk.Widget body;
             if (Markdown.enabled) {
-                var table_body = build_text_with_tables (msg.text, max_width_chars);
-                body = table_body ?? build_markup_label (msg.text, max_width_chars,
+                var md_body = build_text_with_markdown_blocks (msg, max_width_chars);
+                body = md_body ?? build_markup_label (msg.text, max_width_chars,
                     is_single_emoji_text (msg.text), mention_roster);
             } else {
                 body = build_markup_label (msg.text, max_width_chars,
@@ -871,14 +872,15 @@ namespace Dc {
             });
         }
 
-        private static Gtk.Widget? build_text_with_tables (string raw,
-                                                           int max_width_chars) {
+        private Gtk.Widget? build_text_with_markdown_blocks (Message msg,
+                                                             int max_width_chars) {
+            string raw = msg.text ?? "";
             var lines = raw.split ("\n");
             var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
             body.halign = Gtk.Align.FILL;
             body.hexpand = true;
 
-            bool found_table = false;
+            bool found_block = false;
             bool in_code_block = false;
             int text_start = 0;
             for (int i = 0; i < lines.length;) {
@@ -894,19 +896,36 @@ namespace Dc {
 
                 int end;
                 MarkdownTableBlock? table = parse_table_at (lines, i, out end);
-                if (table == null) {
-                    i++;
+                if (table != null) {
+                    append_text_block (body, lines, text_start, i, max_width_chars);
+                    body.append (build_table_grid (table, max_width_chars));
+                    found_block = true;
+                    i = end;
+                    text_start = i;
                     continue;
                 }
 
-                append_text_block (body, lines, text_start, i, max_width_chars);
-                body.append (build_table_grid (table, max_width_chars));
-                found_table = true;
-                i = end;
-                text_start = i;
+                bool checked;
+                int marker_start;
+                int content_start;
+                if (Markdown.parse_task_checkbox (lines[i], out checked,
+                                                  out marker_start,
+                                                  out content_start)) {
+                    append_text_block (body, lines, text_start, i,
+                                       max_width_chars);
+                    body.append (build_task_line (msg, i, checked,
+                                                  content_start,
+                                                  max_width_chars));
+                    found_block = true;
+                    i++;
+                    text_start = i;
+                    continue;
+                }
+
+                i++;
             }
 
-            if (!found_table) return null;
+            if (!found_block) return null;
             append_text_block (body, lines, text_start, lines.length,
                                max_width_chars);
             return body;
@@ -916,12 +935,13 @@ namespace Dc {
             return line.strip ().has_prefix ("```");
         }
 
-        private static void append_text_block (Gtk.Box body, string[] lines,
-                                               int start, int end,
-                                               int max_width_chars) {
+        private void append_text_block (Gtk.Box body, string[] lines,
+                                        int start, int end,
+                                        int max_width_chars) {
             string text = join_lines (lines, start, end).strip ();
             if (text.length == 0) return;
-            body.append (build_markup_label (text, max_width_chars));
+            body.append (build_markup_label (text, max_width_chars, false,
+                                             mention_roster));
         }
 
         private static string join_lines (string[] lines, int start, int end) {
@@ -931,6 +951,74 @@ namespace Dc {
                 sb.append (lines[i]);
             }
             return sb.str;
+        }
+
+        private Gtk.Widget build_task_line (Message msg, int line_index,
+                                            bool checked, int content_start,
+                                            int max_width_chars) {
+            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            row.add_css_class ("markdown-task-line");
+            row.halign = Gtk.Align.FILL;
+            row.hexpand = true;
+
+            string glyph = checked ? "✅" : "⬜";
+            if (msg.can_edit_text) {
+                var toggle = new Gtk.Button.with_label (glyph);
+                toggle.add_css_class ("flat");
+                toggle.add_css_class ("markdown-task-toggle");
+                toggle.valign = Gtk.Align.START;
+                toggle.tooltip_text = checked
+                    ? "Mark unchecked"
+                    : "Mark checked";
+                string raw = msg.text ?? "";
+                int idx = line_index;
+                toggle.clicked.connect (() => {
+                    string? new_text = toggled_task_text (raw, idx);
+                    if (new_text == null) return;
+                    toggle.sensitive = false;
+                    checkbox_toggle_requested (msg.id, new_text);
+                });
+                row.append (toggle);
+            } else {
+                var mark = new Gtk.Label (glyph);
+                mark.add_css_class ("markdown-task-glyph");
+                mark.valign = Gtk.Align.START;
+                row.append (mark);
+            }
+
+            string line = (msg.text ?? "").split ("\n")[line_index];
+            string content = content_start < line.length
+                ? line.substring (content_start)
+                : "";
+            int label_width = max_width_chars > 0
+                ? int.max (1, max_width_chars - 4)
+                : max_width_chars;
+            var label = build_markup_label (content, label_width, false,
+                                            mention_roster);
+            label.valign = Gtk.Align.START;
+            label.hexpand = true;
+            row.append (label);
+            return row;
+        }
+
+        private static string? toggled_task_text (string raw, int line_index) {
+            var lines = raw.split ("\n");
+            if (line_index < 0 || line_index >= lines.length) return null;
+
+            bool checked;
+            int marker_start;
+            int content_start;
+            if (!Markdown.parse_task_checkbox (lines[line_index], out checked,
+                                               out marker_start,
+                                               out content_start)) {
+                return null;
+            }
+
+            string line = lines[line_index];
+            string replacement = checked ? "[ ]" : "[x]";
+            lines[line_index] = line.substring (0, marker_start) +
+                replacement + line.substring (marker_start + 3);
+            return join_lines (lines, 0, lines.length);
         }
 
         private static MarkdownTableBlock? parse_table_at (string[] lines,

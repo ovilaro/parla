@@ -3,7 +3,7 @@ namespace Dc {
     /**
      * Converts markdown-formatted text to Pango markup for GTK labels.
      * Supports: bold, italic, strikethrough, inline code, code blocks,
-     * headings, tables, and URL linkification.
+     * headings, task-list checkboxes, tables, and URL linkification.
      */
     public class Markdown {
 
@@ -71,6 +71,9 @@ namespace Dc {
             /* Inline code: `content` */
             work = extract_code (ic_re, work, segments);
 
+            /* Task-list checkboxes: * [ ] item / * [x] item */
+            work = format_task_checkboxes (work);
+
             /* Bold: **text** and __text__ (backreference ensures matching delimiters) */
             work = bold_re.replace (work, -1, 0, "<b>\\2</b>");
 
@@ -110,6 +113,74 @@ namespace Dc {
             }
 
             return work;
+        }
+
+        private static string format_task_checkboxes (string input) {
+            var lines = input.split ("\n");
+            var sb = new StringBuilder ();
+
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) sb.append_c ('\n');
+
+                int marker_start;
+                int content_start;
+                bool checked;
+                if (parse_task_checkbox (lines[i], out checked,
+                                         out marker_start, out content_start)) {
+                    int prefix_end = 0;
+                    while (prefix_end < lines[i].length &&
+                           is_ascii_space (lines[i][prefix_end])) {
+                        prefix_end++;
+                    }
+                    sb.append (lines[i].substring (0, prefix_end));
+                    sb.append (checked ? "✅" : "⬜");
+                    if (content_start < lines[i].length) {
+                        sb.append_c (' ');
+                        sb.append (lines[i].substring (content_start));
+                    }
+                } else {
+                    sb.append (lines[i]);
+                }
+            }
+
+            return sb.str;
+        }
+
+        public static bool parse_task_checkbox (string line,
+                                                out bool checked,
+                                                out int marker_start,
+                                                out int content_start) {
+            checked = false;
+            marker_start = 0;
+            content_start = 0;
+
+            int i = 0;
+            while (i < line.length && is_ascii_space (line[i])) i++;
+            if (i >= line.length) return false;
+
+            char bullet = line[i];
+            if (bullet != '*' && bullet != '-' && bullet != '+') return false;
+            i++;
+            if (i >= line.length || !is_ascii_space (line[i])) return false;
+            while (i < line.length && is_ascii_space (line[i])) i++;
+
+            marker_start = i;
+            if (i + 2 >= line.length) return false;
+            if (line[i] != '[' || line[i + 2] != ']') return false;
+
+            char state = line[i + 1];
+            if (state == ' ') checked = false;
+            else if (state == 'x' || state == 'X') checked = true;
+            else return false;
+
+            i += 3;
+            while (i < line.length && is_ascii_space (line[i])) i++;
+            content_start = i;
+            return true;
+        }
+
+        private static bool is_ascii_space (char c) {
+            return c == ' ' || c == '\t';
         }
 
         /**
