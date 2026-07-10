@@ -169,7 +169,6 @@ namespace Dc {
             work = strike_re.replace (work, -1, 0, "\\1");
 
             work = strip_list_re.replace (work, -1, 0, "");
-            work = strip_task_checkboxes (work);
             work = strip_escape_re.replace (work, -1, 0, "\\1");
 
             for (int i = 0; i < segments.length; i++) {
@@ -254,11 +253,10 @@ namespace Dc {
             if (i >= line.length) return false;
 
             char bullet = line[i];
-            if (bullet == '*' || bullet == '-' || bullet == '+') {
-                i++;
-                if (i >= line.length || !is_ascii_space (line[i])) return false;
-                while (i < line.length && is_ascii_space (line[i])) i++;
-            }
+            if (bullet != '*') return false;
+            i++;
+            if (i >= line.length || !is_ascii_space (line[i])) return false;
+            while (i < line.length && is_ascii_space (line[i])) i++;
 
             marker_start = i;
             if (i + 2 >= line.length) return false;
@@ -266,7 +264,7 @@ namespace Dc {
 
             char state = line[i + 1];
             if (state == ' ') checked = false;
-            else if (state == 'x' || state == 'X') checked = true;
+            else if (state == 'x') checked = true;
             else return false;
 
             i += 3;

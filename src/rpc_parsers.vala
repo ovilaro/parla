@@ -72,11 +72,16 @@ namespace Dc {
             var s1 = json_str (obj, "summaryText1");
             if (s1 != null && s1.length > 0) entry.summary_prefix = s1;
 
-            var s2 = json_str (obj, "summaryText2");
-            if (s2 != null && s2.length > 0) entry.last_message = s2;
+            var last = json_str (obj, "lastMessageText");
+            if (last != null && last.length > 0) {
+                entry.last_message = Markdown.strip (last);
+            }
 
             if (entry.last_message == null) {
-                entry.last_message = json_str (obj, "lastMessageText");
+                var s2 = json_str (obj, "summaryText2");
+                if (s2 != null && s2.length > 0) {
+                    entry.last_message = Markdown.strip (s2);
+                }
             }
 
             entry.unread_count = (int) json_int (obj, "freshMessageCounter");

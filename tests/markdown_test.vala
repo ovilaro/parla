@@ -60,7 +60,7 @@ private void test_task_checkboxes () {
     string markup = Dc.Markdown.format (
         "* [ ] Todo\n" +
         "* [x] Done\n" +
-        "  - [X] Nested");
+        "  * [x] Nested");
 
     assert (markup == "⬜ Todo\n✅ Done\n  ✅ Nested");
     assert_valid_pango_markup (markup);
@@ -96,11 +96,32 @@ private void test_strip_task_checkboxes () {
     string plain = Dc.Markdown.strip (
         "* [ ] Todo\n" +
         "* [x] Done\n" +
-        "  - [X] Nested\n" +
-        "* [x]\n" +
-        "[x] Already stripped");
+        "  * [x] Nested\n" +
+        "* [x]");
 
-    assert (plain == "☐ Todo\n✓ Done\n  ✓ Nested\n✓\n✓ Already stripped");
+    assert (plain ==
+        "☐ Todo\n" +
+        "✓ Done\n" +
+        "  ✓ Nested\n" +
+        "✓");
+}
+
+private void test_strip_task_checkboxes_standard_only () {
+    string plain = Dc.Markdown.strip (
+        "[x] Already stripped\n" +
+        "*[x] Compact\n" +
+        "- [x] Dash\n" +
+        "+ [x] Plus\n" +
+        "• [x] Bullet\n" +
+        "Title * [x] Flattened");
+
+    assert (plain ==
+        "[x] Already stripped\n" +
+        "*[x] Compact\n" +
+        "[x] Dash\n" +
+        "[x] Plus\n" +
+        "• [x] Bullet\n" +
+        "Title * [x] Flattened");
 }
 
 private void test_strip_preserves_code_contents () {
@@ -121,6 +142,7 @@ public int main (string[] args) {
     Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);
     Test.add_func ("/markdown/strip-links-lists-and-quotes", test_strip_links_lists_and_quotes);
     Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);
+    Test.add_func ("/markdown/strip-task-checkboxes-standard-only", test_strip_task_checkboxes_standard_only);
     Test.add_func ("/markdown/strip-preserves-code-contents", test_strip_preserves_code_contents);
     return Test.run ();
 }
