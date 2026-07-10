@@ -128,6 +128,27 @@ bundled by default; set `PARLA_BUNDLE_RPC_SERVER=/absolute/path/to/deltachat-rpc
 only for a local bundle that should include a specific backend binary.
 </details>
 
+<details>
+<summary>Windows</summary>
+
+Build inside an [MSYS2](https://www.msys2.org) UCRT64 shell:
+
+```sh
+pacman -S zip mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-meson \
+  mingw-w64-ucrt-x86_64-vala mingw-w64-ucrt-x86_64-gtk4 \
+  mingw-w64-ucrt-x86_64-libadwaita mingw-w64-ucrt-x86_64-json-glib \
+  mingw-w64-ucrt-x86_64-glib-networking mingw-w64-ucrt-x86_64-adwaita-icon-theme \
+  mingw-w64-ucrt-x86_64-librsvg mingw-w64-ucrt-x86_64-ntldd
+
+bash scripts/windows/bundle.sh   # creates dist/windows/parla-<version>-windows-<arch>.zip
+```
+
+The script builds with meson and bundles the GTK/libadwaita runtime
+(DLLs, GSettings schemas, icon themes, pixbuf loaders, TLS module) into
+a self-contained folder, then zips it. CI publishes this zip for every
+release.
+</details>
+
 See [docs/rpc-server.md](docs/rpc-server.md) for how Parla finds the JSON-RPC
 server and how to package it for Flatpak or distro packages.
 

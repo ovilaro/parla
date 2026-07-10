@@ -12,6 +12,12 @@ namespace Dc {
     public class AccountFinder {
 
         private const string RPC_BIN = "deltachat-rpc-server";
+        /* On-disk file name: Windows binaries carry the .exe suffix. */
+#if WINDOWS
+        private const string RPC_BIN_FILE = "deltachat-rpc-server.exe";
+#else
+        private const string RPC_BIN_FILE = "deltachat-rpc-server";
+#endif
 
         /**
          * Return an absolute path to deltachat-rpc-server, or null if none found.
@@ -41,11 +47,11 @@ namespace Dc {
                 string exe_dir = Path.get_dirname (exe_path);
                 string prefix = Path.get_dirname (exe_dir);
                 string[] packaged = {
-                    Path.build_filename (exe_dir, RPC_BIN),
-                    Path.build_filename (prefix, "libexec", "parla", RPC_BIN),
-                    Path.build_filename (prefix, "lib", "parla", RPC_BIN),
-                    Path.build_filename ("/app", "bin", RPC_BIN),
-                    Path.build_filename ("/app", "libexec", "parla", RPC_BIN),
+                    Path.build_filename (exe_dir, RPC_BIN_FILE),
+                    Path.build_filename (prefix, "libexec", "parla", RPC_BIN_FILE),
+                    Path.build_filename (prefix, "lib", "parla", RPC_BIN_FILE),
+                    Path.build_filename ("/app", "bin", RPC_BIN_FILE),
+                    Path.build_filename ("/app", "libexec", "parla", RPC_BIN_FILE),
                 };
                 foreach (string candidate in packaged) {
                     if (is_executable (candidate)) return candidate;
@@ -59,8 +65,8 @@ namespace Dc {
             string home = Environment.get_home_dir ();
 
             string[] user_bins = {
-                Path.build_filename (home, ".local", "bin", RPC_BIN),
-                Path.build_filename (home, ".cargo", "bin", RPC_BIN),
+                Path.build_filename (home, ".local", "bin", RPC_BIN_FILE),
+                Path.build_filename (home, ".cargo", "bin", RPC_BIN_FILE),
             };
             foreach (string candidate in user_bins) {
                 if (is_executable (candidate)) return candidate;
@@ -83,7 +89,7 @@ namespace Dc {
          * so discovery and RpcInstaller agree on a single location.
          */
         public static string get_managed_rpc_path () {
-            return Path.build_filename (get_parla_data_dir (), "bin", RPC_BIN);
+            return Path.build_filename (get_parla_data_dir (), "bin", RPC_BIN_FILE);
         }
 
         private static bool is_executable (string? path) {

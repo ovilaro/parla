@@ -25,7 +25,7 @@ namespace Dc {
 
         /** Absolute path to the Parla-managed server binary. */
         public static string managed_bin_path () {
-            return Path.build_filename (managed_dir (), RPC_BIN);
+            return AccountFinder.get_managed_rpc_path ();
         }
 
         /**
@@ -41,6 +41,11 @@ namespace Dc {
          * or null when no prebuilt binary is published for this machine.
          */
         public static string? detect_asset_name () {
+#if WINDOWS
+            /* Upstream publishes win32/win64 exes; Parla only ships 64-bit
+               Windows builds, so win64 is always the right pick. */
+            return "%s-win64.exe".printf (RPC_BIN);
+#else
             string? os = detect_os ();
             string? arch = (os == "Linux") ? detect_arch () : arch_from_uname ();
             switch (arch) {
@@ -63,6 +68,7 @@ namespace Dc {
             default:
                 return null;
             }
+#endif
         }
 
         private static string? detect_os () {

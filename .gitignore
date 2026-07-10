@@ -1,7 +1,9 @@
 builddir/
 builddir-macos/
+builddir-windows/
 accounts/
 dist/macos/
+dist/windows/
 dist/debian/parla/build/
 dist/debian/parla/control/
 dist/debian/parla/data/

@@ -5,8 +5,13 @@ project('parla', ['vala', 'c'],
   meson_version: '>= 0.59.0',
 )
 
-# posix vapi provides Posix.getpid () for the StatusNotifierItem bus name
+# posix vapi provides Posix.getpid () for the StatusNotifierItem bus name.
+# mingw-w64 ships pid_t/getpid but no kill()/SIGKILL, so Windows-only code
+# paths are selected with the WINDOWS Vala define.
 add_project_arguments(['--pkg', 'posix'], language: 'vala')
+if host_machine.system() == 'windows'
+  add_project_arguments(['--define=WINDOWS'], language: 'vala')
+endif
 
 # Silence warnings emitted by valac-generated C and lagging GTK/glib vapi
 # bindings (unused temporaries, g_once_init_enter atomics, const mismatches).
@@ -118,11 +123,22 @@ if host_machine.system() == 'darwin'
   deps += dependency('appleframeworks', modules: ['Cocoa'])
 endif
 
+if host_machine.system() == 'windows'
+  windows = import('windows')
+  sources += windows.compile_resources(
+    'data/parla.rc',
+    depend_files: files('data/parla.ico'),
+    include_directories: include_directories('data'),
+  )
+endif
+
 executable('parla',
   sources, config_file, appdata_vala, resources,
   dependencies: deps,
   include_directories: src_inc,
   install: true,
+  # GUI subsystem on Windows so no console window pops up; ignored elsewhere.
+  win_subsystem: 'windows',
 )
 
 install_data(

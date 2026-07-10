@@ -113,11 +113,17 @@ namespace Dc {
 
         private void stop () {
             if (proc_pid > 0) {
+#if WINDOWS
+                /* No POSIX signals on Windows; force_exit maps to
+                   TerminateProcess which is reliable there. */
+                if (proc != null) proc.force_exit ();
+#else
                 /* Posix.kill directly because g_subprocess_force_exit can be
                    a no-op in some bundled-on-macOS scenarios; SIGTERM first so
                    children clean up, SIGKILL as backstop. */
                 Posix.kill (proc_pid, Posix.Signal.TERM);
                 Posix.kill (proc_pid, Posix.Signal.KILL);
+#endif
                 proc_pid = 0;
             }
             if (proc != null) {

@@ -8,6 +8,8 @@
 #elif defined(__linux__)
 # include <limits.h>
 # include <unistd.h>
+#elif defined(_WIN32)
+# include <windows.h>
 #endif
 
 gchar *
@@ -43,6 +45,13 @@ parla_get_executable_path (void)
 	}
 	path[size] = '\0';
 	return g_strdup (path);
+#elif defined(_WIN32)
+	wchar_t path[MAX_PATH];
+	DWORD size = GetModuleFileNameW (NULL, path, MAX_PATH);
+	if (size == 0 || size >= MAX_PATH) {
+		return NULL;
+	}
+	return g_utf16_to_utf8 ((gunichar2 *) path, -1, NULL, NULL, NULL);
 #else
 	return NULL;
 #endif
