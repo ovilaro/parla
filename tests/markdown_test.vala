@@ -75,6 +75,42 @@ private void test_task_checkboxes_skip_code () {
     assert_valid_pango_markup (markup);
 }
 
+private void test_strip_inline_markdown () {
+    string plain = Dc.Markdown.strip (
+        "# Title\n" +
+        "foo **bar** __baz__ *qux* _quux_ ~~gone~~");
+
+    assert (plain == "Title\nfoo bar baz qux quux gone");
+}
+
+private void test_strip_links_lists_and_quotes () {
+    string plain = Dc.Markdown.strip (
+        "> See [docs](https://example.com) and ![alt](img.png)\n" +
+        "- one\n" +
+        "1. two");
+
+    assert (plain == "See docs and alt\none\ntwo");
+}
+
+private void test_strip_task_checkboxes () {
+    string plain = Dc.Markdown.strip (
+        "* [ ] Todo\n" +
+        "* [x] Done\n" +
+        "  - [X] Nested\n" +
+        "* [x]\n" +
+        "[x] Already stripped");
+
+    assert (plain == "☐ Todo\n✓ Done\n  ✓ Nested\n✓\n✓ Already stripped");
+}
+
+private void test_strip_preserves_code_contents () {
+    string plain = Dc.Markdown.strip (
+        "`**literal**`\n" +
+        "```vala\n* [x] literal\n```");
+
+    assert (plain == "**literal**\n* [x] literal");
+}
+
 public int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/markdown/table-grid", test_table_grid);
@@ -82,5 +118,9 @@ public int main (string[] args) {
     Test.add_func ("/markdown/plain-pipe-text", test_plain_pipe_text_is_not_table);
     Test.add_func ("/markdown/task-checkboxes", test_task_checkboxes);
     Test.add_func ("/markdown/task-checkboxes-skip-code", test_task_checkboxes_skip_code);
+    Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);
+    Test.add_func ("/markdown/strip-links-lists-and-quotes", test_strip_links_lists_and_quotes);
+    Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);
+    Test.add_func ("/markdown/strip-preserves-code-contents", test_strip_preserves_code_contents);
     return Test.run ();
 }

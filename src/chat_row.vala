@@ -184,7 +184,7 @@ namespace Dc {
 
 
         private static string format_preview (ChatEntry entry) {
-            string preview = entry.last_message ?? "";
+            string preview = Markdown.strip (entry.last_message ?? "");
             if (entry.summary_prefix != null && entry.summary_prefix.length > 0) {
                 if (preview.length > 0) {
                     return "%s: %s".printf (entry.summary_prefix, preview);

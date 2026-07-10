@@ -4,6 +4,7 @@ namespace Dc {
      * Converts markdown-formatted text to Pango markup for GTK labels.
      * Supports: bold, italic, strikethrough, inline code, code blocks,
      * headings, task-list checkboxes, tables, and URL linkification.
+     * Also strips markdown down to plain text for compact previews.
      */
     public class Markdown {
 
@@ -31,6 +32,14 @@ namespace Dc {
         private static Regex? strike_re = null;
         private static Regex? heading_re = null;
         private static Regex? link_re = null;
+        private static Regex? strip_heading_re = null;
+        private static Regex? strip_link_re = null;
+        private static Regex? strip_ref_link_re = null;
+        private static Regex? strip_auto_link_re = null;
+        private static Regex? strip_quote_re = null;
+        private static Regex? strip_hr_re = null;
+        private static Regex? strip_list_re = null;
+        private static Regex? strip_escape_re = null;
 
         private static void ensure_regexes () throws RegexError {
             if (cb_re != null) return;
@@ -42,6 +51,17 @@ namespace Dc {
             strike_re = new Regex ("~~(.+?)~~");
             heading_re = new Regex ("^(#{1,3}) +(.+)$", RegexCompileFlags.MULTILINE);
             link_re = new Regex ("(https?://[^\\s<>\"]+)");
+            strip_heading_re = new Regex ("^(#{1,6})[ \\t]+(.+)$",
+                                           RegexCompileFlags.MULTILINE);
+            strip_link_re = new Regex ("!?\\[([^\\]\\n]*)\\]\\([^\\)\\n]*\\)");
+            strip_ref_link_re = new Regex ("\\[([^\\]\\n]*)\\]\\[[^\\]\\n]*\\]");
+            strip_auto_link_re = new Regex ("<((?:https?|mailto):[^>\\s]+)>");
+            strip_quote_re = new Regex ("^\\s*>\\s?", RegexCompileFlags.MULTILINE);
+            strip_hr_re = new Regex ("^\\s{0,3}(?:[-*_]\\s*){3,}$",
+                                      RegexCompileFlags.MULTILINE);
+            strip_list_re = new Regex ("^\\s{0,3}(?:[-+*]|\\d+[.)])\\s+",
+                                        RegexCompileFlags.MULTILINE);
+            strip_escape_re = new Regex ("\\\\([\\\\`*_{}\\[\\]()#+\\-.!>])");
         }
 
         /**
@@ -57,6 +77,17 @@ namespace Dc {
                 return format_markdown (escaped);
             } catch (RegexError e) {
                 return linkify (escaped);
+            }
+        }
+
+        /**
+         * Convert markdown to plain text for short previews.
+         */
+        public static string strip (string input) {
+            try {
+                return strip_markdown (input);
+            } catch (RegexError e) {
+                return input.strip ();
             }
         }
 
@@ -115,6 +146,39 @@ namespace Dc {
             return work;
         }
 
+        private static string strip_markdown (string input) throws RegexError {
+            ensure_regexes ();
+            var segments = new GenericArray<string> ();
+            string work = input;
+
+            work = extract_plain_code (cb_re, work, segments);
+            work = extract_plain_code (ic_re, work, segments);
+
+            work = strip_task_checkboxes (work);
+            work = strip_heading_re.replace (work, -1, 0, "\\2");
+            work = strip_quote_re.replace (work, -1, 0, "");
+            work = strip_hr_re.replace (work, -1, 0, "");
+
+            work = strip_link_re.replace (work, -1, 0, "\\1");
+            work = strip_ref_link_re.replace (work, -1, 0, "\\1");
+            work = strip_auto_link_re.replace (work, -1, 0, "\\1");
+
+            work = bold_re.replace (work, -1, 0, "\\2");
+            work = italic_re.replace (work, -1, 0, "\\1");
+            work = italic2_re.replace (work, -1, 0, "\\1");
+            work = strike_re.replace (work, -1, 0, "\\1");
+
+            work = strip_list_re.replace (work, -1, 0, "");
+            work = strip_task_checkboxes (work);
+            work = strip_escape_re.replace (work, -1, 0, "\\1");
+
+            for (int i = 0; i < segments.length; i++) {
+                work = work.replace ("\x01%d\x01".printf (i), segments[i]);
+            }
+
+            return work.strip ();
+        }
+
         private static string format_task_checkboxes (string input) {
             var lines = input.split ("\n");
             var sb = new StringBuilder ();
@@ -146,6 +210,37 @@ namespace Dc {
             return sb.str;
         }
 
+        private static string strip_task_checkboxes (string input) {
+            var lines = input.split ("\n");
+            var sb = new StringBuilder ();
+
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) sb.append_c ('\n');
+
+                int marker_start;
+                int content_start;
+                bool checked;
+                if (parse_task_checkbox (lines[i], out checked,
+                                         out marker_start, out content_start)) {
+                    int prefix_end = 0;
+                    while (prefix_end < lines[i].length &&
+                           is_ascii_space (lines[i][prefix_end])) {
+                        prefix_end++;
+                    }
+                    sb.append (lines[i].substring (0, prefix_end));
+                    sb.append (checked ? "✓" : "☐");
+                    if (content_start < lines[i].length) {
+                        sb.append_c (' ');
+                        sb.append (lines[i].substring (content_start));
+                    }
+                } else {
+                    sb.append (lines[i]);
+                }
+            }
+
+            return sb.str;
+        }
+
         public static bool parse_task_checkbox (string line,
                                                 out bool checked,
                                                 out int marker_start,
@@ -159,10 +254,11 @@ namespace Dc {
             if (i >= line.length) return false;
 
             char bullet = line[i];
-            if (bullet != '*' && bullet != '-' && bullet != '+') return false;
-            i++;
-            if (i >= line.length || !is_ascii_space (line[i])) return false;
-            while (i < line.length && is_ascii_space (line[i])) i++;
+            if (bullet == '*' || bullet == '-' || bullet == '+') {
+                i++;
+                if (i >= line.length || !is_ascii_space (line[i])) return false;
+                while (i < line.length && is_ascii_space (line[i])) i++;
+            }
 
             marker_start = i;
             if (i + 2 >= line.length) return false;
@@ -192,6 +288,16 @@ namespace Dc {
             return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
                 int idx = (int) segments.length;
                 segments.add ("<tt>" + mi.fetch (1) + "</tt>");
+                sb.append ("\x01%d\x01".printf (idx));
+                return false;
+            });
+        }
+
+        private static string extract_plain_code (Regex re, string input,
+                                                  GenericArray<string> segments) throws RegexError {
+            return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
+                int idx = (int) segments.length;
+                segments.add (mi.fetch (1));
                 sb.append ("\x01%d\x01".printf (idx));
                 return false;
             });
