@@ -211,6 +211,9 @@ namespace Dc {
                 notify_draft_changed ();
                 update_mention_popup ();
             });
+            /* AppKit invokes this action signal directly for Command+V, so
+               handle the signal rather than relying only on GDK key events. */
+            text_view.paste_clipboard.connect (on_paste_clipboard);
             update_placeholder ();
 
             var focus_ctrl = new Gtk.EventControllerFocus ();
@@ -977,15 +980,30 @@ namespace Dc {
                           && (keyval == Gdk.Key.v || keyval == Gdk.Key.V);
             if (!primary_v && !(shift && keyval == Gdk.Key.Insert)) return false;
 
-            if (!can_accept_attachment ()) return false;
-
-            var clipboard = get_display ().get_clipboard ();
-            var formats = clipboard.get_formats ();
-            bool has_files = formats.contain_gtype (typeof (Gdk.FileList));
-            bool has_texture = formats.contain_gtype (typeof (Gdk.Texture));
-            if (!has_files && !has_texture) return false;
-            paste_from_clipboard.begin (clipboard, has_files, has_texture);
+            start_clipboard_paste ();
             return true;
+        }
+
+        private void on_paste_clipboard () {
+            /* The default handler converts clipboard text through a temporary
+               GtkTextBuffer. Reading the string directly also works when the
+               macOS clipboard contents predate application startup. */
+            GLib.Signal.stop_emission_by_name (text_view, "paste-clipboard");
+            start_clipboard_paste ();
+        }
+
+        private void start_clipboard_paste () {
+            var clipboard = get_display ().get_clipboard ();
+            bool replace_selection = text_view.buffer.has_selection;
+            bool has_files = false;
+            bool has_texture = false;
+            if (can_accept_attachment ()) {
+                var formats = clipboard.get_formats ();
+                has_files = formats.contain_gtype (typeof (Gdk.FileList));
+                has_texture = formats.contain_gtype (typeof (Gdk.Texture));
+            }
+            paste_from_clipboard.begin (clipboard, has_files, has_texture,
+                replace_selection);
         }
 
         private static bool is_plain_colon_key (uint keyval, Gdk.ModifierType state) {
@@ -1064,11 +1082,11 @@ namespace Dc {
             if (end_mark != null) text_view.buffer.delete_mark (end_mark);
         }
 
-        /* Browser pastes often expose a FileList with remote URIs or
-           stale temp paths; fall back to the clipboard texture in that
-           case, saving it as a temp PNG we own. */
+        /* Prefer an advertised file or texture, then fall back to text if a
+           remote URI, stale path, or conversion failure cannot be attached. */
         private async void paste_from_clipboard (Gdk.Clipboard clipboard,
-                                                 bool try_files, bool try_texture) {
+                                                 bool try_files, bool try_texture,
+                                                 bool replace_selection) {
             if (try_files) {
                 try {
                     var value = yield clipboard.read_value_async (typeof (Gdk.FileList),
@@ -1084,17 +1102,37 @@ namespace Dc {
                 } catch (Error e) {
                 }
             }
-            if (!try_texture) return;
-            try {
-                var texture = yield clipboard.read_texture_async (null);
-                if (texture == null) return;
-                GLib.FileIOStream stream;
-                var tmp = GLib.File.new_tmp ("parla-XXXXXX.png", out stream);
-                stream.close ();
-                if (texture.save_to_png (tmp.get_path ())) {
-                    set_pending_attachment (tmp.get_path (), "pasted-image.png",
-                        true);
+            if (try_texture) {
+                string? tmp_path = null;
+                try {
+                    var texture = yield clipboard.read_texture_async (null);
+                    if (texture != null) {
+                        GLib.FileIOStream stream;
+                        var tmp = GLib.File.new_tmp ("parla-XXXXXX.png", out stream);
+                        tmp_path = tmp.get_path ();
+                        stream.close ();
+                        if (texture.save_to_png (tmp_path)) {
+                            set_pending_attachment (tmp_path, "pasted-image.png",
+                                true);
+                            return;
+                        }
+                    }
+                } catch (Error e) {
                 }
+                if (tmp_path != null) GLib.FileUtils.unlink (tmp_path);
+            }
+
+            try {
+                var text = yield clipboard.read_text_async (null);
+                if (text == null || text.length == 0 || !text_view.editable) return;
+
+                var buffer = text_view.buffer;
+                buffer.begin_user_action ();
+                if (replace_selection)
+                    buffer.delete_selection (true, text_view.editable);
+                buffer.insert_at_cursor (text, text.length);
+                buffer.end_user_action ();
+                text_view.scroll_mark_onscreen (buffer.get_insert ());
             } catch (Error e) {
             }
         }
