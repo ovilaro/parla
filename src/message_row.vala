@@ -793,7 +793,7 @@ namespace Dc {
         /** Message body widget with markdown + link markup. Shared by both row styles. */
         private Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
             Gtk.Widget body;
-            if (Markdown.enabled) {
+            if (Markdown.mode == MarkdownMode.ENABLED) {
                 var md_body = build_text_with_markdown_blocks (msg, max_width_chars);
                 body = md_body ?? build_markup_label (msg.text, max_width_chars,
                     is_single_emoji_text (msg.text), mention_roster);

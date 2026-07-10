@@ -69,7 +69,7 @@ namespace Dc {
         public signal void font_changed ();
 
         public int double_click_action { get; set; default = 0; }
-        public bool markdown_rendering { get; set; default = false; }
+        public MarkdownMode markdown_mode { get; set; default = MarkdownMode.ENABLED; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool show_notification_contents { get; set; default = true; }
@@ -128,8 +128,8 @@ namespace Dc {
             try { kf.load_from_file (get_config_path (), KeyFileFlags.NONE); }
             catch (Error e) { /* file may not exist — helpers return defaults */ }
             double_click_action = kf_enum (kf, "double_click_action", 0, 5);
-            markdown_rendering = kf_bool (kf, "markdown_rendering", false);
-            Markdown.enabled = markdown_rendering;
+            markdown_mode = kf_markdown_mode (kf);
+            Markdown.mode = markdown_mode;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             show_notification_contents =
@@ -187,14 +187,34 @@ namespace Dc {
             return v >= 0 && v <= max ? v : d;
         }
 
+        private static MarkdownMode kf_markdown_mode (KeyFile kf) {
+            try {
+                int value = kf.get_integer ("General", "markdown_rendering");
+                if (value >= (int) MarkdownMode.ENABLED
+                    && value <= (int) MarkdownMode.DISABLED) {
+                    return (MarkdownMode) value;
+                }
+            } catch { }
+
+            /* Migrate the previous switch value stored as true/false. */
+            try {
+                return kf.get_boolean ("General", "markdown_rendering")
+                    ? MarkdownMode.ENABLED
+                    : MarkdownMode.DISABLED;
+            } catch {
+                return MarkdownMode.ENABLED;
+            }
+        }
+
         public void save_double_click_action (int v) {
             double_click_action = v;
             save_int ("double_click_action", v);
         }
 
-        public void save_markdown_rendering (bool v) {
-            markdown_rendering = v; Markdown.enabled = v;
-            save_bool ("markdown_rendering", v);
+        public void save_markdown_mode (MarkdownMode mode) {
+            markdown_mode = mode;
+            Markdown.mode = mode;
+            save_int ("markdown_rendering", (int) mode);
         }
 
         public void save_shift_enter_sends (bool v) {
@@ -631,10 +651,13 @@ namespace Dc {
 
             var md_row = action_row (
                 "Markdown rendering",
-                "Format bold, italic, code and headings");
-            var md_switch = row_switch (md_row, Markdown.enabled);
-            md_switch.notify["active"].connect (() => {
-                app_window.settings.save_markdown_rendering (md_switch.active);
+                "Render, strip, or preserve markdown syntax");
+            string[] md_labels = { "Enabled", "Stripped", "Disabled" };
+            var md_combo = row_dropdown (md_row, md_labels,
+                (uint) app_window.settings.markdown_mode);
+            md_combo.notify["selected"].connect (() => {
+                app_window.settings.save_markdown_mode (
+                    (MarkdownMode) md_combo.selected);
             });
 
             var shift_row = action_row (

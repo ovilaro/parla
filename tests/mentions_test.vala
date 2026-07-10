@@ -78,7 +78,7 @@ private void test_unknown_address_not_resolved () {
 }
 
 private void test_render_markup_is_valid () {
-    Dc.Markdown.enabled = false;
+    Dc.Markdown.mode = Dc.MarkdownMode.DISABLED;
     var roster = build_roster ();
 
     string markup = Dc.Mentions.render_markup (
@@ -90,7 +90,7 @@ private void test_render_markup_is_valid () {
 }
 
 private void test_render_markup_no_mentions () {
-    Dc.Markdown.enabled = false;
+    Dc.Markdown.mode = Dc.MarkdownMode.DISABLED;
     var roster = build_roster ();
     string markup = Dc.Mentions.render_markup ("no mentions here", roster);
     assert (markup == "no mentions here");

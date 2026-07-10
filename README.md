@@ -55,7 +55,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 ### Settings
 
 - Double-click action on a message: Reply / React ❤️ / React 👍 / Open profile / None.
-- Toggle Markdown rendering.
+- Choose whether Markdown is rendered, stripped, or shown as-is.
 - Toggle Shift+Enter vs Enter to send.
 - Toggle desktop notifications for incoming messages when the window is unfocused.
 - Choose the JSON-RPC server source: Parla/system auto-discovery or a custom binary.

@@ -15,7 +15,7 @@ private void assert_valid_pango_markup (string markup) {
 }
 
 private void test_table_grid () {
-    Dc.Markdown.enabled = true;
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
 
     string markup = Dc.Markdown.format (
         "| Name | Qty |\n" +
@@ -32,7 +32,7 @@ private void test_table_grid () {
 }
 
 private void test_table_with_inline_markup_and_link () {
-    Dc.Markdown.enabled = true;
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
 
     string markup = Dc.Markdown.format (
         "| Thing | URL |\n" +
@@ -46,7 +46,7 @@ private void test_table_with_inline_markup_and_link () {
 }
 
 private void test_plain_pipe_text_is_not_table () {
-    Dc.Markdown.enabled = true;
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
 
     string markup = Dc.Markdown.format ("hello | world\nnot a separator");
 
@@ -55,7 +55,7 @@ private void test_plain_pipe_text_is_not_table () {
 }
 
 private void test_task_checkboxes () {
-    Dc.Markdown.enabled = true;
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
 
     string markup = Dc.Markdown.format (
         "* [ ] Todo\n" +
@@ -67,12 +67,25 @@ private void test_task_checkboxes () {
 }
 
 private void test_task_checkboxes_skip_code () {
-    Dc.Markdown.enabled = true;
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
 
     string markup = Dc.Markdown.format ("`* [x] Done`");
 
     assert (markup == "<tt>* [x] Done</tt>");
     assert_valid_pango_markup (markup);
+}
+
+private void test_rendering_modes () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    assert (Dc.Markdown.format ("**bold** and `code`") ==
+        "<b>bold</b> and <tt>code</tt>");
+
+    Dc.Markdown.mode = Dc.MarkdownMode.STRIPPED;
+    assert (Dc.Markdown.format ("**bold** and `code`") == "bold and code");
+
+    Dc.Markdown.mode = Dc.MarkdownMode.DISABLED;
+    assert (Dc.Markdown.format ("**bold** and `code`") ==
+        "**bold** and `code`");
 }
 
 private void test_strip_inline_markdown () {
@@ -167,6 +180,7 @@ public int main (string[] args) {
     Test.add_func ("/markdown/plain-pipe-text", test_plain_pipe_text_is_not_table);
     Test.add_func ("/markdown/task-checkboxes", test_task_checkboxes);
     Test.add_func ("/markdown/task-checkboxes-skip-code", test_task_checkboxes_skip_code);
+    Test.add_func ("/markdown/rendering-modes", test_rendering_modes);
     Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);
     Test.add_func ("/markdown/strip-links-lists-and-quotes", test_strip_links_lists_and_quotes);
     Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);

@@ -1,5 +1,11 @@
 namespace Dc {
 
+    public enum MarkdownMode {
+        ENABLED = 0,
+        STRIPPED = 1,
+        DISABLED = 2;
+    }
+
     /**
      * Converts markdown-formatted text to Pango markup for GTK labels.
      * Supports: bold, italic, strikethrough, inline code, code blocks,
@@ -8,7 +14,7 @@ namespace Dc {
      */
     public class Markdown {
 
-        public static bool enabled = false;
+        public static MarkdownMode mode = MarkdownMode.ENABLED;
         private const int ALIGN_LEFT = 0;
         private const int ALIGN_RIGHT = 1;
         private const int ALIGN_CENTER = 2;
@@ -65,12 +71,13 @@ namespace Dc {
         }
 
         /**
-         * Format message text. Always linkifies URLs.
-         * When enabled, also converts markdown syntax to Pango markup.
+         * Format message text according to the selected markdown mode.
+         * URLs are always linkified.
          */
         public static string format (string input) {
-            var escaped = Markup.escape_text (input);
-            if (!enabled) {
+            string text = mode == MarkdownMode.STRIPPED ? strip (input) : input;
+            var escaped = Markup.escape_text (text);
+            if (mode != MarkdownMode.ENABLED) {
                 return linkify (escaped);
             }
             try {
