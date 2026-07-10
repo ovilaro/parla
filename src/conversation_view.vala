@@ -58,6 +58,7 @@ namespace Dc {
         private bool loading_more = false;
         private bool loading_chat = false;
         private bool messages_loaded = false;
+        private bool messages_stale = false;
         private bool draft_loaded = false;
         private bool draft_rpc_available = true;
         private uint draft_save_timer = 0;
@@ -645,6 +646,8 @@ namespace Dc {
             if (!messages_loaded) {
                 messages_loaded = true;
                 load_messages.begin ();
+            } else if (messages_stale) {
+                reload_messages.begin ();
             }
             if (!draft_loaded) {
                 draft_loaded = true;
@@ -693,10 +696,18 @@ namespace Dc {
             yield load_messages (true);
         }
 
-        public async void handle_incoming_msg (int msg_id) {
+        public void mark_messages_stale () {
+            messages_stale = true;
+        }
+
+        public async bool handle_incoming_msg (int msg_id) {
             try {
+                if (find_message (message_store, msg_id) != null) return true;
                 var msg = yield rpc.fetch_message (msg_id);
-                if (msg == null) return;
+                if (msg == null) {
+                    mark_messages_stale ();
+                    return false;
+                }
                 bool is_current = (window.current_chat_id == this.chat_id);
                 if (is_current) msg.highlighted = true;
                 msg.is_pinned = pinned.is_pinned (msg.id);
@@ -709,8 +720,11 @@ namespace Dc {
                        mark until the user actually looks at the chat. */
                     pending_seen_ids += msg_id;
                 }
+                return true;
             } catch (Error e) {
                 warning ("handle_incoming_msg: %s", e.message);
+                mark_messages_stale ();
+                return false;
             }
         }
 
@@ -944,6 +958,8 @@ namespace Dc {
 
                 message_store.splice (0, message_store.get_n_items (),
                     pinned_message_batch (messages));
+                messages_loaded = true;
+                messages_stale = false;
                 loading_chat = false;
                 if (messages.length > 0) {
                     if (!preserve_scroll || was_near_bottom) {
@@ -960,6 +976,8 @@ namespace Dc {
 
                 pinned.update_bar.begin ();
             } catch (Error e) {
+                messages_loaded = false;
+                messages_stale = true;
                 window.show_toast ("Failed to load messages: " + e.message);
             }
         }

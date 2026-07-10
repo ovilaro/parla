@@ -668,6 +668,9 @@ namespace Dc {
             events.incoming_msg_received.connect ((acct_id, chat_id, msg_id) => {
                 on_incoming_msg.begin (acct_id, chat_id, msg_id);
             });
+            events.chat_messages_changed.connect ((acct_id, chat_id) => {
+                on_chat_messages_changed (acct_id, chat_id);
+            });
             events.account_unread_changed.connect ((acct_id) => {
                 update_unread_indicators.begin ();
                 queue_unread_notification_refresh (acct_id);
@@ -1280,11 +1283,31 @@ namespace Dc {
             }
 
             var view = views.lookup (chat_id);
+            bool handled = false;
             if (view != null) {
-                yield view.handle_incoming_msg (msg_id);
+                handled = yield view.handle_incoming_msg (msg_id);
+            }
+            if (view != null && !handled) {
+                if (chat_id == current_chat_id) {
+                    request_messages_reload ();
+                }
             }
             queue_unread_notification_refresh (acct_id);
             request_reload_chats ();
+        }
+
+        private void on_chat_messages_changed (int acct_id, int chat_id) {
+            if (acct_id != rpc.account_id) return;
+
+            if (chat_id > 0) {
+                var view = views.lookup (chat_id);
+                if (view != null) view.mark_messages_stale ();
+                if (chat_id == current_chat_id) request_messages_reload ();
+                return;
+            }
+
+            mark_all_views_messages_stale ();
+            request_messages_reload ();
         }
 
         /* ================================================================
@@ -2171,6 +2194,15 @@ namespace Dc {
                 content_stack.remove (v);
             }
             views.remove_all ();
+        }
+
+        private void mark_all_views_messages_stale () {
+            var iter = HashTableIter<int, ConversationView> (views);
+            int k;
+            ConversationView v;
+            while (iter.next (out k, out v)) {
+                v.mark_messages_stale ();
+            }
         }
 
         private void toggle_sidebar_button () {

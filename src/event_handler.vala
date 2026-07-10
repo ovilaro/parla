@@ -15,6 +15,7 @@ namespace Dc {
         public signal void chats_reload_fired ();
         public signal void messages_reload_fired ();
         public signal void incoming_msg_received (int acct_id, int chat_id, int msg_id);
+        public signal void chat_messages_changed (int acct_id, int chat_id);
         public signal void account_unread_changed (int acct_id);
         public signal void contacts_changed (int acct_id);
         public signal void imex_progress (int context_id, int progress);
@@ -67,6 +68,7 @@ namespace Dc {
 
                     if (kind == "IncomingMsgBunch") {
                         if (ctx == rpc.account_id) {
+                            chat_messages_changed (ctx, 0);
                             schedule_messages_reload ();
                             schedule_chats_reload ();
                         }
@@ -119,6 +121,7 @@ namespace Dc {
 
             case "MsgsChanged":
                 int changed_chat = (int) event.get_int_member ("chatId");
+                chat_messages_changed (rpc.account_id, changed_chat);
                 if (changed_chat == 0 || changed_chat == active_chat_id) {
                     schedule_messages_reload ();
                 }
@@ -131,6 +134,7 @@ namespace Dc {
             case "MsgDeleted":
             case "ReactionsChanged":
                 int msg_chat = (int) event.get_int_member ("chatId");
+                chat_messages_changed (rpc.account_id, msg_chat);
                 if (msg_chat == active_chat_id) {
                     schedule_messages_reload ();
                 }
@@ -146,6 +150,14 @@ namespace Dc {
 
             case "ChatlistChanged":
             case "ChatlistItemChanged":
+                int list_chat = event_chat_id (event);
+                if (list_chat > 0) {
+                    chat_messages_changed (rpc.account_id, list_chat);
+                }
+                schedule_chats_reload ();
+                account_unread_changed (rpc.account_id);
+                break;
+
             case "ChatModified":
             case "ChatDeleted":
                 schedule_chats_reload ();
@@ -161,6 +173,12 @@ namespace Dc {
             default:
                 break;
             }
+        }
+
+        private static int event_chat_id (Json.Object event) {
+            if (!event.has_member ("chatId") || event.get_member ("chatId").is_null ())
+                return 0;
+            return (int) event.get_int_member ("chatId");
         }
 
         /* Events arriving from an account other than the active one. We can't
