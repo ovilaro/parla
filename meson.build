@@ -124,6 +124,8 @@ if host_machine.system() == 'darwin'
 endif
 
 if host_machine.system() == 'windows'
+  sources += files('src/platform_win32.c')
+  deps += dependency('gio-windows-2.0')
   windows = import('windows')
   sources += windows.compile_resources(
     'data/parla.rc',

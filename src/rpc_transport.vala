@@ -7,8 +7,12 @@ namespace Dc {
     public class RpcTransport : Object {
 
         private Subprocess? process = null;
+#if WINDOWS
+        private void* win_process = null;
+#endif
         private DataInputStream? reader = null;
         private OutputStream? writer = null;
+        private InputStream? err_pipe = null;
         private int next_id = 1;
         private GenericArray<PendingCall> pending = new GenericArray<PendingCall> ();
         private string last_stderr = "";
@@ -20,6 +24,22 @@ namespace Dc {
         public async void start (string[] argv, string? cwd = null,
                                    string? accounts_path = null) throws Error {
             last_stderr = "";
+#if WINDOWS
+            /* GSubprocess pipes never reach a console child on Windows;
+               spawn through the CreateProcessW wrapper instead. */
+            void* spawned;
+            OutputStream? child_in;
+            InputStream? child_out;
+            InputStream? child_err;
+            Platform.spawn_hidden (argv, cwd,
+                accounts_path != null ? "DC_ACCOUNTS_PATH" : null,
+                accounts_path,
+                out spawned, out child_in, out child_out, out child_err);
+            win_process = spawned;
+            writer = child_in;
+            reader = new DataInputStream (child_out);
+            err_pipe = child_err;
+#else
             var flags = SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDOUT_PIPE
                         | SubprocessFlags.STDERR_PIPE;
             var launcher = new SubprocessLauncher (flags);
@@ -32,14 +52,26 @@ namespace Dc {
             process = launcher.spawnv (argv);
             writer = process.get_stdin_pipe ();
             reader = new DataInputStream (process.get_stdout_pipe ());
+            err_pipe = process.get_stderr_pipe ();
+#endif
             reader.set_newline_type (DataStreamNewlineType.LF);
 
             drain_stderr.begin ();
             read_loop.begin ();
 
+            /* A server whose pipes are dead would otherwise stall this call
+               forever; fail the handshake so the UI can show an error. */
+            bool timed_out = false;
+            uint handshake_timeout = Timeout.add_seconds (20, () => {
+                timed_out = true;
+                fail_pending ("RPC server is not responding");
+                return false;
+            });
             try {
                 yield call ("get_system_info", Params.begin ().build ());
+                if (!timed_out) Source.remove (handshake_timeout);
             } catch (Error e) {
+                if (!timed_out) Source.remove (handshake_timeout);
                 yield nap (200);
                 if (last_stderr.length > 0) {
                     throw new IOError.FAILED ("%s", last_stderr);
@@ -56,8 +88,16 @@ namespace Dc {
                 process.force_exit ();
                 process = null;
             }
+#if WINDOWS
+            if (win_process != null) {
+                Platform.process_terminate (win_process);
+                Platform.process_free (win_process);
+                win_process = null;
+            }
+#endif
             writer = null;
             reader = null;
+            err_pipe = null;
         }
 
         public async Json.Node? call (string method, Json.Node params) throws Error {
@@ -88,9 +128,9 @@ namespace Dc {
         }
 
         private async void drain_stderr () {
-            if (process == null) return;
+            if (err_pipe == null) return;
             try {
-                var err_stream = new DataInputStream (process.get_stderr_pipe ());
+                var err_stream = new DataInputStream (err_pipe);
                 string? line;
                 size_t len;
                 while ((line = yield err_stream.read_line_utf8_async (

@@ -1055,20 +1055,29 @@ namespace Dc {
             rpc_update_btn.sensitive = false;
 
             try {
+                string? stdout_buf;
+                string? stderr_buf;
+                bool successful;
+#if WINDOWS
+                var run = yield Platform.run_hidden ({ rpc_path, "--version" });
+                stdout_buf = run.output;
+                stderr_buf = run.errout;
+                successful = run.status == 0;
+#else
                 var process = new Subprocess (
                     SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
                     rpc_path, "--version");
-                string? stdout_buf;
-                string? stderr_buf;
                 yield process.communicate_utf8_async (
                     null, null, out stdout_buf, out stderr_buf);
+                successful = process.get_successful ();
+#endif
 
                 if (request_id != rpc_version_request) return;
 
                 string version = ((stdout_buf ?? "").strip ().length > 0)
                     ? (stdout_buf ?? "").strip ()
                     : (stderr_buf ?? "").strip ();
-                if (process.get_successful () && version.length > 0) {
+                if (successful && version.length > 0) {
                     rpc_version_row.subtitle = version;
                     rpc_current_version = RpcInstaller.extract_version (version);
                     rpc_update_check_available =

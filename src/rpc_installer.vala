@@ -144,17 +144,26 @@ namespace Dc {
             string path = managed_bin_path ();
             if (!FileUtils.test (path, FileTest.IS_EXECUTABLE)) return null;
             try {
+                string? stdout_buf;
+                string? stderr_buf;
+                bool successful;
+#if WINDOWS
+                var run = yield Platform.run_hidden ({ path, "--version" });
+                stdout_buf = run.output;
+                stderr_buf = run.errout;
+                successful = run.status == 0;
+#else
                 var process = new Subprocess (
                     SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
                     path, "--version");
-                string? stdout_buf;
-                string? stderr_buf;
                 yield process.communicate_utf8_async (
                     null, null, out stdout_buf, out stderr_buf);
+                successful = process.get_successful ();
+#endif
                 string version = ((stdout_buf ?? "").strip ().length > 0)
                     ? (stdout_buf ?? "").strip ()
                     : (stderr_buf ?? "").strip ();
-                return (process.get_successful () && version.length > 0)
+                return (successful && version.length > 0)
                     ? version : null;
             } catch (Error e) {
                 return null;
@@ -165,8 +174,22 @@ namespace Dc {
          * Resolve the latest upstream release tag (e.g. "v2.51.0") by following
          * the redirect from the GitHub "latest" release URL.
          */
+        /*
+         * brew's gtk4 on macOS ships without a TLS backend, and on Windows
+         * the system curl (bundled since Windows 10) with its schannel
+         * trust store is more dependable than the bundled gnutls module,
+         * so both prefer curl; the raw GIO path remains the fallback.
+         */
+        private static bool use_curl () {
+#if WINDOWS
+            return curl_path () != null;
+#else
+            return Platform.is_macos ();
+#endif
+        }
+
         public static async string fetch_latest_tag () throws Error {
-            if (Platform.is_macos ()) {
+            if (use_curl ()) {
                 return yield fetch_latest_tag_with_curl ();
             }
 
@@ -254,12 +277,17 @@ namespace Dc {
             FileUtils.unlink (tmp);
 
             try {
-                if (Platform.is_macos ()) {
+                if (use_curl ()) {
                     yield curl_get_to_file (url, tmp);
                 } else {
                     yield https_get_to_file (url, tmp, 0);
                 }
+#if !WINDOWS
+                /* Windows decides executability by file extension, so the
+                   extensionless tmp file can only be checked after the
+                   rename gives it the .exe suffix. */
                 ensure_executable (tmp);
+#endif
                 string final_path = managed_bin_path ();
                 FileUtils.unlink (final_path);
                 if (FileUtils.rename (tmp, final_path) != 0) {
@@ -273,7 +301,9 @@ namespace Dc {
             }
         }
 
-        private static string? macos_curl_path () {
+        /* /usr/bin/curl is preferred on macOS to dodge broken brew shims;
+           on Windows the PATH lookup finds the system curl in System32. */
+        private static string? curl_path () {
             if (FileUtils.test ("/usr/bin/curl", FileTest.IS_EXECUTABLE)) {
                 return "/usr/bin/curl";
             }
@@ -286,27 +316,39 @@ namespace Dc {
         }
 
         private static async string fetch_latest_tag_with_curl () throws Error {
-            string? curl = macos_curl_path ();
+            string? curl = curl_path ();
             if (curl == null) {
-                throw new IOError.NOT_SUPPORTED ("curl is required to download on macOS");
+                throw new IOError.NOT_SUPPORTED ("curl is required to download");
             }
 
-            var process = new Subprocess (
-                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
+            string[] argv = {
                 curl,
                 "--head",
                 "--silent",
                 "--show-error",
                 "--max-time", "15",
                 "--user-agent", "Parla",
-                "https://github.com/chatmail/core/releases/latest");
+                "https://github.com/chatmail/core/releases/latest",
+            };
 
             string? stdout_buf;
             string? stderr_buf;
+            bool successful;
+#if WINDOWS
+            var run = yield Platform.run_hidden (argv);
+            stdout_buf = run.output;
+            stderr_buf = run.errout;
+            successful = run.status == 0;
+#else
+            var process = new Subprocess.newv (
+                argv,
+                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE);
             yield process.communicate_utf8_async (
                 null, null, out stdout_buf, out stderr_buf);
+            successful = process.get_successful ();
+#endif
 
-            if (!process.get_successful ()) {
+            if (!successful) {
                 throw new IOError.FAILED (curl_failure_message (stderr_buf));
             }
 
@@ -331,15 +373,14 @@ namespace Dc {
         }
 
         private async void curl_get_to_file (string url, string dest) throws Error {
-            string? curl = macos_curl_path ();
+            string? curl = curl_path ();
             if (curl == null) {
-                throw new IOError.NOT_SUPPORTED ("curl is required to download on macOS");
+                throw new IOError.NOT_SUPPORTED ("curl is required to download");
             }
 
             progress (0, -1);
 
-            var process = new Subprocess (
-                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
+            string[] argv = {
                 curl,
                 "--location",
                 "--fail",
@@ -349,14 +390,26 @@ namespace Dc {
                 "--max-time", "300",
                 "--user-agent", "Parla",
                 "--output", dest,
-                url);
+                url,
+            };
 
-            string? stdout_buf;
             string? stderr_buf;
+            bool successful;
+#if WINDOWS
+            var run = yield Platform.run_hidden (argv);
+            stderr_buf = run.errout;
+            successful = run.status == 0;
+#else
+            var process = new Subprocess.newv (
+                argv,
+                SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE);
+            string? stdout_buf;
             yield process.communicate_utf8_async (
                 null, null, out stdout_buf, out stderr_buf);
+            successful = process.get_successful ();
+#endif
 
-            if (!process.get_successful ()) {
+            if (!successful) {
                 throw new IOError.FAILED (curl_failure_message (stderr_buf));
             }
 
