@@ -45,10 +45,15 @@ namespace Dc {
             vbox.margin_bottom = 8;
 
             /* Reactions — first so they are most easily reachable */
-            string[] emojis = { "\xf0\x9f\x91\x8d", "\xe2\x9d\xa4\xef\xb8\x8f",
-                                 "\xf0\x9f\x98\x82", "\xf0\x9f\x98\xae",
-                                 "\xf0\x9f\x98\xa2", "\xf0\x9f\x91\x8e",
-                                 "\xf0\x9f\x94\xa5" };
+	    string[] emojis = {
+                "\xf0\x9f\x91\x8d", // thumbsup
+                "\xf0\x9f\x91\x8e", // thumbsdown
+                "\xe2\x9d\xa4\xef\xb8\x8f", // heart
+                "\xf0\x9f\x94\xa5", // fire
+                "\xf0\x9f\x98\x82", // laugh
+                "\xf0\x9f\x98\xae", // surprised
+                "\xf0\x9f\x98\xa2", // sad
+	    };
             if (gtk_emoji_chooser_available ()) {
                 emojis += "…";
             }
