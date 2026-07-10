@@ -1,5 +1,10 @@
 namespace Dc {
 
+    [DBus (name = "org.freedesktop.Notifications")]
+    private interface DesktopNotificationServer : Object {
+        public abstract string[] get_capabilities () throws GLib.Error;
+    }
+
     public class EventHandler : Object {
 
         private unowned RpcClient rpc;
@@ -9,6 +14,8 @@ namespace Dc {
         private uint messages_reload_timer = 0;
         private HashTable<int, int> notification_refresh_generations;
         private int next_notification_refresh_generation = 0;
+        /* -1 means the notification server has not been queried yet. */
+        private int notification_actions_supported = -1;
 
         public int active_chat_id { get; set; default = 0; }
 
@@ -279,8 +286,7 @@ namespace Dc {
                 var n = new GLib.Notification (title);
                 n.set_body (body);
                 n.set_priority (GLib.NotificationPriority.NORMAL);
-                n.set_default_action_and_target_value ("app.open-chat",
-                    new Variant ("(ii)", acct_id, chat_id));
+                set_open_chat_action (n, acct_id, chat_id);
                 if (!is_current_notification_refresh (acct_id, generation)) return;
                 app.send_notification (notification_id (acct_id, 0), n);
             } catch (Error e) {
@@ -303,9 +309,48 @@ namespace Dc {
             var n = new GLib.Notification (title);
             n.set_body (body);
             n.set_priority (GLib.NotificationPriority.HIGH);
-            n.set_default_action_and_target_value ("app.open-chat",
-                new Variant ("(ii)", acct_id, chat_id));
+            set_open_chat_action (n, acct_id, chat_id);
             app.send_notification (mention_notification_id (acct_id, chat_id), n);
+        }
+
+        private void set_open_chat_action (GLib.Notification notification,
+                                           int acct_id, int chat_id) {
+            if (!server_supports_actions ()) return;
+            notification.set_default_action_and_target_value ("app.open-chat",
+                new Variant ("(ii)", acct_id, chat_id));
+        }
+
+        /* Some lightweight notification servers (notably notify-osd, often
+           used with dwm) advertise no action support. Sending a default action
+           to those servers produces a generic Cancel/OK dialog instead of a
+           transient desktop banner. Keep those notifications action-free so
+           the server can place and expire its normal unobtrusive popup. */
+        private bool server_supports_actions () {
+            if (notification_actions_supported >= 0)
+                return notification_actions_supported == 1;
+
+            /* Preserve the existing action on platforms/backends without the
+               freedesktop notification interface (for example macOS). */
+            bool supported = true;
+            try {
+                DesktopNotificationServer server =
+                    Bus.get_proxy_sync<DesktopNotificationServer> (
+                        BusType.SESSION,
+                        "org.freedesktop.Notifications",
+                        "/org/freedesktop/Notifications");
+                supported = false;
+                foreach (string capability in server.get_capabilities ()) {
+                    if (capability == "actions") {
+                        supported = true;
+                        break;
+                    }
+                }
+            } catch (Error e) {
+                debug ("Could not query notification capabilities: %s",
+                    e.message);
+            }
+            notification_actions_supported = supported ? 1 : 0;
+            return supported;
         }
 
         private static string mention_notification_id (int acct_id, int chat_id) {
