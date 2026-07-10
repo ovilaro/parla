@@ -908,6 +908,8 @@ namespace Dc {
                             set_pending_attachment (path, file.get_basename ());
                     }
                 } catch (Error e) {
+                    if (!is_dialog_dismissal (e))
+                        warning ("attachment picker: %s", e.message);
                 }
             });
         }

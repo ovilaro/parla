@@ -1198,7 +1198,7 @@ namespace Dc {
                     }
                 }
             } catch (Error e) {
-                if (!(e is Gtk.DialogError) && !(e is IOError.CANCELLED))
+                if (!is_dialog_dismissal (e))
                     show_error (app_window, e.message);
             }
             update_rpc_row ();

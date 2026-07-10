@@ -1288,7 +1288,7 @@ namespace Dc {
                                            Priority.DEFAULT, null, null);
                 show_toast ("File saved");
             } catch (Error e) {
-                if (e is IOError.CANCELLED) return;
+                if (is_dialog_dismissal (e)) return;
                 show_toast ("Save failed: " + e.message);
             }
         }

@@ -8,6 +8,12 @@ namespace Dc {
         d.present (parent);
     }
 
+    public static bool is_dialog_dismissal (Error error) {
+        return error is IOError.CANCELLED
+            || error is Gtk.DialogError.CANCELLED
+            || error is Gtk.DialogError.DISMISSED;
+    }
+
     public static void confirm_action (Gtk.Widget parent, string title,
                                         string body, string action_id,
                                         string action_label,
@@ -135,7 +141,10 @@ namespace Dc {
         try {
             var file = yield chooser.open (parent, null);
             if (file != null) return file.get_path ();
-        } catch (Error e) { /* cancelled */ }
+        } catch (Error e) {
+            if (!is_dialog_dismissal (e))
+                warning ("image picker: %s", e.message);
+        }
         return null;
     }
 
