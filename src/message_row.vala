@@ -387,7 +387,10 @@ namespace Dc {
                 ? "message-sender-self" : "message-sender-other");
             sender_lbl.valign = Gtk.Align.START;
             sender_lbl.xalign = 0;
-            sender_lbl.ellipsize = Pango.EllipsizeMode.END;
+            /* Keep the full IRC nick visible.  An ellipsized label has a
+               tiny minimum width, so a long message can otherwise squeeze
+               the nick down to an ellipsis. */
+            sender_lbl.ellipsize = Pango.EllipsizeMode.NONE;
             this.append (sender_lbl);
 
             var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);

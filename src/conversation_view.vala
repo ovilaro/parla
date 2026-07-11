@@ -215,6 +215,12 @@ namespace Dc {
             message_listview.halign = Gtk.Align.FILL;
             message_listview.valign = Gtk.Align.FILL;
             message_listview.add_css_class ("boxed-list-separate");
+            /* Workspace rows are flush, full-width lines: give the list some
+               air above the compose bar so the last message never looks
+               clipped. Bubbles/IRC carry their own spacing already. */
+            if (settings.message_style == MessageStyle.WORKSPACE) {
+                message_listview.margin_bottom = 10;
+            }
 
             /* One gesture pair on the listview, not per-row: a per-row
                left-click controller competes with the label's link gesture
