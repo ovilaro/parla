@@ -112,6 +112,7 @@ namespace Dc {
         private MentionRoster? reaction_roster = null;
 
         public signal void quote_clicked (int quoted_msg_id);
+        public signal void action_requested (string action, Gtk.Widget anchor);
         public signal void full_message_requested (int msg_id);
         public signal void selection_toggled (int msg_id, bool selected);
         public signal void checkbox_toggle_requested (int msg_id, string new_text);
@@ -201,7 +202,7 @@ namespace Dc {
             halign = Gtk.Align.FILL;
 
             if (style == MessageStyle.IRC && is_image_continuation) {
-                build_irc_row (msg, prev, trailing_images, is_image_continuation);
+                build_irc_row (msg, trailing_images, true);
                 return;
             }
 
@@ -213,11 +214,70 @@ namespace Dc {
                 return;
             }
 
-            if (style == MessageStyle.IRC) {
-                build_irc_row (msg, prev, trailing_images, is_image_continuation);
-                return;
+            switch (style) {
+            case MessageStyle.IRC:
+                build_irc_row (msg, trailing_images, false);
+                break;
+            case MessageStyle.WORKSPACE:
+                build_workspace_row (msg, prev);
+                break;
+            default:
+                build_bubble_row (msg, avatar_display, avatar_scope_enabled,
+                                  show_sender_name);
+                break;
             }
+        }
 
+        /**
+         * Forwarded marker, quote block, attachment and body text — the
+         * shared middle of every message style. The forwarded indicator
+         * replaces the plain sender line in bubbles: it already names the
+         * forwarder (incoming) or just reads "Forwarded".
+         */
+        private void append_content (Gtk.Box box, Message msg,
+                                     int quote_width, int quote_lines,
+                                     bool irc,
+                                     GLib.GenericArray<Message>? trailing,
+                                     int text_width) {
+            if (msg.is_forwarded) {
+                box.append (build_forwarded_indicator (msg));
+            }
+            if (msg.quote_text != null && msg.quote_text.length > 0) {
+                box.append (build_quote_block (msg, quote_width, quote_lines));
+            }
+            append_attachment (box, msg, irc, trailing);
+            if (msg.text != null && msg.text.length > 0) {
+                box.append (build_text_widget (msg, text_width));
+            }
+        }
+
+        /** Edited marker, delivery tick and pin icon, laid inline at the end
+            of a compact (IRC / Workspace) row. Bubbles keep them in their own
+            footer under the text instead. Workspace bottom-aligns them so the
+            hover action bar (top-right) does not cover them. */
+        private void append_meta_indicators (Gtk.Box box, Message msg,
+                                             Gtk.Align align = Gtk.Align.START) {
+            if (msg.is_edited) {
+                var edited = build_edited_indicator ("(edited)");
+                edited.valign = align;
+                box.append (edited);
+            }
+            if (msg.is_outgoing) {
+                var tick = build_tick_indicator (msg);
+                if (tick != null) {
+                    tick.valign = align;
+                    box.append (tick);
+                }
+            }
+            var pin = build_pin_indicator (msg);
+            pin.valign = align;
+            box.append (pin);
+        }
+
+        private void build_bubble_row (Message msg,
+                                       BubbleAvatarDisplay avatar_display,
+                                       bool avatar_scope_enabled,
+                                       bool show_sender_name) {
             bool outgoing = msg.is_outgoing;
             bool show_avatar = should_show_bubble_avatar (
                 msg, avatar_display, avatar_scope_enabled);
@@ -234,12 +294,7 @@ namespace Dc {
             bubble.add_css_class (outgoing ? "outgoing" : "incoming");
             bubble.valign = Gtk.Align.START;
 
-            /* Forwarded indicator replaces the plain sender line: it already
-               names the forwarder (incoming) or just reads "Forwarded"
-               (outgoing / unknown sender). */
-            if (msg.is_forwarded) {
-                bubble.append (build_forwarded_indicator (msg));
-            } else if (!outgoing && show_sender_name) {
+            if (!msg.is_forwarded && !outgoing && show_sender_name) {
                 string? author = effective_author_name (msg);
                 if (author != null) {
                     var sender = new Gtk.Label (author);
@@ -253,17 +308,7 @@ namespace Dc {
                 }
             }
 
-            /* Quoted / reply block */
-            if (msg.quote_text != null && msg.quote_text.length > 0) {
-                bubble.append (build_quote_block (msg, 40, 2));
-            }
-
-            append_attachment (bubble, msg, false);
-
-            /* Message text */
-            if (msg.text != null && msg.text.length > 0) {
-                bubble.append (build_text_widget (msg, 50));
-            }
+            append_content (bubble, msg, 40, 2, false, null, 50);
 
             /* Timestamp + delivery/read tick + pin indicator */
             var footer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
@@ -271,8 +316,7 @@ namespace Dc {
             if (msg.is_edited) {
                 footer.append (build_edited_indicator ("Edited"));
             }
-            var time_str = format_timestamp (msg.timestamp);
-            var time_lbl = new Gtk.Label (time_str);
+            var time_lbl = new Gtk.Label (format_timestamp (msg.timestamp));
             time_lbl.add_css_class ("message-time");
             footer.append (time_lbl);
 
@@ -309,9 +353,9 @@ namespace Dc {
             }
         }
 
-        private void build_irc_row (Message msg, Message? prev,
-                                      GLib.GenericArray<Message>? trailing_images,
-                                      bool is_image_continuation) {
+        private void build_irc_row (Message msg,
+                                    GLib.GenericArray<Message>? trailing_images,
+                                    bool is_image_continuation) {
             /* Continuation rows in an image strip render as zero-height
                so the leading row of the strip owns all the vertical space. */
             if (is_image_continuation) {
@@ -324,8 +368,6 @@ namespace Dc {
 
             this.margin_start = 8;
             this.margin_end = 8;
-            this.margin_top = 0;
-            this.margin_bottom = 0;
             this.spacing = 6;
             this.add_css_class ("message-irc");
 
@@ -350,54 +392,107 @@ namespace Dc {
 
             var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
             body.hexpand = true;
-
-            /* Forwarded marker */
-            if (msg.is_forwarded) {
-                var fwd = new Gtk.Label ("↪ forwarded");
-                fwd.add_css_class ("message-forwarded");
-                fwd.halign = Gtk.Align.START;
-                fwd.xalign = 0;
-                if (msg.sender_address != null && msg.sender_address.length > 0)
-                    fwd.tooltip_text = msg.sender_address;
-                body.append (fwd);
-            }
-
-            /* Quoted / reply block (kept compact) */
-            if (msg.quote_text != null && msg.quote_text.length > 0) {
-                body.append (build_quote_block (msg, 60, 1));
-            }
-
-            append_attachment (body, msg, true, trailing_images);
-
-            if (msg.text != null && msg.text.length > 0) {
-                body.append (build_text_widget (msg, -1));
-            }
-
-            /* Reactions */
+            append_content (body, msg, 60, 1, true, trailing_images, -1);
             var reactions_box = build_reactions_box (msg);
             if (reactions_box != null) {
                 body.append (reactions_box);
             }
-
             this.append (body);
 
-            if (msg.is_edited) {
-                var edited = build_edited_indicator ("(edited)");
-                edited.valign = Gtk.Align.START;
-                this.append (edited);
+            append_meta_indicators (this, msg);
+        }
+
+        /* Workspace style: avatar on the left, bold sender name with a small
+           timestamp on top, the message below. Consecutive messages from the
+           same sender within five minutes drop the avatar and header. */
+        private void build_workspace_row (Message msg, Message? prev) {
+            this.add_css_class ("message-workspace");
+            this.margin_start = 4;
+            this.margin_end = 4;
+
+            bool grouped = prev != null && same_sender (prev, msg)
+                && msg.timestamp - prev.timestamp < 300
+                && same_day (msg.timestamp, prev.timestamp);
+
+            string sender = effective_sender_name (msg);
+            var content = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            if (grouped) {
+                var gutter = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+                gutter.width_request = 36;
+                content.append (gutter);
+            } else {
+                var avatar = presence_avatar (36, sender,
+                    msg.is_outgoing ? self_avatar_path : msg.sender_avatar_path,
+                    false, "message-avatar");
+                avatar.valign = Gtk.Align.START;
+                avatar.tooltip_text = msg.sender_address ?? sender;
+                content.append (avatar);
             }
 
-            /* Outgoing tick indicator at the end */
-            if (msg.is_outgoing) {
-                var tick = build_tick_indicator (msg);
-                if (tick != null) {
-                    tick.valign = Gtk.Align.START;
-                    this.append (tick);
-                }
+            var body = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
+            body.hexpand = true;
+            if (!grouped) {
+                var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+                var sender_lbl = new Gtk.Label (sender);
+                sender_lbl.add_css_class ("message-sender");
+                sender_lbl.xalign = 0;
+                sender_lbl.ellipsize = Pango.EllipsizeMode.END;
+                header.append (sender_lbl);
+                var time_lbl = new Gtk.Label (format_timestamp (msg.timestamp));
+                time_lbl.add_css_class ("message-time");
+                time_lbl.valign = Gtk.Align.END;
+                header.append (time_lbl);
+                body.append (header);
             }
-            var pin_icon = build_pin_indicator (msg);
-            pin_icon.valign = Gtk.Align.START;
-            this.append (pin_icon);
+            append_content (body, msg, 60, 1, false, null, -1);
+            var reactions_box = build_reactions_box (msg);
+            if (reactions_box != null) {
+                body.append (reactions_box);
+            }
+            content.append (body);
+            append_meta_indicators (content, msg, Gtk.Align.END);
+
+            /* The hover action bar floats over the top-right corner: it only
+               occupies space in the overlay, never in the row layout. Real
+               `visible` toggling (not CSS opacity) gates it, so touch taps
+               and keyboard focus can never reach hidden buttons. */
+            var bar = build_hover_actions ();
+            bar.visible = false;
+            var motion = new Gtk.EventControllerMotion ();
+            motion.enter.connect (() => { bar.visible = true; });
+            motion.leave.connect (() => { bar.visible = false; });
+            this.add_controller (motion);
+
+            var overlay = new Gtk.Overlay ();
+            overlay.hexpand = true;
+            overlay.child = content;
+            overlay.add_overlay (bar);
+            this.append (overlay);
+        }
+
+        /** Quick-action buttons shown while the pointer is over a Workspace
+            row. */
+        private Gtk.Widget build_hover_actions () {
+            var bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+            bar.add_css_class ("message-actions-bar");
+            bar.halign = Gtk.Align.END;
+            bar.valign = Gtk.Align.START;
+            string[,] actions = {
+                { "react", "face-smile-symbolic", "React" },
+                { "reply", "mail-reply-sender-symbolic", "Reply" },
+                { "forward", "mail-forward-symbolic", "Forward" },
+                { "pin", "view-pin-symbolic", "Pin / Unpin" },
+                { "more", "view-more-symbolic", "More actions" }
+            };
+            for (int i = 0; i < actions.length[0]; i++) {
+                string action = actions[i, 0];
+                var btn = new Gtk.Button.from_icon_name (actions[i, 1]);
+                btn.add_css_class ("flat");
+                btn.tooltip_text = actions[i, 2];
+                btn.clicked.connect (() => { action_requested (action, btn); });
+                bar.append (btn);
+            }
+            return bar;
         }
 
         private void append_selection_checkbox (Message msg) {
@@ -557,13 +652,15 @@ namespace Dc {
             }
         }
 
-        public static bool same_irc_sender (Message a, Message b) {
+        public static bool same_sender (Message a, Message b) {
             if (a.is_info || b.is_info) return false;
             if (a.is_outgoing != b.is_outgoing) return false;
             if (a.is_outgoing) return true;
-            string an = a.sender_name ?? "";
-            string bn = b.sender_name ?? "";
-            return an == bn;
+            if (a.sender_contact_id != b.sender_contact_id) return false;
+            /* Same contact can still relay distinct authors (mailing lists,
+               bots) via the override name — never merge across those. */
+            return (a.override_sender_name ?? "") == (b.override_sender_name ?? "")
+                && (a.sender_name ?? "") == (b.sender_name ?? "");
         }
 
         private static string effective_sender_name (Message msg) {

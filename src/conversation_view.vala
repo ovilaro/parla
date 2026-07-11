@@ -170,8 +170,11 @@ namespace Dc {
                     container.append (MessageRow.build_date_separator (msg.timestamp));
                 }
 
+                /* While search narrows the list, adjacent rows are not
+                   adjacent messages — disable sender-grouping then. */
                 var row = new MessageRow (
-                    msg, prev, trailing, is_img_continuation,
+                    msg, search_filter_active () ? null : prev,
+                    trailing, is_img_continuation,
                     settings.bubble_avatar_display,
                     bubble_avatars_apply_to_this_chat (),
                     chat_kind != ChatKind.DIRECT,
@@ -181,6 +184,11 @@ namespace Dc {
                     update_selection_actions ();
                 });
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
+                int row_msg_id = msg.id;
+                bool row_outgoing = msg.is_outgoing;
+                row.action_requested.connect ((action, anchor) => {
+                    on_row_action (row_msg_id, row_outgoing, action, anchor);
+                });
                 row.full_message_requested.connect ((mid) => {
                     load_full_message.begin (mid);
                 });
@@ -240,12 +248,11 @@ namespace Dc {
                     dc_last_time = 0;
                     return;
                 }
-                if (pointer_on_reaction_badge (x, y)) {
-                    dc_last_id = -1;
-                    dc_last_time = 0;
-                    return;
-                }
-                if (pointer_on_markdown_task_toggle (x, y)) {
+                /* Presses on interactive bits (reaction badges, task
+                   checkboxes, the hover action bar) belong to them. */
+                if (pointer_on_css (x, y, { "reaction-badge",
+                                            "markdown-task-toggle",
+                                            "message-actions-bar" })) {
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -281,7 +288,8 @@ namespace Dc {
                     var msg = find_message (message_store, row.message_id);
                     if (msg != null &&
                         should_activate_message_at_pointer (
-                            msg, pointer_on_visual_media (x, y))) {
+                            msg, pointer_on_css (x, y, { "message-image",
+                                                         "message-video-frame" }))) {
                         on_message_activated (msg);
                     }
                 }
@@ -379,6 +387,41 @@ namespace Dc {
             install_file_drop_target ();
         }
 
+        /* Workspace-style hover action bar: dispatch a button press to the
+           matching message action. Popovers are anchored to the long-lived
+           listview (pointing at the button), not to the button itself: rows
+           are rebuilt on every message reload, which would tear down an open
+           popover parented to one of their children. */
+        private void on_row_action (int msg_id, bool is_outgoing,
+                                    string action, Gtk.Widget anchor) {
+            if (selection_mode) return;
+            double ax = 0, ay = 0;
+            Graphene.Rect bounds;
+            if (anchor.compute_bounds (message_listview, out bounds)) {
+                ax = bounds.origin.x + bounds.size.width / 2;
+                ay = bounds.origin.y + bounds.size.height;
+            }
+            switch (action) {
+            case "react":
+                msg_actions.show_reaction_menu (msg_id, message_listview,
+                                                ax, ay);
+                break;
+            case "reply":
+                msg_actions.start_replying (msg_id);
+                break;
+            case "forward":
+                msg_actions.start_forwarding (msg_id);
+                break;
+            case "pin":
+                pinned.toggle_pin (msg_id);
+                break;
+            default:
+                msg_actions.show_context_menu (msg_id, is_outgoing,
+                                               ax, ay, message_listview);
+                break;
+            }
+        }
+
         private void on_scroll_bounds_changed () {
             if (loading_chat) return;
             maybe_autoscroll ();
@@ -390,7 +433,7 @@ namespace Dc {
                 Message msg, Message? prev, uint pos, out bool is_continuation) {
             is_continuation = false;
             if (settings.message_style != MessageStyle.IRC || !msg.is_image_only) return null;
-            if (prev != null && prev.is_image_only && MessageRow.same_irc_sender (prev, msg)) {
+            if (prev != null && prev.is_image_only && MessageRow.same_sender (prev, msg)) {
                 is_continuation = true;
                 return null;
             }
@@ -400,7 +443,7 @@ namespace Dc {
                     i < n && trailing.length < 5; i++) {
                 var next = (Message) filtered_message_store.get_item (i);
                 if (next == null || !next.is_image_only ||
-                    !MessageRow.same_irc_sender (msg, next)) break;
+                    !MessageRow.same_sender (msg, next)) break;
                 trailing.add (next);
             }
             return trailing;
@@ -1457,30 +1500,18 @@ namespace Dc {
             return false;
         }
 
-        private bool pointer_on_reaction_badge (double x, double y) {
-            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
-            while (w != null && !(w is MessageRow)) {
-                if (w.has_css_class ("reaction-badge")) return true;
-                w = w.get_parent ();
-            }
-            return false;
+        private bool search_filter_active () {
+            return message_search_revealer.reveal_child
+                && message_search_entry.text.strip ().length > 0;
         }
 
-        private bool pointer_on_markdown_task_toggle (double x, double y) {
+        /* True when the picked widget or an ancestor inside the row carries
+           one of the given CSS classes. */
+        private bool pointer_on_css (double x, double y, string[] classes) {
             var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
             while (w != null && !(w is MessageRow)) {
-                if (w.has_css_class ("markdown-task-toggle")) return true;
-                w = w.get_parent ();
-            }
-            return false;
-        }
-
-        private bool pointer_on_visual_media (double x, double y) {
-            var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
-            while (w != null && !(w is MessageRow)) {
-                if (w.has_css_class ("message-image") ||
-                    w.has_css_class ("message-video-frame")) {
-                    return true;
+                foreach (unowned string cls in classes) {
+                    if (w.has_css_class (cls)) return true;
                 }
                 w = w.get_parent ();
             }

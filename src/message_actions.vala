@@ -45,50 +45,8 @@ namespace Dc {
             vbox.margin_bottom = 8;
 
             /* Reactions — first so they are most easily reachable */
-	    string[] emojis = {
-                "\xf0\x9f\x91\x8d", // thumbsup
-                "\xf0\x9f\x91\x8e", // thumbsdown
-                "\xe2\x9d\xa4\xef\xb8\x8f", // heart
-                "\xf0\x9f\x94\xa5", // fire
-                "\xf0\x9f\x98\x82", // laugh
-                "\xf0\x9f\x98\xae", // surprised
-                "\xf0\x9f\x98\xa2", // sad
-	    };
-            if (gtk_emoji_chooser_available ()) {
-                emojis += "…";
-            }
+            append_emoji_rows (vbox, popover, msg_id, parent, x, y);
             var msg = find_message (message_store, msg_id);
-            var emoji_row1 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
-            var emoji_row2 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
-            for (int i = 0; i < emojis.length; i++) {
-                string emoji = emojis[i];
-                var btn = new Gtk.Button.with_label (emoji);
-                btn.add_css_class ("flat");
-                bool is_more = (emoji == "…");
-                if (is_more) {
-                    btn.tooltip_text = "More emojis…";
-                    btn.clicked.connect (() => {
-                        popover.popdown ();
-                        Idle.add (() => {
-                            show_emoji_picker (msg_id, parent, x, y);
-                            return Source.REMOVE;
-                        });
-                    });
-                } else {
-                    if (has_my_reaction (msg, emoji)) btn.add_css_class ("suggested-action");
-                    btn.clicked.connect (() => {
-                        popover.popdown ();
-                        Idle.add (() => {
-                            send_reaction.begin (msg_id, emoji);
-                            return Source.REMOVE;
-                        });
-                    });
-                }
-                if (i < 4) emoji_row1.append (btn);
-                else emoji_row2.append (btn);
-            }
-            vbox.append (emoji_row1);
-            vbox.append (emoji_row2);
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
@@ -146,6 +104,79 @@ namespace Dc {
                         null);
                 }
             }, true));
+
+            popover.child = vbox;
+            preserve_scroll_until_closed (popover);
+            popover.popup ();
+        }
+
+        /** Two rows of quick reaction emoji, plus "…" opening the full
+            chooser when available. Shared by the context menu and the
+            Workspace hover-action popover. */
+        private void append_emoji_rows (Gtk.Box vbox, Gtk.Popover popover,
+                                        int msg_id, Gtk.Widget parent,
+                                        double x, double y) {
+            string[] emojis = {
+                "\xf0\x9f\x91\x8d", // thumbsup
+                "\xf0\x9f\x91\x8e", // thumbsdown
+                "\xe2\x9d\xa4\xef\xb8\x8f", // heart
+                "\xf0\x9f\x94\xa5", // fire
+                "\xf0\x9f\x98\x82", // laugh
+                "\xf0\x9f\x98\xae", // surprised
+                "\xf0\x9f\x98\xa2", // sad
+            };
+            if (gtk_emoji_chooser_available ()) {
+                emojis += "…";
+            }
+            var msg = find_message (message_store, msg_id);
+            var emoji_row1 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            var emoji_row2 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            for (int i = 0; i < emojis.length; i++) {
+                string emoji = emojis[i];
+                var btn = new Gtk.Button.with_label (emoji);
+                btn.add_css_class ("flat");
+                bool is_more = (emoji == "…");
+                if (is_more) {
+                    btn.tooltip_text = "More emojis…";
+                    btn.clicked.connect (() => {
+                        popover.popdown ();
+                        Idle.add (() => {
+                            show_emoji_picker (msg_id, parent, x, y);
+                            return Source.REMOVE;
+                        });
+                    });
+                } else {
+                    if (has_my_reaction (msg, emoji)) btn.add_css_class ("suggested-action");
+                    btn.clicked.connect (() => {
+                        popover.popdown ();
+                        Idle.add (() => {
+                            send_reaction.begin (msg_id, emoji);
+                            return Source.REMOVE;
+                        });
+                    });
+                }
+                if (i < 4) emoji_row1.append (btn);
+                else emoji_row2.append (btn);
+            }
+            vbox.append (emoji_row1);
+            vbox.append (emoji_row2);
+        }
+
+        /** Standalone quick-reaction popover pointing at (x, y) in parent. */
+        public void show_reaction_menu (int msg_id, Gtk.Widget parent,
+                                        double x, double y) {
+            var popover = new Gtk.Popover ();
+            popover.has_arrow = false;
+            popover.set_parent (parent);
+            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+
+            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            vbox.add_css_class ("menu");
+            vbox.margin_start = 8;
+            vbox.margin_end = 8;
+            vbox.margin_top = 8;
+            vbox.margin_bottom = 8;
+            append_emoji_rows (vbox, popover, msg_id, parent, x, y);
 
             popover.child = vbox;
             preserve_scroll_until_closed (popover);

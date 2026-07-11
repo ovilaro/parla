@@ -21,7 +21,8 @@ namespace Dc {
 
     public enum MessageStyle {
         BUBBLES = 0,
-        IRC = 1;
+        IRC = 1,
+        WORKSPACE = 2;
     }
 
     public enum BubbleAvatarDisplay {
@@ -150,7 +151,7 @@ namespace Dc {
                                  (int) ThemeOverride.SYSTEM, 2);
             theme_override = (ThemeOverride) theme;
             int ms = kf_enum (kf, "message_style",
-                              (int) MessageStyle.BUBBLES, 1);
+                              (int) MessageStyle.BUBBLES, 2);
             message_style = (MessageStyle) ms;
             int bad = kf_enum (kf, "bubble_avatar_display",
                                (int) BubbleAvatarDisplay.NONE, 2);
@@ -493,9 +494,9 @@ namespace Dc {
 
             var style_row = action_row (
                 "Message style",
-                "Use chat bubbles or compact IRC-style lines");
+                "Chat bubbles, compact IRC lines or workspace rows");
 
-            string[] style_labels = { "Bubbles", "IRC" };
+            string[] style_labels = { "Bubbles", "IRC", "Workspace" };
             var style_combo = row_dropdown (style_row, style_labels,
                 (uint) app_window.settings.message_style);
             style_combo.notify["selected"].connect (() => {

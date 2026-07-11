@@ -378,6 +378,32 @@ namespace Dc {
                 margin-top: 2px;
                 margin-bottom: 2px;
             }
+            .message-workspace {
+                padding: 3px 6px;
+                border-radius: 6px;
+            }
+            .message-workspace:hover {
+                background-color: alpha(@view_fg_color, 0.06);
+            }
+            .message-workspace .message-sender {
+                font-size: inherit;
+            }
+            .message-workspace .message-time {
+                margin-top: 0;
+            }
+            /* Quick actions floated over a hovered Workspace row. Kept
+               compact so the bar fits even a grouped one-line row. */
+            .message-actions-bar {
+                padding: 0 1px;
+                border-radius: 8px;
+                background-color: @view_bg_color;
+                box-shadow: 0 1px 4px alpha(black, 0.3);
+            }
+            .message-actions-bar > button {
+                min-width: 20px;
+                min-height: 20px;
+                padding: 2px 5px;
+            }
             .message-attachment { padding: 4px 0; }
             .message-full-text-button {
                 font-size: small;
