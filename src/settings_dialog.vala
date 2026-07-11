@@ -215,6 +215,7 @@ namespace Dc {
             markdown_mode = mode;
             Markdown.mode = mode;
             save_int ("markdown_rendering", (int) mode);
+            appearance_changed ();
         }
 
         public void save_shift_enter_sends (bool v) {
