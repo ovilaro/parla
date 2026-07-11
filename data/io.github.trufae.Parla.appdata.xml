@@ -29,10 +29,22 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.6.6" date="2026-07-10">
+      <description>
+        <ul>
+          <li>Add new Workspace chat style</li>
+          <li>Better notification without dbus</li>
+          <li>Focus entry with Meta+L</li>
+          <li>Add combobox to select markdown mode</li>
+          <li>Support Windows</li>
+          <li>Lots of small UI/UX fixes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.4" date="2026-07-10">
       <description>
         <ul>
-          <li>Move the read receipt option into the user profile</li>
+          <li>Read receipt option moved into user profile</li>
           <li>Strip markdown in message previews</li>
           <li>Interactive markdown checkboxes</li>
           <li>Delete context button in red</li>
