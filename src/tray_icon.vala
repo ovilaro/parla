@@ -13,6 +13,7 @@ namespace Dc {
             "/io/github/trufae/Parla/icons/scalable/apps/parla-tray.svg";
 
         private Variant _icon_pixmap;
+        private string? pending_activation_token = null;
 
         public StatusNotifierItem () {
             _icon_pixmap = build_pixmaps ();
@@ -90,6 +91,22 @@ namespace Dc {
             activate_requested ();
         }
         public void scroll (int delta, string orientation) throws GLib.Error { }
+
+        /* The tray host sends a fresh token for presenting Parla on the
+           desktop where the user clicked the tray action. */
+        public void provide_xdg_activation_token (string token)
+            throws GLib.Error {
+            pending_activation_token = token;
+        }
+
+        /* Tokens are single-use: whoever handles the next click consumes it
+           so a stale one is never replayed on a later action. */
+        [DBus (visible = false)]
+        public string? take_activation_token () {
+            string? token = pending_activation_token;
+            pending_activation_token = null;
+            return token;
+        }
     }
 
     [DBus (name = "com.canonical.dbusmenu")]
@@ -253,7 +270,8 @@ namespace Dc {
         private uint name_own = 0;
         private bool visible = false;
 
-        public signal void show_requested ();
+        public signal void show_on_current_desktop_requested (
+            string? activation_token);
         public signal void quit_requested ();
         public signal void notifications_toggle_requested (bool enabled);
 
@@ -261,17 +279,22 @@ namespace Dc {
             conn = connection;
             item = new StatusNotifierItem ();
             menu = new TrayMenu ();
-            item.activate_requested.connect (() => {
-                emit_on_main (() => { show_requested (); });
-            });
-            menu.show_requested.connect (() => {
-                emit_on_main (() => { show_requested (); });
-            });
+            item.activate_requested.connect (request_show_on_current_desktop);
+            menu.show_requested.connect (request_show_on_current_desktop);
             menu.quit_requested.connect (() => {
                 emit_on_main (() => { quit_requested (); });
             });
             menu.notifications_toggle_requested.connect ((v) => {
+                item.take_activation_token ();
                 emit_on_main (() => { notifications_toggle_requested (v); });
+            });
+        }
+
+        private void request_show_on_current_desktop () {
+            /* Menu-click tokens are delivered to the item object too. */
+            string? token = item.take_activation_token ();
+            emit_on_main (() => {
+                show_on_current_desktop_requested (token);
             });
         }
 

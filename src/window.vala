@@ -314,7 +314,8 @@ namespace Dc {
                 var conn = this.application.get_dbus_connection ();
                 if (conn == null) return false;
                 tray = new TrayIcon (conn);
-                tray.show_requested.connect (restore_from_tray);
+                tray.show_on_current_desktop_requested.connect (
+                    show_from_tray_on_current_desktop);
                 tray.quit_requested.connect (() => {
                     handle_primary_q ();
                 });
@@ -346,6 +347,44 @@ namespace Dc {
         public void restore_from_tray () {
             release_background_hold ();
             this.present ();
+        }
+
+        private void show_from_tray_on_current_desktop (
+                string? activation_token) {
+            release_background_hold ();
+            if (activation_token != null && activation_token.length > 0 &&
+                request_activation_on_current_desktop (activation_token)) {
+                return;
+            }
+            this.present ();
+        }
+
+        /* Re-activate with the tray click token so GTK presents Parla on the current desktop. */
+        private bool request_activation_on_current_desktop (string token) {
+            var app = this.application;
+            if (app == null || app.application_id == null) return false;
+            var conn = app.get_dbus_connection ();
+            var path = app.get_dbus_object_path ();
+            if (conn == null || path == null) return false;
+
+            var platform_data = new VariantBuilder (new VariantType ("a{sv}"));
+            platform_data.add (
+                "{sv}", "activation-token", new Variant.string (token));
+            platform_data.add (
+                "{sv}", "desktop-startup-id", new Variant.string (token));
+            conn.call.begin (
+                app.application_id, path, "org.gtk.Application", "Activate",
+                new Variant.tuple ({ platform_data.end () }),
+                null, DBusCallFlags.NO_AUTO_START, -1, null,
+                (obj, res) => {
+                    try {
+                        conn.call.end (res);
+                    } catch (Error e) {
+                        debug ("Tray activation fallback: %s", e.message);
+                        this.present ();
+                    }
+                });
+            return true;
         }
 
         private void release_background_hold () {
