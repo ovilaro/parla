@@ -111,13 +111,32 @@ pixbuf_query_argv (const gchar *query_path, const gchar *loaders_dir)
 }
 
 static gboolean
-cache_mentions_loader_dir (const gchar *cache_path, const gchar *loaders_dir)
+cache_covers_loaders (const gchar *cache_path, const gchar *loaders_dir)
 {
 	g_autofree gchar *contents = NULL;
 	if (!g_file_get_contents (cache_path, &contents, NULL, NULL)) {
 		return FALSE;
 	}
-	return strstr (contents, loaders_dir) != NULL;
+
+	GDir *dir = g_dir_open (loaders_dir, 0, NULL);
+	if (!dir) {
+		return FALSE;
+	}
+
+	gboolean complete = TRUE;
+	const gchar *name;
+	while ((name = g_dir_read_name (dir)) != NULL) {
+		if (!g_str_has_suffix (name, ".so")) {
+			continue;
+		}
+		g_autofree gchar *path = g_build_filename (loaders_dir, name, NULL);
+		if (strstr (contents, path) == NULL) {
+			complete = FALSE;
+			break;
+		}
+	}
+	g_dir_close (dir);
+	return complete;
 }
 
 static gchar *
@@ -155,7 +174,7 @@ setup_pixbuf_cache (const gchar *resources_dir)
 		cache_dir, "gdk-pixbuf-loaders.cache", NULL);
 
 	if (g_mkdir_with_parents (cache_dir, 0700) == 0 &&
-	    !cache_mentions_loader_dir (cache_path, loaders_dir)) {
+	    !cache_covers_loaders (cache_path, loaders_dir)) {
 		g_auto(GStrv) argv = pixbuf_query_argv (query_path, loaders_dir);
 		g_autofree gchar *stdout_data = NULL;
 		gint wait_status = 0;

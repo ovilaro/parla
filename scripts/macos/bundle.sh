@@ -240,24 +240,38 @@ bundle_macho() {
 
     chmod u+w "$file" 2>/dev/null || true
 
-    local loader_dir rel dep base dest
+    local loader_dir rel dep source base dest
     loader_dir="$(cd "$(dirname "$file")" && pwd -P)"
     rel="$(relative_to_frameworks "$loader_dir")"
 
     while IFS= read -r dep; do
         case "$dep" in
             "$BREW_PREFIX"/*|/usr/local/*)
+                source="$dep"
+                ;;
+            @rpath/*)
+                # Some Homebrew plugins (notably librsvg's pixbuf loader)
+                # refer to their libraries through @rpath.  They are not in
+                # the executable's dependency closure, so resolve them from
+                # Homebrew and bundle them just like an absolute dependency.
                 base="$(basename "$dep")"
-                dest="$FRAMEWORKS/$base"
-                if [ ! -f "$dest" ]; then
-                    cp -L "$dep" "$dest"
-                    chmod u+w "$dest"
-                    install_name_tool -id "@rpath/$base" "$dest" 2>/dev/null || true
-                fi
-                install_name_tool -change "$dep" "@loader_path/$rel/$base" "$file" 2>/dev/null || true
-                bundle_macho "$dest"
+                source="$BREW_PREFIX/lib/$base"
+                [ -f "$source" ] || continue
+                ;;
+            *)
+                continue
                 ;;
         esac
+
+        base="$(basename "$source")"
+        dest="$FRAMEWORKS/$base"
+        if [ ! -f "$dest" ]; then
+            cp -L "$source" "$dest"
+            chmod u+w "$dest"
+            install_name_tool -id "@rpath/$base" "$dest" 2>/dev/null || true
+        fi
+        install_name_tool -change "$dep" "@loader_path/$rel/$base" "$file" 2>/dev/null || true
+        bundle_macho "$dest"
     done < <(otool -L "$file" | awk 'NR > 1 { print $1 }')
 }
 
