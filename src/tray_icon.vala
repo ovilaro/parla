@@ -116,6 +116,7 @@ namespace Dc {
         private const int32 ID_QUIT = 3;
 
         private bool notifications_on = true;
+        private bool window_visible = false;
         private uint32 revision = 1;
 
         public uint32 version { get { return 3; } }
@@ -125,8 +126,10 @@ namespace Dc {
 
         public signal void layout_updated (uint32 revision, int32 parent);
 
+        /* Emitted for the first menu item, which shows the window when it is
+           hidden and minimizes it back to the tray when it is visible. */
         [DBus (visible = false)]
-        public signal void show_requested ();
+        public signal void show_toggle_requested ();
         [DBus (visible = false)]
         public signal void quit_requested ();
         [DBus (visible = false)]
@@ -140,9 +143,18 @@ namespace Dc {
             layout_updated (revision, 0);
         }
 
-        private static string label_for (int32 id) {
+        [DBus (visible = false)]
+        public void set_window_visible (bool visible) {
+            if (window_visible == visible) return;
+            window_visible = visible;
+            revision++;
+            layout_updated (revision, 0);
+        }
+
+        private string label_for (int32 id) {
             switch (id) {
-            case ID_SHOW: return "Show Parla";
+            case ID_SHOW:
+                return window_visible ? "Minimize to tray" : "Show Parla";
             case ID_NOTIFY: return "Notifications";
             default: return "Quit";
             }
@@ -217,7 +229,7 @@ namespace Dc {
             if (event_id != "clicked") return;
             switch (id) {
             case ID_SHOW:
-                show_requested ();
+                show_toggle_requested ();
                 break;
             case ID_NOTIFY:
                 notifications_toggle_requested (!notifications_on);
@@ -233,9 +245,10 @@ namespace Dc {
         }
 
         /* Batch variants XFCE/KDE panels call instead of the singular
-           AboutToShow/Event that GNOME uses. The menu is static, so no item
-           ever needs updating and no event can fail: both error lists stay
-           empty and EventGroup just fans out to the existing event handler. */
+           AboutToShow/Event that GNOME uses. Menu changes are pushed through
+           LayoutUpdated, so nothing needs refreshing here and no event can
+           fail: both error lists stay empty and EventGroup just fans out to
+           the existing event handler. */
         public void about_to_show_group (int32[] ids,
                                          out int32[] updates_needed,
                                          out int32[] id_errors) throws GLib.Error {
@@ -272,6 +285,8 @@ namespace Dc {
 
         public signal void show_on_current_desktop_requested (
             string? activation_token);
+        public signal void window_toggle_requested (
+            string? activation_token);
         public signal void quit_requested ();
         public signal void notifications_toggle_requested (bool enabled);
 
@@ -280,7 +295,7 @@ namespace Dc {
             item = new StatusNotifierItem ();
             menu = new TrayMenu ();
             item.activate_requested.connect (request_show_on_current_desktop);
-            menu.show_requested.connect (request_show_on_current_desktop);
+            menu.show_toggle_requested.connect (request_window_toggle);
             menu.quit_requested.connect (() => {
                 emit_on_main (() => { quit_requested (); });
             });
@@ -298,6 +313,13 @@ namespace Dc {
             });
         }
 
+        private void request_window_toggle () {
+            string? token = item.take_activation_token ();
+            emit_on_main (() => {
+                window_toggle_requested (token);
+            });
+        }
+
         private void emit_on_main (owned VoidFunc action) {
             Idle.add (() => {
                 action ();
@@ -307,6 +329,10 @@ namespace Dc {
 
         public void set_notifications_enabled (bool enabled) {
             menu.set_notifications_enabled (enabled);
+        }
+
+        public void set_window_visible (bool window_visible) {
+            menu.set_window_visible (window_visible);
         }
 
         public bool show () {

@@ -207,6 +207,11 @@ namespace Dc {
                is on (like Discord/Telegram), not just while minimized. */
             settings.notify["minimize-to-tray"].connect (sync_tray);
 
+            /* Keep the tray menu's show/minimize label matching the window. */
+            this.notify["visible"].connect (() => {
+                if (tray != null) tray.set_window_visible (this.visible);
+            });
+
             /* Defer until the main loop — the tray's D-Bus connection and the
                application property aren't ready during construct. */
             Idle.add (() => {
@@ -316,6 +321,8 @@ namespace Dc {
                 tray = new TrayIcon (conn);
                 tray.show_on_current_desktop_requested.connect (
                     show_from_tray_on_current_desktop);
+                tray.window_toggle_requested.connect (
+                    toggle_window_from_tray);
                 tray.quit_requested.connect (() => {
                     handle_primary_q ();
                 });
@@ -325,6 +332,7 @@ namespace Dc {
             }
             if (tray == null) return false;
             tray.set_notifications_enabled (settings.notifications_enabled);
+            tray.set_window_visible (this.visible);
             return tray.show ();
         }
 
@@ -347,6 +355,16 @@ namespace Dc {
         public void restore_from_tray () {
             release_background_hold ();
             this.present ();
+        }
+
+        /* The menu item toggles on the real window state, not the label the
+           menu happens to show, so a stale label still does the right thing. */
+        private void toggle_window_from_tray (string? activation_token) {
+            if (this.visible) {
+                minimize_to_tray ();
+                return;
+            }
+            show_from_tray_on_current_desktop (activation_token);
         }
 
         private void show_from_tray_on_current_desktop (
