@@ -104,6 +104,7 @@ sources = files(
   'src/chat_info_dialog.vala',
   'src/sticker_store.vala',
   'src/sticker_manager_dialog.vala',
+  'src/sticker_picker.vala',
   'src/contact_picker_dialog.vala',
   'src/new_group_dialog.vala',
   'src/settings_dialog.vala',

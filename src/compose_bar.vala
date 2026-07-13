@@ -24,6 +24,8 @@ namespace Dc {
         private const string EMOJI_TRIGGER_END_MARK = "parla-emoji-trigger-end";
         private Gtk.Button cancel_attach_button;
         private Gtk.Button cancel_edit_button;
+        private Gtk.Stack send_stack;
+        private Gtk.MenuButton sticker_button;
         private Gtk.Label reply_label;
         private Gtk.Box reply_bar;
         private Gtk.Box attachment_bar;
@@ -210,6 +212,7 @@ namespace Dc {
 
             text_view.buffer.changed.connect (() => {
                 update_placeholder ();
+                update_send_stack ();
                 notify_draft_changed ();
                 update_mention_popup ();
             });
@@ -260,7 +263,25 @@ namespace Dc {
             send_button.tooltip_text = "Send message";
             send_button.valign = Gtk.Align.CENTER;
             send_button.clicked.connect (on_send);
-            input_row.append (send_button);
+
+            sticker_button = new Gtk.MenuButton ();
+            sticker_button.icon_name = "sticker-symbolic";
+            sticker_button.add_css_class ("flat");
+            sticker_button.add_css_class ("circular");
+            sticker_button.tooltip_text = "Send a sticker";
+            sticker_button.valign = Gtk.Align.CENTER;
+            var sticker_picker = new StickerPicker ();
+            sticker_picker.sticker_picked.connect (on_sticker_picked);
+            sticker_button.popover = sticker_picker;
+
+            /* While the message is empty there is nothing to send, so the
+               send slot offers the sticker picker instead. */
+            send_stack = new Gtk.Stack ();
+            send_stack.valign = Gtk.Align.CENTER;
+            send_stack.add_named (send_button, "send");
+            send_stack.add_named (sticker_button, "sticker");
+            input_row.append (send_stack);
+            update_send_stack ();
 
             append (input_row);
 
@@ -533,6 +554,27 @@ namespace Dc {
             placeholder_label.visible = text_view.buffer.get_char_count () == 0;
         }
 
+        /* The sticker picker sits in the send slot only while there is
+           nothing to send: no text, no attachment and no edit going on. */
+        private void update_send_stack () {
+            if (send_stack == null) return;
+            bool idle = text_view.buffer.get_char_count () == 0
+                && pending_file == null && editing_msg_id == 0;
+            send_stack.visible_child_name = idle ? "sticker" : "send";
+        }
+
+        private void on_sticker_picked (Sticker sticker) {
+            if (editing_msg_id > 0) return;
+            int qid = replying_msg_id;
+            send_message ("", StickerStore.sticker_path (sticker.file_name),
+                sticker.display_name, qid);
+            suppress_draft_signal = true;
+            cancel_reply ();
+            suppress_draft_signal = false;
+            notify_draft_changed ();
+            text_view.grab_focus ();
+        }
+
         private void set_entry_active (bool active) {
             if (active) {
                 text_view.add_css_class ("compose-entry-active");
@@ -569,6 +611,7 @@ namespace Dc {
                 attachment_bar.visible = true;
             }
             cancel_attach_button.visible = true;
+            update_send_stack ();
             notify_draft_changed ();
         }
 
@@ -689,6 +732,7 @@ namespace Dc {
             attachment_name_label.label = "";
             attachment_meta_label.label = "";
             placeholder_label.label = placeholder_default;
+            update_send_stack ();
             notify_draft_changed ();
         }
 
@@ -758,6 +802,7 @@ namespace Dc {
             placeholder_label.label = "Edit message…";
             cancel_edit_button.visible = true;
             attach_button.sensitive = false;
+            update_send_stack ();
             text_view.grab_focus ();
             Gtk.TextIter end_iter;
             text_view.buffer.get_end_iter (out end_iter);
@@ -781,6 +826,7 @@ namespace Dc {
             attach_button.sensitive = true;
             restore_suspended_draft ();
             suppress_draft_signal = false;
+            update_send_stack ();
             notify_draft_changed ();
         }
 

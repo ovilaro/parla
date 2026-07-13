@@ -255,7 +255,7 @@ namespace Dc {
 
             var thumb = sticker_thumbnail (
                 StickerStore.sticker_path (sticker.file_name),
-                int.max (1, app_window.get_scale_factor ()));
+                int.max (1, app_window.get_scale_factor ()), THUMB_SIZE);
             thumb.halign = Gtk.Align.CENTER;
             thumb.margin_top = 8;
             thumb.margin_start = 8;
@@ -283,48 +283,6 @@ namespace Dc {
             });
             card.add_controller (click);
             return card;
-        }
-
-        private static Gtk.Widget sticker_thumbnail (string path,
-                                                     int scale_factor) {
-            if (path.down ().has_suffix (".webm")) {
-                /* Not played, so the paintable stays on the first frame */
-                var media = Gtk.MediaFile.for_filename (path);
-                media.set_muted (true);
-                return thumb_picture (media);
-            }
-            try {
-                /* PixbufAnimation copes with animated GIF/WebP, where
-                   Pixbuf.from_file_at_scale refuses multi-frame files.
-                   The texture is kept at device resolution (never
-                   upscaled), so HiDPI displays stay sharp. */
-                var anim = new Gdk.PixbufAnimation.from_file (path);
-                var frame = anim.get_static_image ();
-                int target = THUMB_SIZE * scale_factor;
-                double scale = double.min (1.0, double.min (
-                    (double) target / frame.width,
-                    (double) target / frame.height));
-                if (scale < 1.0) {
-                    frame = frame.scale_simple (
-                        int.max (1, (int) (frame.width * scale + 0.5)),
-                        int.max (1, (int) (frame.height * scale + 0.5)),
-                        Gdk.InterpType.BILINEAR);
-                }
-                return thumb_picture (texture_from_pixbuf (frame));
-            } catch (Error e) {
-                var icon = new Gtk.Image.from_icon_name (
-                    "image-x-generic-symbolic");
-                icon.pixel_size = 32;
-                icon.set_size_request (THUMB_SIZE, THUMB_SIZE);
-                return icon;
-            }
-        }
-
-        private static Gtk.Picture thumb_picture (Gdk.Paintable paintable) {
-            var picture = new Gtk.Picture.for_paintable (paintable);
-            picture.content_fit = Gtk.ContentFit.CONTAIN;
-            picture.set_size_request (THUMB_SIZE, THUMB_SIZE);
-            return picture;
         }
 
         private void pick_emoji (Sticker sticker, Gtk.Button btn) {
