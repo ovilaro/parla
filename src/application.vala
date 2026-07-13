@@ -484,7 +484,6 @@ namespace Dc {
                 padding: 4px 8px;
             }
             .compose-entry {
-                min-height: 36px;
                 border-radius: 18px;
                 transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
             }

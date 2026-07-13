@@ -176,8 +176,10 @@ namespace Dc {
             text_view = new Gtk.TextView ();
             text_view.wrap_mode = Gtk.WrapMode.WORD_CHAR;
             text_view.accepts_tab = false;
-            text_view.top_margin = 7;
-            text_view.bottom_margin = 3;
+            /* Symmetric margins define the pill height (no CSS min-height),
+               so the text is always vertically centered. */
+            text_view.top_margin = 8;
+            text_view.bottom_margin = 8;
             text_view.left_margin = 12;
             text_view.right_margin = 12;
             text_view.pixels_above_lines = 0;
@@ -195,7 +197,7 @@ namespace Dc {
             placeholder_label.halign = Gtk.Align.START;
             placeholder_label.valign = Gtk.Align.START;
             placeholder_label.margin_start = 12;
-            placeholder_label.margin_top = 7;
+            placeholder_label.margin_top = 8;
             placeholder_label.can_target = false;
             placeholder_label.ellipsize = Pango.EllipsizeMode.END;
 
