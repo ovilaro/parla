@@ -349,25 +349,26 @@ namespace Dc {
         public async int send_msg (int chat_id, string? text,
                                     string? file_path = null,
                                     string? file_name = null,
-                                    int quoted_msg_id = 0) throws Error {
+                                    int quoted_msg_id = 0,
+                                    string? view_type = null) throws Error {
             var p = Params.begin ()
                 .add_int (account_id)
                 .add_int (chat_id)
-                .add_string (text)
-                .add_string (file_path)
-                .add_string (file_name)
-                .add_null ();               /* location */
-            if (quoted_msg_id > 0) p.add_int (quoted_msg_id);
-            else p.add_null ();
-            var result = yield call ("misc_send_msg", p.build ());
-            /* Returns [messageId, ...] */
-            if (result != null && result.get_node_type () == Json.NodeType.ARRAY) {
-                var arr = result.get_array ();
-                if (arr.get_length () > 0) {
-                    return (int) arr.get_int_element (0);
-                }
+                .begin_object ()
+                .set_string_member ("text", text)
+                .set_string_member ("file", file_path)
+                .set_string_member ("filename", file_name)
+                /* MessageData spells this field without an underscore, so
+                   its JSON name is `viewtype`, not `viewType`. */
+                .set_string_member ("viewtype", view_type);
+            if (quoted_msg_id > 0) {
+                p.set_int_member ("quotedMessageId", quoted_msg_id);
+            } else {
+                p.set_null_member ("quotedMessageId");
             }
-            return 0;
+            p.end_object ();
+            var result = yield call ("send_msg", p.build ());
+            return result != null ? (int) result.get_int () : 0;
         }
 
         public async Message? get_draft (int chat_id) throws Error {

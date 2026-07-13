@@ -74,6 +74,12 @@ namespace Dc {
             return this;
         }
 
+        public Params set_int_member (string name, int value) {
+            b.set_member_name (name);
+            b.add_int_value (value);
+            return this;
+        }
+
         public Params set_null_member (string name) {
             b.set_member_name (name);
             b.add_null_value ();

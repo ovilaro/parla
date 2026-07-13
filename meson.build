@@ -83,6 +83,7 @@ sources = files(
   'src/window.vala',
   'src/rpc_transport.vala',
   'src/rpc_params.vala',
+  'src/attachment_types.vala',
   'src/rpc_parsers.vala',
   'src/rpc_client.vala',
   'src/account_finder.vala',
@@ -182,3 +183,12 @@ mentions_test = executable(
 )
 
 test('mentions', mentions_test)
+
+attachment_types_test = executable(
+  'attachment-types-test',
+  files('tests/attachment_types_test.vala', 'src/attachment_types.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0')],
+  install: false,
+)
+
+test('attachment-types', attachment_types_test)

@@ -1353,9 +1353,11 @@ namespace Dc {
                                     string? file_name, int quote_msg_id) {
             try {
                 string? send_text = text.length > 0 ? text : null;
+                string? view_type = AttachmentTypes.infer_outgoing_view_type (
+                    file_path, file_name);
                 int msg_id = yield rpc.send_msg (chat_id,
                                                   send_text, file_path, file_name,
-                                                  quote_msg_id);
+                                                  quote_msg_id, view_type);
                 if (msg_id > 0) {
                     var msg = yield rpc.fetch_message (msg_id);
                     if (msg != null) {
@@ -1412,7 +1414,11 @@ namespace Dc {
                         has_text ? text : null,
                         has_file ? file_path : null,
                         has_file ? file_name : null,
-                        quote_msg_id);
+                        quote_msg_id,
+                        has_file
+                            ? AttachmentTypes.infer_outgoing_view_type (
+                                file_path, file_name)
+                            : null);
                 }
                 window.request_reload_chats ();
             } catch (Error e) {

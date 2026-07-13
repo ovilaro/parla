@@ -18,3 +18,4 @@ dist/appimage/tools/
 dist/release/
 src/config.vala
 .codex/
+scripts/stickers/.tools/
