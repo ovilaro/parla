@@ -186,6 +186,11 @@ copy_dir "$BREW_PREFIX/lib/gio/modules" "$RESOURCES/lib/gio/modules"
 rm -f "$RESOURCES/lib/gio/modules/giomodule.cache"
 copy_dir "$BREW_PREFIX/lib/gdk-pixbuf-2.0" "$RESOURCES/lib/gdk-pixbuf-2.0"
 copy_dir "$BREW_PREFIX/lib/gtk-4.0" "$RESOURCES/lib/gtk-4.0"
+webp_loader="$RESOURCES/lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-webp.so"
+if [ ! -f "$webp_loader" ]; then
+    echo "error: WebP pixbuf loader is missing; install webp-pixbuf-loader" >&2
+    exit 1
+fi
 if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
     copy_file "$(command -v gdk-pixbuf-query-loaders)" "$RESOURCES/bin/gdk-pixbuf-query-loaders"
 fi
@@ -278,6 +283,16 @@ bundle_macho() {
 while IFS= read -r -d '' file; do
     bundle_macho "$file"
 done < <(find "$APP_DIR" -type f -print0)
+
+if ! find "$FRAMEWORKS" -maxdepth 1 -type f -name 'libwebp*.dylib' \
+    -print -quit | grep -q .; then
+    echo "error: bundled WebP pixbuf loader has no libwebp runtime" >&2
+    exit 1
+fi
+if otool -L "$webp_loader" | grep -qE "$BREW_PREFIX|/usr/local"; then
+    echo "error: bundled WebP pixbuf loader still references Homebrew" >&2
+    exit 1
+fi
 
 if command -v gio-querymodules >/dev/null 2>&1 && [ -d "$RESOURCES/lib/gio/modules" ]; then
     gio-querymodules "$RESOURCES/lib/gio/modules"

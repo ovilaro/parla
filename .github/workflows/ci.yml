@@ -142,6 +142,7 @@ jobs:
             libadwaita \
             json-glib \
             librsvg \
+            webp-pixbuf-loader \
             glib-networking \
             adwaita-icon-theme \
             create-dmg
@@ -196,6 +197,7 @@ jobs:
             mingw-w64-ucrt-x86_64-glib-networking
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
             mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-webp-pixbuf-loader
             mingw-w64-ucrt-x86_64-ntldd
 
       - name: Build and bundle

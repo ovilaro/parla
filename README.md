@@ -112,7 +112,7 @@ make run
 <summary>macOS</summary>
 
 ```sh
-brew install meson ninja vala pkgconf gtk4 libadwaita json-glib librsvg glib-networking adwaita-icon-theme create-dmg
+brew install meson ninja vala pkgconf gtk4 libadwaita json-glib librsvg webp-pixbuf-loader glib-networking adwaita-icon-theme create-dmg
 
 # Install the RPC backend for source builds.
 pip install deltachat-rpc-server
@@ -138,7 +138,8 @@ pacman -S zip mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-meson \
   mingw-w64-ucrt-x86_64-vala mingw-w64-ucrt-x86_64-gtk4 \
   mingw-w64-ucrt-x86_64-libadwaita mingw-w64-ucrt-x86_64-json-glib \
   mingw-w64-ucrt-x86_64-glib-networking mingw-w64-ucrt-x86_64-adwaita-icon-theme \
-  mingw-w64-ucrt-x86_64-librsvg mingw-w64-ucrt-x86_64-ntldd
+  mingw-w64-ucrt-x86_64-librsvg mingw-w64-ucrt-x86_64-webp-pixbuf-loader \
+  mingw-w64-ucrt-x86_64-ntldd
 
 bash scripts/windows/bundle.sh   # creates dist/windows/parla-<version>-windows-<arch>.zip
 ```

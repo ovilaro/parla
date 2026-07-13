@@ -47,6 +47,16 @@ cp "$PREFIX/bin/gdbus.exe" \
 # bin/../lib layout is preserved.
 mkdir -p "$DIST/lib"
 cp -r "$PREFIX/lib/gdk-pixbuf-2.0" "$DIST/lib/"
+webp_loader="$DIST/lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-webp.dll"
+if [ ! -f "$webp_loader" ]; then
+    echo "error: WebP pixbuf loader is missing; install the MSYS2 webp-pixbuf-loader package" >&2
+    exit 1
+fi
+pixbuf_cache="$DIST/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+if [ ! -f "$pixbuf_cache" ] || ! grep -qi 'pixbufloader-webp' "$pixbuf_cache"; then
+    echo "error: GdkPixbuf loader cache does not register WebP" >&2
+    exit 1
+fi
 
 # GIO modules: libgiognutls provides TlsClientConnection, which the
 # rpc-server download uses for HTTPS. Without it TLS just "is not
@@ -68,6 +78,12 @@ find "$DIST" \( -iname '*.exe' -o -iname '*.dll' \) -print0 \
             cp "$PREFIX/bin/$dll" "$BIN/"
         fi
     done
+
+if ! find "$BIN" -maxdepth 1 -type f -iname 'libwebp*.dll' \
+    -print -quit | grep -q .; then
+    echo "error: bundled WebP pixbuf loader has no libwebp runtime" >&2
+    exit 1
+fi
 
 # GSettings schemas: GTK aborts on startup paths that touch
 # org.gtk.gtk4.Settings.* when the compiled schemas are missing.

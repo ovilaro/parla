@@ -26,6 +26,9 @@ vector based, but at least it's not a full new image for each frame and not
 limited to 256 colors of the GIF, buuuut the vp9 renderers of ffmpeg do not
 supporta alpha background, so they look with an ugly black square background.
 
+In macOS you will need to install `brew install webp-pixbuf-loader` to render
+the WebP stickers.
+
 ## Download a Telegram pack
 
 Create any Telegram bot with
