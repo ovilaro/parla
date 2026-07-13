@@ -661,12 +661,12 @@ namespace Dc {
                 border-radius: 4px;
             }
             .quote-sender {
-                font-size: small;
+                font-size: 0.85em;
                 font-weight: bold;
                 color: @accent_color;
             }
             .quote-text {
-                font-size: small;
+                font-size: 0.85em;
                 opacity: 0.75;
             }
             .reply-bar {
@@ -677,7 +677,7 @@ namespace Dc {
                 border-radius: 4px;
             }
             .reply-label {
-                font-size: small;
+                font-size: 0.85em;
                 opacity: 0.8;
             }
             .pinned-bar {
