@@ -274,6 +274,9 @@ namespace Dc {
         private const string[] IMAGE_EXTENSIONS = {
             ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"
         };
+        private const string[] STICKER_EXTENSIONS = {
+            ".gif", ".webp"
+        };
         private const string[] VIDEO_EXTENSIONS = {
             ".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".ogv", ".3gp", ".wmv", ".flv"
         };
@@ -369,6 +372,14 @@ namespace Dc {
             return has_mime ("image/")
                 || view_type_is ("image", "gif", "sticker")
                 || path_has_suffix (IMAGE_EXTENSIONS);
+        }
+
+        /** GIF/WebP attachments render as stickers, animated when enabled. */
+        public bool is_sticker_file () {
+            return has_mime ("image/gif")
+                || has_mime ("image/webp")
+                || view_type_is ("sticker", "gif")
+                || path_has_suffix (STICKER_EXTENSIONS);
         }
 
         public bool is_video_file () {

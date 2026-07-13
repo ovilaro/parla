@@ -179,10 +179,12 @@ namespace Dc {
             native_file_drop_target = new NativeFileDropTarget (this);
             native_file_drop_target.path_dropped.connect (handle_native_file_drop);
             MessageRow.style = settings.message_style;
+            MessageRow.animate_stickers = settings.animate_stickers;
             apply_current_appearance ();
 
             settings.appearance_changed.connect (() => {
                 MessageRow.style = settings.message_style;
+                MessageRow.animate_stickers = settings.animate_stickers;
                 apply_current_appearance ();
                 rebuild_current_chat_view ();
             });

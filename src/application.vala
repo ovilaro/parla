@@ -444,6 +444,12 @@ namespace Dc {
                 opacity: 0.9;
             }
             .message-image { border-radius: 12px; margin-top: 4px; }
+            .message-sticker { margin-top: 4px; }
+            .message-bubble.sticker.incoming,
+            .message-bubble.sticker.outgoing {
+                background-color: transparent;
+                padding: 4px 0;
+            }
             .message-video-frame {
                 border-radius: 12px;
                 margin-top: 4px;

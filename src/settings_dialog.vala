@@ -76,6 +76,7 @@ namespace Dc {
         public bool show_notification_contents { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
+        public bool animate_stickers { get; set; default = true; }
         public string rpc_server_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public bool rpc_check_updates_on_startup { get; set; default = true; }
@@ -138,6 +139,7 @@ namespace Dc {
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
+            animate_stickers = kf_bool (kf, "animate_stickers", true);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
             int source = kf_enum (kf, "rpc_server_source",
                                   (int) RpcServerSource.AUTO, 1);
@@ -243,6 +245,12 @@ namespace Dc {
             system_audio_player = v;
             AudioPlayer.prefer_system = v;
             save_bool ("system_audio_player", v);
+        }
+
+        public void save_animate_stickers (bool v) {
+            animate_stickers = v;
+            save_bool ("animate_stickers", v);
+            appearance_changed ();
         }
 
         public void save_rpc_server_path (string v) {
@@ -754,9 +762,20 @@ namespace Dc {
 
             load_proxy_settings.begin ();
 
+            var sticker_row = action_row (
+                "Sticker animations",
+                "Play GIF and WebP attachments as animated stickers");
+            var sticker_switch = row_switch (
+                sticker_row, app_window.settings.animate_stickers);
+            sticker_switch.notify["active"].connect (() => {
+                app_window.settings.save_animate_stickers (
+                    sticker_switch.active);
+            });
+
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
             advanced_list.append (audio_row);
+            advanced_list.append (sticker_row);
 
             var chatmail_list = settings_list ("Chatmail");
 

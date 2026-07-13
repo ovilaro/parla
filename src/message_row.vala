@@ -70,12 +70,66 @@ namespace Dc {
     }
 
     /**
+     * Steps a Gtk.Picture through a Gdk.PixbufAnimation while the picture is
+     * mapped. Frame delays come from the animation itself; the timer stops
+     * whenever the widget leaves the visible tree, so off-screen stickers
+     * cost nothing. Owned by the picture via object data (see
+     * MessageRow.load_sticker), which keeps it alive exactly as long as the
+     * widget.
+     */
+    internal class StickerAnimation : Object {
+        private Gdk.PixbufAnimation animation;
+        private Gdk.PixbufAnimationIter? iter = null;
+        private uint timeout_id = 0;
+        private unowned Gtk.Picture picture;
+
+        public StickerAnimation (Gtk.Picture picture,
+                                 Gdk.PixbufAnimation animation) {
+            this.picture = picture;
+            this.animation = animation;
+            picture.paintable = texture_from_pixbuf (
+                animation.get_static_image ());
+            picture.map.connect (on_map);
+            picture.unmap.connect (on_unmap);
+        }
+
+        private void on_map () {
+            if (iter == null) iter = animation.get_iter (null);
+            show_current_frame ();
+            schedule_next_frame ();
+        }
+
+        private void on_unmap () {
+            if (timeout_id != 0) {
+                Source.remove (timeout_id);
+                timeout_id = 0;
+            }
+        }
+
+        private void show_current_frame () {
+            picture.paintable = texture_from_pixbuf (iter.get_pixbuf ());
+        }
+
+        private void schedule_next_frame () {
+            int delay = iter.get_delay_time ();
+            if (delay < 0) return; /* single frame or end of animation */
+            timeout_id = Timeout.add (int.max (delay, 20), () => {
+                iter.advance (null);
+                show_current_frame ();
+                schedule_next_frame ();
+                return Source.REMOVE;
+            });
+        }
+    }
+
+    /**
      * A single message bubble in the conversation view.
      * Incoming messages are left-aligned, outgoing messages right-aligned.
      */
     public class MessageRow : Gtk.Box {
 
         public static MessageStyle style = MessageStyle.BUBBLES;
+        public static bool animate_stickers = true;
         public static string? self_display_name = null;
         public static string? self_avatar_path = null;
         private static double media_scale = 1.0;
@@ -293,6 +347,14 @@ namespace Dc {
             bubble.add_css_class ("message-bubble");
             bubble.add_css_class (outgoing ? "outgoing" : "incoming");
             bubble.valign = Gtk.Align.START;
+
+            /* Sticker-only messages drop the bubble chrome so the sticker
+               stands on its own; a caption or quote keeps the bubble. */
+            if (msg.is_image_only && msg.has_local_file
+                && msg.is_sticker_file ()
+                && (msg.quote_text == null || msg.quote_text.length == 0)) {
+                bubble.add_css_class ("sticker");
+            }
 
             if (!msg.is_forwarded && !outgoing && show_sender_name) {
                 string? author = effective_author_name (msg);
@@ -571,8 +633,9 @@ namespace Dc {
         }
 
         private static void append_bubble_image (Gtk.Box bubble, Message msg) {
-            var image = load_picture (
-                msg.file_path, 400, 400, 260, 0);
+            var image = msg.is_sticker_file ()
+                ? load_sticker (msg.file_path)
+                : load_picture (msg.file_path, 400, 400, 260, 0);
             if (image == null) bubble.append (build_file_indicator (msg));
             else bubble.append (image);
         }
@@ -592,8 +655,9 @@ namespace Dc {
         }
 
         private static void append_irc_image (Gtk.Box strip, Message m) {
-            var picture = load_picture (
-                m.file_path, 260, 200, 0, 180);
+            var picture = m.is_sticker_file ()
+                ? load_sticker (m.file_path)
+                : load_picture (m.file_path, 260, 200, 0, 180);
             if (picture != null) {
                 picture.add_css_class ("message-image-irc");
                 picture.halign = Gtk.Align.START;
@@ -606,6 +670,54 @@ namespace Dc {
             }
         }
 
+        private const int STICKER_MAX = 200;
+
+        /**
+         * Load a GIF/WebP attachment as a sticker: natural size capped at
+         * STICKER_MAX in both dimensions, never upscaled, playing its
+         * animation while the "animate stickers" setting is on. Files with a
+         * single frame (or that the pixbuf loader cannot decode as an
+         * animation) fall back to a static sticker.
+         */
+        private static Gtk.Widget? load_sticker (string path) {
+            if (animate_stickers) {
+                try {
+                    var anim = new Gdk.PixbufAnimation.from_file (path);
+                    if (!anim.is_static_image ()) {
+                        int dw = anim.get_width ();
+                        int dh = anim.get_height ();
+                        if (dw > 0 && dh > 0) {
+                            double scale = double.min (1.0, double.min (
+                                (double) STICKER_MAX / dw,
+                                (double) STICKER_MAX / dh));
+                            dw = int.max (1, (int) (dw * scale + 0.5));
+                            dh = int.max (1, (int) (dh * scale + 0.5));
+
+                            var picture = new Gtk.Picture ();
+                            picture.set_data<StickerAnimation> (
+                                "parla-sticker-animation",
+                                new StickerAnimation (picture, anim));
+                            picture.content_fit = Gtk.ContentFit.CONTAIN;
+                            picture.can_shrink = true;
+                            picture.halign = Gtk.Align.FILL;
+                            picture.valign = Gtk.Align.FILL;
+
+                            var frame = new ScaledPreviewFrame (
+                                dw, dh, "message-sticker");
+                            frame.child = picture;
+                            frame.halign = Gtk.Align.START;
+                            frame.valign = Gtk.Align.START;
+                            return frame;
+                        }
+                    }
+                } catch (Error e) {
+                    stderr.printf ("  -> Sticker load failed: %s\n", e.message);
+                }
+            }
+            return load_picture (path, STICKER_MAX, STICKER_MAX, 0, 0,
+                                 "message-sticker");
+        }
+
         /**
          * Load a file into a Gtk.Picture sized to fit within (max_w, max_h)
          * preserving aspect, then optionally upscaled to (min_w, min_h).
@@ -613,7 +725,9 @@ namespace Dc {
          */
         private static Gtk.Widget? load_picture (string path,
                                                   int max_w, int max_h,
-                                                  int min_w, int min_h) {
+                                                  int min_w, int min_h,
+                                                  string css_class
+                                                      = "message-image") {
             try {
                 int dw, dh;
                 if (Gdk.Pixbuf.get_file_info (path, out dw, out dh) == null ||
@@ -631,7 +745,7 @@ namespace Dc {
                 picture.halign = Gtk.Align.FILL;
                 picture.valign = Gtk.Align.FILL;
 
-                var frame = new ScaledPreviewFrame (dw, dh, "message-image");
+                var frame = new ScaledPreviewFrame (dw, dh, css_class);
                 frame.child = picture;
                 frame.halign = Gtk.Align.START;
                 frame.valign = Gtk.Align.START;
