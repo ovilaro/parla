@@ -89,6 +89,14 @@ namespace Dc {
                 }));
             }
 
+            /* Collect sticker attachments into a local pack */
+            if (msg != null && msg.is_sticker_file () && msg.has_local_file) {
+                string spath = msg.file_path;
+                vbox.append (menu_button (popover, "Add Sticker…", () => {
+                    StickerManagerDialog.prompt_add_sticker (window, spath);
+                }));
+            }
+
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
             vbox.append (menu_button (popover, "Delete…", () => {

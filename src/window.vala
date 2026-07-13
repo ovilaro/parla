@@ -2035,6 +2035,7 @@ namespace Dc {
             window_action ("use-invite-link").activate.connect (() => { show_use_invite_link_dialog (); });
             window_action ("refresh").activate.connect (() => { load_chats.begin (); });
             window_action ("settings").activate.connect (() => { show_settings_dialog (); });
+            window_action ("stickers").activate.connect (() => { show_stickers_dialog (); });
             window_action ("shortcuts").activate.connect (() => { show_keyboard_shortcuts_dialog (); });
             window_action ("about").activate.connect (() => { show_about_dialog (); });
             window_action ("quit").activate.connect (() => { handle_primary_q (); });
@@ -2051,6 +2052,7 @@ namespace Dc {
             s1.append ("Use Invite Link", "win.use-invite-link");
             var s2 = new GLib.Menu ();
             s2.append ("Settings", "win.settings");
+            s2.append ("Stickers", "win.stickers");
             var s3 = new GLib.Menu ();
             s3.append ("Shortcuts", "win.shortcuts");
             s3.append ("About", "win.about");
@@ -2258,6 +2260,11 @@ namespace Dc {
                     add_btn.sensitive = entry.text.strip ().length > 0;
                 }
             }
+        }
+
+        private void show_stickers_dialog () {
+            if (active_modal != null) return;
+            present_modal (new StickerManagerDialog (this));
         }
 
         private void show_settings_dialog () {
