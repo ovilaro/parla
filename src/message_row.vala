@@ -24,6 +24,12 @@ namespace Dc {
             if (css_class != null) add_css_class (css_class);
         }
 
+        public void set_natural_size (int width, int height) {
+            natural_width = int.max (1, width);
+            natural_height = int.max (1, height);
+            queue_resize ();
+        }
+
         public override void dispose () {
             if (_child != null) {
                 _child.unparent ();
@@ -119,6 +125,61 @@ namespace Dc {
                 schedule_next_frame ();
                 return Source.REMOVE;
             });
+        }
+    }
+
+    /**
+     * Presents a WebM sticker as a muted, looping media paintable. Playback
+     * follows the picture's mapped state so stickers outside the viewport do
+     * not consume decoding resources.
+     */
+    internal class StickerVideoAnimation : Object {
+        private Gtk.MediaFile media;
+        private unowned Gtk.Picture picture;
+        private unowned ScaledPreviewFrame frame;
+        private bool animate;
+        private int max_size;
+
+        public StickerVideoAnimation (Gtk.Picture picture,
+                                      ScaledPreviewFrame frame,
+                                      string path,
+                                      bool animate,
+                                      int max_size) {
+            this.picture = picture;
+            this.frame = frame;
+            this.animate = animate;
+            this.max_size = max_size;
+
+            media = Gtk.MediaFile.for_filename (path);
+            media.set_loop (true);
+            media.set_muted (true);
+            picture.paintable = media;
+
+            media.notify["prepared"].connect (update_size);
+            update_size ();
+            picture.map.connect (on_map);
+            picture.unmap.connect (on_unmap);
+        }
+
+        private void update_size () {
+            int width = media.get_intrinsic_width ();
+            int height = media.get_intrinsic_height ();
+            if (width <= 0 || height <= 0) return;
+
+            double scale = double.min (1.0, double.min (
+                (double) max_size / width,
+                (double) max_size / height));
+            width = int.max (1, (int) (width * scale + 0.5));
+            height = int.max (1, (int) (height * scale + 0.5));
+            frame.set_natural_size (width, height);
+        }
+
+        private void on_map () {
+            if (animate) media.play ();
+        }
+
+        private void on_unmap () {
+            media.pause ();
         }
     }
 
@@ -581,7 +642,8 @@ namespace Dc {
         private void append_attachment (Gtk.Box box, Message msg, bool irc,
                                         GLib.GenericArray<Message>? trailing_images = null) {
             if (!msg.has_file) return;
-            if (msg.has_local_file && msg.is_image_file ()) {
+            if (msg.has_local_file
+                && (msg.is_sticker_file () || msg.is_image_file ())) {
                 if (irc) append_irc_images (box, msg, trailing_images);
                 else append_bubble_image (box, msg);
                 return;
@@ -634,7 +696,7 @@ namespace Dc {
 
         private static void append_bubble_image (Gtk.Box bubble, Message msg) {
             var image = msg.is_sticker_file ()
-                ? load_sticker (msg.file_path)
+                ? load_sticker (msg.file_path, msg.is_video_sticker_file ())
                 : load_picture (msg.file_path, 400, 400, 260, 0);
             if (image == null) bubble.append (build_file_indicator (msg));
             else bubble.append (image);
@@ -656,7 +718,7 @@ namespace Dc {
 
         private static void append_irc_image (Gtk.Box strip, Message m) {
             var picture = m.is_sticker_file ()
-                ? load_sticker (m.file_path)
+                ? load_sticker (m.file_path, m.is_video_sticker_file ())
                 : load_picture (m.file_path, 260, 200, 0, 180);
             if (picture != null) {
                 picture.add_css_class ("message-image-irc");
@@ -673,13 +735,17 @@ namespace Dc {
         private const int STICKER_MAX = 200;
 
         /**
-         * Load a GIF/WebP attachment as a sticker: natural size capped at
+         * Load a GIF/WebP/WebM attachment as a sticker: natural size capped at
          * STICKER_MAX in both dimensions, never upscaled, playing its
-         * animation while the "animate stickers" setting is on. Files with a
-         * single frame (or that the pixbuf loader cannot decode as an
-         * animation) fall back to a static sticker.
+         * animation while the "animate stickers" setting is on. WebM uses a
+         * muted looping media paintable; raster files with a single frame (or
+         * that cannot be decoded as an animation) fall back to a static
+         * sticker.
          */
-        private static Gtk.Widget? load_sticker (string path) {
+        private static Gtk.Widget? load_sticker (string path,
+                                                bool video = false) {
+            if (video) return load_video_sticker (path);
+
             if (animate_stickers) {
                 try {
                     var anim = new Gdk.PixbufAnimation.from_file (path);
@@ -716,6 +782,26 @@ namespace Dc {
             }
             return load_picture (path, STICKER_MAX, STICKER_MAX, 0, 0,
                                  "message-sticker");
+        }
+
+        private static Gtk.Widget load_video_sticker (string path) {
+            var picture = new Gtk.Picture ();
+            picture.content_fit = Gtk.ContentFit.CONTAIN;
+            picture.can_shrink = true;
+            picture.halign = Gtk.Align.FILL;
+            picture.valign = Gtk.Align.FILL;
+
+            var frame = new ScaledPreviewFrame (
+                STICKER_MAX, STICKER_MAX, "message-sticker");
+            frame.child = picture;
+            frame.halign = Gtk.Align.START;
+            frame.valign = Gtk.Align.START;
+
+            picture.set_data<StickerVideoAnimation> (
+                "parla-sticker-video-animation",
+                new StickerVideoAnimation (
+                    picture, frame, path, animate_stickers, STICKER_MAX));
+            return frame;
         }
 
         /**

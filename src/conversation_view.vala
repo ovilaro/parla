@@ -1538,7 +1538,9 @@ namespace Dc {
                 window.show_toast ("File not available");
                 return;
             }
-            if (msg.is_image_file ()) {
+            if (msg.is_video_sticker_file ()) {
+                window.show_video (msg.file_path, msg.file_name);
+            } else if (msg.is_image_file ()) {
                 string[] paths;
                 int start;
                 collect_image_paths (msg.file_path, out paths, out start);

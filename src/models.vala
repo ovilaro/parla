@@ -275,7 +275,7 @@ namespace Dc {
             ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"
         };
         private const string[] STICKER_EXTENSIONS = {
-            ".gif", ".webp"
+            ".gif", ".webp", ".webm"
         };
         private const string[] VIDEO_EXTENSIONS = {
             ".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".ogv", ".3gp", ".wmv", ".flv"
@@ -365,7 +365,10 @@ namespace Dc {
             get { return has_value (file_path) && FileUtils.test (file_path, FileTest.EXISTS); }
         }
         public bool is_image_only {
-            get { return !is_info && !has_text && has_value (file_path) && is_image_file (); }
+            get {
+                return !is_info && !has_text && has_value (file_path)
+                    && (is_image_file () || is_sticker_file ());
+            }
         }
 
         public bool is_image_file () {
@@ -374,12 +377,18 @@ namespace Dc {
                 || path_has_suffix (IMAGE_EXTENSIONS);
         }
 
-        /** GIF/WebP attachments render as stickers, animated when enabled. */
+        /** GIF/WebP/WebM attachments render as stickers when supported. */
         public bool is_sticker_file () {
             return has_mime ("image/gif")
                 || has_mime ("image/webp")
+                || has_mime ("video/webm")
                 || view_type_is ("sticker", "gif")
                 || path_has_suffix (STICKER_EXTENSIONS);
+        }
+
+        public bool is_video_sticker_file () {
+            return has_mime ("video/webm")
+                || path_has_suffix ({ ".webm" });
         }
 
         public bool is_video_file () {
