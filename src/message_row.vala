@@ -1010,10 +1010,10 @@ namespace Dc {
             if (Markdown.mode == MarkdownMode.ENABLED) {
                 var md_body = build_text_with_markdown_blocks (msg, max_width_chars);
                 body = md_body ?? build_markup_label (msg.text, max_width_chars,
-                    is_single_emoji_text (msg.text), mention_roster);
+                    emoji_only_count (msg.text), mention_roster);
             } else {
                 body = build_markup_label (msg.text, max_width_chars,
-                    is_single_emoji_text (msg.text), mention_roster);
+                    emoji_only_count (msg.text), mention_roster);
             }
 
             if (!msg.has_full_message_action && !msg.is_downloading_full_message) return body;
@@ -1046,7 +1046,7 @@ namespace Dc {
 
         private static Gtk.Label build_markup_label (string raw,
                                                      int max_width_chars,
-                                                     bool big_emoji = false,
+                                                     int emoji_count = 0,
                                                      MentionRoster? roster = null) {
             var text = new Gtk.Label (raw);
             try {
@@ -1064,7 +1064,8 @@ namespace Dc {
             text.wrap_mode = Pango.WrapMode.WORD_CHAR;
             text.halign = Gtk.Align.START; text.xalign = 0;
             text.selectable = true;
-            if (big_emoji) text.add_css_class ("message-big-emoji");
+            if (emoji_count == 1) text.add_css_class ("message-big-emoji");
+            else if (emoji_count == 2) text.add_css_class ("message-medium-emoji");
             if (max_width_chars > 0) text.max_width_chars = max_width_chars;
             connect_label_links (text);
             return text;
@@ -1154,7 +1155,7 @@ namespace Dc {
                                         int max_width_chars) {
             string text = join_lines (lines, start, end).strip ();
             if (text.length == 0) return;
-            body.append (build_markup_label (text, max_width_chars, false,
+            body.append (build_markup_label (text, max_width_chars, 0,
                                              mention_roster));
         }
 
@@ -1207,7 +1208,7 @@ namespace Dc {
             int label_width = max_width_chars > 0
                 ? int.max (1, max_width_chars - 4)
                 : max_width_chars;
-            var label = build_markup_label (content, label_width, false,
+            var label = build_markup_label (content, label_width, 0,
                                             mention_roster);
             label.valign = Gtk.Align.START;
             label.hexpand = true;
@@ -1359,14 +1360,31 @@ namespace Dc {
             return label;
         }
 
-        private static bool is_single_emoji_text (string? raw) {
-            if (raw == null) return false;
+        /** Number of emoji when the message is emoji-only (whitespace allowed
+            between them), 0 otherwise. */
+        private static int emoji_only_count (string? raw) {
+            if (raw == null) return 0;
             string text = raw.strip ();
-            if (text.length == 0) return false;
+            if (text.length == 0) return 0;
 
             int index = 0;
-            if (!consume_emoji_sequence (text, ref index)) return false;
-            return index == text.length;
+            int count = 0;
+            while (index < text.length) {
+                if (!consume_emoji_sequence (text, ref index)) return 0;
+                count++;
+                consume_whitespace (text, ref index);
+            }
+            return count;
+        }
+
+        private static void consume_whitespace (string text, ref int index) {
+            while (true) {
+                int next = index;
+                unichar c;
+                if (!text.get_next_char (ref next, out c)) return;
+                if (!c.isspace ()) return;
+                index = next;
+            }
         }
 
         private static bool consume_emoji_sequence (string text, ref int index) {

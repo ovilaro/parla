@@ -354,6 +354,9 @@ namespace Dc {
             .message-big-emoji {
                 font-size: 500%;
             }
+            .message-medium-emoji {
+                font-size: 300%;
+            }
             .message-irc {
                 padding: 1px 0;
             }
