@@ -12,8 +12,6 @@ namespace Dc {
         private bool _listening = false;
         private uint chats_reload_timer = 0;
         private uint messages_reload_timer = 0;
-        private HashTable<int, int> notification_refresh_generations;
-        private int next_notification_refresh_generation = 0;
         /* -1 means the notification server has not been queried yet. */
         private int notification_actions_supported = -1;
 
@@ -22,6 +20,9 @@ namespace Dc {
         public signal void chats_reload_fired ();
         public signal void messages_reload_fired ();
         public signal void incoming_msg_received (int acct_id, int chat_id, int msg_id);
+        public signal void incoming_reaction_received (int acct_id, int chat_id,
+                                                       int msg_id, int contact_id,
+                                                       string reaction);
         public signal void chat_messages_changed (int acct_id, int chat_id);
         public signal void account_unread_changed (int acct_id);
         public signal void contacts_changed (int acct_id);
@@ -31,8 +32,6 @@ namespace Dc {
 
         public EventHandler (RpcClient rpc) {
             this.rpc = rpc;
-            notification_refresh_generations =
-                new HashTable<int, int> (direct_hash, direct_equal);
         }
 
         public void set_app (GLib.Application a) { this.app = a; }
@@ -83,8 +82,33 @@ namespace Dc {
                         continue;
                     }
 
+                    /* Notification-driving events, handled identically for
+                       every account (docs/notifications.md T1, W1). */
+                    if (kind == "IncomingMsg") {
+                        incoming_msg_received (ctx,
+                            (int) event.get_int_member ("chatId"),
+                            (int) event.get_int_member ("msgId"));
+                        account_unread_changed (ctx);
+                        continue;
+                    }
+                    if (kind == "IncomingReaction") {
+                        incoming_reaction_received (ctx,
+                            (int) event.get_int_member ("chatId"),
+                            (int) event.get_int_member ("msgId"),
+                            (int) event.get_int_member ("contactId"),
+                            event.get_string_member ("reaction"));
+                        continue;
+                    }
+                    if (kind == "MsgsNoticed") {
+                        clear_notifications_for_chat (ctx,
+                            (int) event.get_int_member ("chatId"));
+                        account_unread_changed (ctx);
+                        if (ctx == rpc.account_id) schedule_chats_reload ();
+                        continue;
+                    }
+
                     if (ctx != rpc.account_id) {
-                        dispatch_background (ctx, kind, event);
+                        dispatch_background (ctx, kind);
                         continue;
                     }
                     dispatch (kind, event);
@@ -119,13 +143,6 @@ namespace Dc {
 
         private void dispatch (string kind, Json.Object event) {
             switch (kind) {
-            case "IncomingMsg":
-                int chat_id = (int) event.get_int_member ("chatId");
-                int msg_id = (int) event.get_int_member ("msgId");
-                incoming_msg_received (rpc.account_id, chat_id, msg_id);
-                account_unread_changed (rpc.account_id);
-                break;
-
             case "MsgsChanged":
                 int changed_chat = (int) event.get_int_member ("chatId");
                 chat_messages_changed (rpc.account_id, changed_chat);
@@ -147,13 +164,6 @@ namespace Dc {
                     schedule_messages_reload ();
                 }
                 if (kind == "MsgDeleted") account_unread_changed (rpc.account_id);
-                break;
-
-            case "MsgsNoticed":
-                int noticed_chat = (int) event.get_int_member ("chatId");
-                clear_notifications_for_chat (rpc.account_id, noticed_chat);
-                account_unread_changed (rpc.account_id);
-                schedule_chats_reload ();
                 break;
 
             case "ChatlistChanged":
@@ -189,25 +199,12 @@ namespace Dc {
             return (int) event.get_int_member ("chatId");
         }
 
-        /* Events arriving from an account other than the active one. We can't
-           touch the visible chat/message lists (they belong to the current
-           account), but we still want to notify and keep unread badges fresh. */
-        private void dispatch_background (int acct_id, string kind,
-                                          Json.Object event) {
+        /* Events from an account other than the active one. We can't touch
+           the visible chat/message lists (they belong to the current
+           account); notifications are handled before dispatch, so only the
+           unread badges need refreshing here. */
+        private void dispatch_background (int acct_id, string kind) {
             switch (kind) {
-            case "IncomingMsg":
-                int chat_id = (int) event.get_int_member ("chatId");
-                int msg_id = (int) event.get_int_member ("msgId");
-                incoming_msg_received (acct_id, chat_id, msg_id);
-                account_unread_changed (acct_id);
-                break;
-
-            case "MsgsNoticed":
-                int noticed_chat = (int) event.get_int_member ("chatId");
-                clear_notifications_for_chat (acct_id, noticed_chat);
-                account_unread_changed (acct_id);
-                break;
-
             case "MsgsChanged":
             case "MsgDeleted":
             case "ChatlistChanged":
@@ -222,82 +219,27 @@ namespace Dc {
             }
         }
 
-        public async void refresh_unread_notification (int acct_id,
-                                                       bool allow_send,
-                                                       bool show_contents) {
-            if (app == null) return;
-            int generation = begin_notification_refresh (acct_id);
-            try {
-                int[] fresh_ids = yield rpc.get_fresh_msg_ids (acct_id);
-                if (!is_current_notification_refresh (acct_id, generation)) return;
-                if (fresh_ids.length == 0) {
-                    withdraw_notification_id (notification_id (acct_id, 0));
-                    return;
-                }
-                if (!allow_send) return;
-
-                int chat_id = 0;
-                string title;
-                string body;
-                if (fresh_ids.length == 1) {
-                    var msg = yield rpc.fetch_message_for (acct_id, fresh_ids[0]);
-                    if (!is_current_notification_refresh (acct_id, generation)) return;
-                    if (msg == null) return;
-
-                    chat_id = msg.chat_id;
-                    title = msg.sender_name ?? msg.sender_address ?? "New message";
-                    try {
-                        var chat_obj = yield rpc.get_full_chat_by_id_for (acct_id, chat_id);
-                        if (chat_obj != null && chat_obj.has_member ("name")) {
-                            string chat_name = chat_obj.get_string_member ("name");
-                            if (chat_name != null && chat_name.length > 0
-                                && chat_name != title) {
-                                title = "%s (%s)".printf (title, chat_name);
-                            }
-                        }
-                    } catch (Error e) { /* fall back to sender */ }
-
-                    if (show_contents) {
-                        body = (msg.text != null && msg.text.length > 0) ? msg.text
-                            : (msg.file_name != null && msg.file_name.length > 0) ? msg.file_name
-                            : "New message";
-                    } else {
-                        body = "New message";
-                    }
-                } else {
-                    title = "%d unread messages".printf (fresh_ids.length);
-                    body = "Open Parla to read them";
-                }
-
-                /* Tag notifications from background accounts so the user can
-                   tell which profile they belong to. */
-                if (acct_id != rpc.account_id) {
-                    try {
-                        string? acct_name = yield rpc.get_config ("displayname", acct_id);
-                        if (acct_name == null || acct_name.length == 0) {
-                            acct_name = yield rpc.get_config ("addr", acct_id);
-                        }
-                        if (acct_name != null && acct_name.length > 0) {
-                            title = "[%s] %s".printf (acct_name, title);
-                        }
-                    } catch (Error e) { /* fall back to plain title */ }
-                }
-
-                var n = new GLib.Notification (title);
-                n.set_body (body);
-                n.set_priority (GLib.NotificationPriority.NORMAL);
-                set_open_chat_action (n, acct_id, chat_id);
-                if (!is_current_notification_refresh (acct_id, generation)) return;
-                app.send_notification (notification_id (acct_id, 0), n);
-            } catch (Error e) {
-                warning ("Failed to refresh unread notification: %s", e.message);
-            }
+        /* Show a banner for new activity in a chat. Uses a per-chat
+           notification id, so a newer banner for the same chat replaces the
+           previous one and MsgsNoticed withdraws exactly the chats the user
+           has read. chat_id 0 is the account-wide group banner.
+           Behavioral contract: docs/notifications.md */
+        public void send_chat_notification (int acct_id, int chat_id,
+                                            string title, string body) {
+            if (app == null || acct_id <= 0) return;
+            var n = new GLib.Notification (title);
+            n.set_body (body);
+            n.set_priority (GLib.NotificationPriority.NORMAL);
+            set_open_chat_action (n, acct_id, chat_id);
+            app.send_notification (notification_id (acct_id, chat_id), n);
         }
 
         public void clear_notifications_for_chat (int acct_id, int chat_id) {
             if (acct_id <= 0 || chat_id <= 0) return;
             withdraw_notification_id (notification_id (acct_id, chat_id));
             withdraw_notification_id (mention_notification_id (acct_id, chat_id));
+            /* The user is reading this account: retire its group banner too. */
+            withdraw_notification_id (notification_id (acct_id, 0));
         }
 
         /* Notify about a mention regardless of the chat's mute state — a
@@ -355,22 +297,6 @@ namespace Dc {
 
         private static string mention_notification_id (int acct_id, int chat_id) {
             return "dc-mention-%d-%d".printf (acct_id, chat_id);
-        }
-
-        private int begin_notification_refresh (int acct_id) {
-            if (acct_id <= 0) return 0;
-            next_notification_refresh_generation++;
-            if (next_notification_refresh_generation <= 0) {
-                next_notification_refresh_generation = 1;
-            }
-            notification_refresh_generations.insert (acct_id,
-                next_notification_refresh_generation);
-            return next_notification_refresh_generation;
-        }
-
-        private bool is_current_notification_refresh (int acct_id, int generation) {
-            return acct_id > 0 && generation > 0
-                && notification_refresh_generations.lookup (acct_id) == generation;
         }
 
         public async void reconcile_desktop_notifications () {

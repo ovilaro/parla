@@ -76,8 +76,10 @@ namespace Dc {
         }
 
         public bool is_chat_visible (int chat_id) {
-            if (chat_id <= 0 || chat_id != current_chat_id || !this.is_active)
-                return false;
+            if (chat_id <= 0 || chat_id != current_chat_id) return false;
+            /* Hidden in the tray or unfocused: the user cannot be reading
+               this chat, however recently it was active. */
+            if (!this.visible || !this.is_active) return false;
             if (split_view.collapsed && split_view.show_sidebar)
                 return false;
             return true;
@@ -90,8 +92,18 @@ namespace Dc {
         private EventHandler events;
         private ChatContextMenu chat_menu;
         private bool reconnecting_rpc = false;
-        private uint unread_notification_timer = 0;
-        private int[] pending_unread_notification_accounts = {};
+        /* New-message/reaction events waiting to be shown as notifications;
+           batched so a mailbox fetch produces one banner per chat. */
+        private class PendingNotification {
+            public int acct_id;
+            public int chat_id;
+            public int msg_id;
+            public int contact_id;   /* reaction sender, 0 for a message */
+            public string? reaction; /* reaction emoji, null for a message */
+        }
+        private GenericArray<PendingNotification> pending_notifications =
+            new GenericArray<PendingNotification> ();
+        private uint notification_flush_timer = 0;
         private int applied_media_font_size = -1;
 
         private const double FULL_SIDEBAR_MIN_WIDTH = 260;
@@ -769,12 +781,16 @@ namespace Dc {
             events.incoming_msg_received.connect ((acct_id, chat_id, msg_id) => {
                 on_incoming_msg.begin (acct_id, chat_id, msg_id);
             });
+            events.incoming_reaction_received.connect (
+                (acct_id, chat_id, msg_id, contact_id, reaction) => {
+                queue_chat_notification (acct_id, chat_id, msg_id,
+                                         contact_id, reaction);
+            });
             events.chat_messages_changed.connect ((acct_id, chat_id) => {
                 on_chat_messages_changed (acct_id, chat_id);
             });
             events.account_unread_changed.connect ((acct_id) => {
                 update_unread_indicators.begin ();
-                queue_unread_notification_refresh (acct_id);
             });
             events.contacts_changed.connect ((acct_id) => {
                 invalidate_all_mention_rosters ();
@@ -1360,7 +1376,6 @@ namespace Dc {
             if (events != null) {
                 events.clear_notifications_for_chat (rpc.account_id, chat_id);
             }
-            queue_unread_notification_refresh (rpc.account_id);
         }
 
         /* Drop the unseen-mention highlight for a chat the user is now reading,
@@ -1417,37 +1432,173 @@ namespace Dc {
             if (events != null) events.schedule_chats_reload ();
         }
 
-        private void queue_unread_notification_refresh (int acct_id) {
-            if (acct_id <= 0 || events == null || !settings.notifications_enabled)
+        /* Queue a notification for a new message or reaction: batch rapid
+           arrivals into one banner per chat and check the chat's mute state
+           when the batch is flushed. Behavioral contract: docs/notifications.md */
+        private void queue_chat_notification (int acct_id, int chat_id, int msg_id,
+                                              int contact_id = 0,
+                                              string? reaction = null) {
+            if (acct_id <= 0 || chat_id <= 0 || events == null
+                || !settings.notifications_enabled)
                 return;
+            /* The app is on screen and focused: the user already sees new
+               activity in the app (chat list and account badges), so no
+               desktop banner. Hidden, minimized or unfocused: notify. */
+            if (this.visible && this.is_active) return;
 
-            foreach (int pending in pending_unread_notification_accounts) {
-                if (pending == acct_id) return;
-            }
-            pending_unread_notification_accounts += acct_id;
+            var p = new PendingNotification ();
+            p.acct_id = acct_id;
+            p.chat_id = chat_id;
+            p.msg_id = msg_id;
+            p.contact_id = contact_id;
+            p.reaction = reaction;
+            pending_notifications.add (p);
 
-            if (unread_notification_timer > 0) return;
-            unread_notification_timer = Timeout.add (400, () => {
-                unread_notification_timer = 0;
-                int[] accounts = pending_unread_notification_accounts;
-                pending_unread_notification_accounts = {};
-
-                foreach (int id in accounts) {
-                    if (events == null || !settings.notifications_enabled) break;
-                    bool allow_send = id != rpc.account_id
-                        || !this.get_visible ()
-                        || !this.is_active;
-                    events.refresh_unread_notification.begin (id, allow_send,
-                        settings.show_notification_contents);
-                }
+            if (notification_flush_timer > 0) return;
+            notification_flush_timer = Timeout.add (400, () => {
+                notification_flush_timer = 0;
+                flush_chat_notifications.begin ();
                 return Source.REMOVE;
             });
+        }
+
+        private async void flush_chat_notifications () {
+            var items = pending_notifications;
+            pending_notifications = new GenericArray<PendingNotification> ();
+            if (events == null || !settings.notifications_enabled) return;
+
+            int[] acct_ids = {};
+            for (uint i = 0; i < items.length; i++) {
+                int acct_id = items.get (i).acct_id;
+                if (!has_int (acct_ids, acct_id)) acct_ids += acct_id;
+            }
+
+            foreach (int acct_id in acct_ids) {
+                var acct_items = new GenericArray<PendingNotification> ();
+                for (uint i = 0; i < items.length; i++) {
+                    var item = items.get (i);
+                    if (item.acct_id == acct_id) acct_items.add (item);
+                }
+                yield notify_account_items (acct_id, acct_items);
+            }
+        }
+
+        private async void notify_account_items (int acct_id,
+                GenericArray<PendingNotification> items) {
+            int[] chat_ids = {};
+            int messages = 0;
+            for (uint i = 0; i < items.length; i++) {
+                var item = items.get (i);
+                if (item.reaction == null) messages++;
+                if (!has_int (chat_ids, item.chat_id)) chat_ids += item.chat_id;
+            }
+
+            /* A storm across many chats (e.g. catching up after being
+               offline) collapses into one account-wide group banner. */
+            if (chat_ids.length > 3) {
+                string title = yield prefix_background_account (acct_id,
+                    "%d new messages".printf (messages));
+                events.send_chat_notification (acct_id, 0, title,
+                    "In %d chats".printf (chat_ids.length));
+                return;
+            }
+
+            foreach (int chat_id in chat_ids) {
+                var group = new GenericArray<PendingNotification> ();
+                for (uint i = 0; i < items.length; i++) {
+                    var item = items.get (i);
+                    if (item.chat_id == chat_id) group.add (item);
+                }
+                yield notify_chat_group (acct_id, chat_id, group);
+            }
+        }
+
+        private async void notify_chat_group (int acct_id, int chat_id,
+                GenericArray<PendingNotification> group) {
+            string? chat_name = null;
+            try {
+                var chat_obj = yield rpc.get_full_chat_by_id_for (acct_id, chat_id);
+                if (chat_obj != null) {
+                    /* Core emits IncomingMsg for muted chats too; official
+                       clients drop those at notification time (mentions in
+                       them are covered by the mention notification). */
+                    if (json_bool (chat_obj, "isMuted")) return;
+                    chat_name = json_str (chat_obj, "name");
+                }
+            } catch (Error e) { /* compose without chat info */ }
+
+            int messages = 0;
+            PendingNotification? msg_item = null;
+            for (uint i = 0; i < group.length; i++) {
+                if (group.get (i).reaction == null) {
+                    messages++;
+                    msg_item = group.get (i);
+                }
+            }
+
+            bool show = settings.show_notification_contents;
+            string title = chat_name ?? "New message";
+            string body = messages == 0 ? "New reaction" : "New message";
+            if (messages > 1) {
+                body = "%d new messages".printf (messages);
+            } else if (messages == 1 && show) {
+                try {
+                    var msg = yield rpc.fetch_message_for (acct_id,
+                                                           msg_item.msg_id);
+                    if (msg != null) {
+                        string sender = msg.sender_name
+                            ?? msg.sender_address ?? title;
+                        title = (chat_name != null && chat_name.length > 0
+                                 && chat_name != sender)
+                            ? "%s (%s)".printf (sender, chat_name) : sender;
+                        body = (msg.text != null && msg.text.length > 0)
+                            ? msg.text
+                            : (msg.file_name != null && msg.file_name.length > 0)
+                            ? msg.file_name : "New message";
+                    }
+                } catch (Error e) { /* keep the generic body */ }
+            } else if (messages == 0 && show) {
+                /* Only reactions: announce the latest one. */
+                var r = group.get (group.length - 1);
+                string reactor = "";
+                try {
+                    var c = yield rpc.get_contact_for (acct_id, r.contact_id);
+                    if (c != null) reactor = json_str (c, "displayName") ?? "";
+                } catch (Error e) { /* name is optional */ }
+                body = reactor.length > 0
+                    ? "%s reacted %s".printf (reactor, r.reaction)
+                    : "Reacted %s".printf (r.reaction);
+            }
+
+            title = yield prefix_background_account (acct_id, title);
+            events.send_chat_notification (acct_id, chat_id, title, body);
+        }
+
+        /* Tag notifications from background accounts so the user can tell
+           which profile they belong to. */
+        private async string prefix_background_account (int acct_id, string title) {
+            if (acct_id == rpc.account_id) return title;
+            try {
+                string? name = yield rpc.get_config ("displayname", acct_id);
+                if (name == null || name.length == 0)
+                    name = yield rpc.get_config ("addr", acct_id);
+                if (name != null && name.length > 0)
+                    return "[%s] %s".printf (name, title);
+            } catch (Error e) { /* fall back to the plain title */ }
+            return title;
+        }
+
+        private static bool has_int (int[] haystack, int needle) {
+            foreach (int x in haystack) {
+                if (x == needle) return true;
+            }
+            return false;
         }
 
         private async void on_incoming_msg (int acct_id, int chat_id, int msg_id) {
             check_mention.begin (acct_id, chat_id, msg_id);
             if (acct_id != rpc.account_id) {
-                queue_unread_notification_refresh (acct_id);
+                queue_chat_notification (acct_id, chat_id, msg_id);
                 update_unread_indicators.begin ();
                 return;
             }
@@ -1462,7 +1613,7 @@ namespace Dc {
                     request_messages_reload ();
                 }
             }
-            queue_unread_notification_refresh (acct_id);
+            queue_chat_notification (acct_id, chat_id, msg_id);
             request_reload_chats ();
         }
 
