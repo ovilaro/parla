@@ -2618,7 +2618,11 @@ namespace Dc {
                 settings.save_font_size (FONT_SIZE_SYSTEM);
                 return true;
             case Gdk.Key.f:
-                toggle_message_search ();
+                if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
+                    focus_contact_search ();
+                } else {
+                    toggle_message_search ();
+                }
                 return true;
             case Gdk.Key.k:
                 show_quick_switch_dialog ();
@@ -2714,6 +2718,19 @@ namespace Dc {
                 if (w is Gtk.Popover || w is Adw.Dialog) return true;
             }
             return false;
+        }
+
+        private void focus_contact_search () {
+            /* The entry is hidden in compact mode and the sidebar itself
+               may be hidden (or collapsed away on narrow widths); make
+               both visible before grabbing focus. */
+            if (settings.sidebar_mode != SidebarMode.FULL) {
+                settings.save_sidebar_mode (SidebarMode.FULL);
+                apply_sidebar_mode (true);
+            } else if (!split_view.show_sidebar) {
+                split_view.show_sidebar = true;
+            }
+            search_entry.grab_focus ();
         }
 
         private void toggle_message_search () {
@@ -2819,6 +2836,7 @@ namespace Dc {
             "Reset font size",        "<Primary>0",
             "Open chat info",        "<Primary>i",
             "Search in conversation","<Primary>f",
+            "Search contacts",       "<Primary><Shift>f",
             "Quick switch chat",     "<Primary>k",
             "Focus message entry",   "<Primary>l",
             "Account menu",          "<Primary><Shift>a",
