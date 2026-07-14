@@ -479,6 +479,34 @@ namespace Dc {
             search_entry.search_changed.connect (() => {
                 chat_listbox.invalidate_filter ();
             });
+            /* Return opens the first chat matching the search and puts the
+               caret in the message entry; Tab/Down move focus into the chat
+               list so it can be walked with the arrow keys. */
+            search_entry.activate.connect (() => {
+                var row = first_visible_chat_row ();
+                if (row == null) return;
+                var chat_row = row.child as ChatRow;
+                if (chat_row == null) return;
+                select_chat_by_id (chat_row.chat_id);
+                var v = current_view ();
+                if (v != null) v.focus_entry ();
+            });
+            var search_keys = new Gtk.EventControllerKey ();
+            search_keys.key_pressed.connect ((keyval, keycode, state) => {
+                if ((state & (Gdk.ModifierType.CONTROL_MASK |
+                              Gdk.ModifierType.SHIFT_MASK |
+                              Gdk.ModifierType.ALT_MASK)) != 0) return false;
+                if (keyval == Gdk.Key.Down || keyval == Gdk.Key.KP_Down ||
+                    keyval == Gdk.Key.Tab || keyval == Gdk.Key.KP_Tab) {
+                    var row = first_visible_chat_row ();
+                    if (row != null) {
+                        row.grab_focus ();
+                        return true;
+                    }
+                }
+                return false;
+            });
+            search_entry.add_controller (search_keys);
             sidebar_box.append (search_entry);
 
             /* Chat list */
@@ -502,6 +530,12 @@ namespace Dc {
                     var v = current_view ();
                     if (v != null && this.is_active) v.flush_pending_seen ();
                 }
+                /* Activation (Enter on the focused row, or a click) commits
+                   to the chat, so move the caret to the message entry; mere
+                   selection changes from arrowing the list keep the focus in
+                   the list. */
+                var view = current_view ();
+                if (view != null) view.focus_entry ();
             });
 
             /* Right-click context menu */
@@ -1246,6 +1280,21 @@ namespace Dc {
             return true;
         }
 
+        private bool chat_list_has_focus () {
+            var f = get_focus ();
+            return f != null && (f == chat_listbox || f.is_ancestor (chat_listbox));
+        }
+
+        private Gtk.ListBoxRow? first_visible_chat_row () {
+            int idx = 0;
+            Gtk.ListBoxRow? row;
+            while ((row = chat_listbox.get_row_at_index (idx)) != null) {
+                if (filter_chats (row)) return row;
+                idx++;
+            }
+            return null;
+        }
+
         private void on_chat_selected (Gtk.ListBoxRow? row) {
             if (suppress_chat_selection) return;
             if (row == null) return;
@@ -1255,6 +1304,14 @@ namespace Dc {
 
             int chat_id = chat_row.chat_id;
 
+            /* A selection change made while focus sits in the chat list is
+               the user arrowing through chats: show the chat but leave the
+               focus in the list so they can keep moving. Activating a row
+               (Enter or click) moves focus to the message entry instead.
+               In collapsed mode selecting always commits (the sidebar
+               closes), so keep grabbing the entry there. */
+            bool focus_compose = split_view.collapsed || !chat_list_has_focus ();
+
             if (chat_id == current_chat_id) {
                 if (suppress_reselect_scroll) return;
                 if (split_view.collapsed) {
@@ -1262,7 +1319,7 @@ namespace Dc {
                 }
                 var v = current_view ();
                 if (v != null) {
-                    v.on_reselected ();
+                    v.on_reselected (focus_compose);
                     if (this.is_active) v.flush_pending_seen ();
                 }
                 notice_chat.begin (chat_id);
@@ -1281,7 +1338,7 @@ namespace Dc {
             view.set_contact_request (entry != null && entry.is_contact_request);
 
             content_stack.visible_child_name = "chat_%d".printf (chat_id);
-            view.on_activated ();
+            view.on_activated (focus_compose);
 
             /* In narrow/mobile mode, hide the sidebar so the chat takes over */
             if (split_view.collapsed) {

@@ -691,7 +691,7 @@ namespace Dc {
          *  Public API (called by Window)
          * ================================================================ */
 
-        public void on_activated () {
+        public void on_activated (bool focus_compose = true) {
             if (!messages_loaded) {
                 messages_loaded = true;
                 load_messages.begin ();
@@ -702,12 +702,13 @@ namespace Dc {
                 draft_loaded = true;
                 load_draft.begin ();
             }
-            if (!is_contact_request && !selection_mode) compose_bar.grab_entry_focus ();
+            if (focus_compose && !is_contact_request && !selection_mode)
+                compose_bar.grab_entry_focus ();
         }
 
-        public void on_reselected () {
+        public void on_reselected (bool focus_compose = true) {
             scroll_to_bottom ();
-            if (!selection_mode) compose_bar.grab_entry_focus ();
+            if (focus_compose && !selection_mode) compose_bar.grab_entry_focus ();
         }
 
         public void attach_dropped_file_path (string path) {
