@@ -198,6 +198,11 @@ namespace Dc {
         if (!online) return avatar;
 
         var ring = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+        /* The ring's CSS background is circular only at its natural square
+           size.  Action rows and other list layouts can otherwise stretch a
+           fill-aligned Box along one axis, making the glow oval. */
+        ring.halign = Gtk.Align.CENTER;
+        ring.valign = Gtk.Align.CENTER;
         ring.add_css_class ("presence-avatar-ring");
         if (size <= 24) ring.add_css_class ("presence-avatar-ring-small");
         if (ring_css != null && ring_css.length > 0) {
