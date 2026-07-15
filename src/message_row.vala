@@ -59,6 +59,9 @@ namespace Dc {
                 int allocated_width = int.min (for_size, width);
                 int h = int.max (1,
                     (int) (((int64) height * allocated_width + width / 2) / width));
+                /* The frame must reserve its aspect-ratio height.  A
+                   one-pixel minimum lets GtkBox allocate a 1x1 preview,
+                   affecting both normal images and stickers. */
                 minimum = natural = h;
             } else {
                 minimum = 1;

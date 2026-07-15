@@ -57,6 +57,9 @@ namespace Dc {
         private string[] suspended_extra_draft_file_names = {};
         private int suspended_replying_msg_id = 0;
         private string suspended_reply_label = "";
+        /* Last natural height a resize was queued for; guards the
+           vadjustment-driven requeue below against self-feeding. */
+        private int entry_queued_height = -1;
 
         public ComposeBar () {
             Object (
@@ -238,15 +241,23 @@ namespace Dc {
                in the vadjustment's "upper", so whenever that settles on a
                new value force a revalidation (the measure) and requeue a
                resize — deferred to idle because the value changes during
-               allocation. */
+               allocation. The requeue must be conditional: the resize it
+               triggers makes the text view touch this adjustment again
+               during the next allocation, so requeueing unconditionally
+               locks the window into a permanent per-frame relayout loop
+               that repositions every open popover each frame and makes the
+               menus unclickable while a conversation is open. */
             var entry_vadj = new Gtk.Adjustment (0, 0, 0, 0, 0, 0);
             entry_vadj.notify["upper"].connect (() => {
                 GLib.Idle.add (() => {
-                    int b1, b2, b3, b4;
+                    int min_h, nat_h, b3, b4;
                     text_view.measure (Gtk.Orientation.VERTICAL,
                                        text_view.get_width (),
-                                       out b1, out b2, out b3, out b4);
-                    text_view.queue_resize ();
+                                       out min_h, out nat_h, out b3, out b4);
+                    if (nat_h != entry_queued_height) {
+                        entry_queued_height = nat_h;
+                        text_view.queue_resize ();
+                    }
                     return GLib.Source.REMOVE;
                 });
             });
