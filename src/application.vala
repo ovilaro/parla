@@ -684,6 +684,27 @@ namespace Dc {
                 background-color: alpha(@accent_bg_color, 0.08);
                 border-bottom: 1px solid alpha(@view_fg_color, 0.12);
             }
+            .conversation-media-bar {
+                background-color: alpha(@accent_bg_color, 0.14);
+                border-bottom: 1px solid alpha(@view_fg_color, 0.16);
+            }
+            .conversation-media-sender {
+                font-weight: bold;
+                font-size: small;
+            }
+            .conversation-media-sent {
+                font-size: x-small;
+                opacity: 0.62;
+            }
+            .conversation-media-time {
+                font-family: monospace;
+                font-size: small;
+                opacity: 0.78;
+            }
+            scale.conversation-media-progress {
+                padding: 0;
+                margin: 0;
+            }
             /* Delivery / read ticks next to the timestamp. */
             .message-tick {
                 font-size: small;

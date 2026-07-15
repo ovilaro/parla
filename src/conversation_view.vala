@@ -50,6 +50,9 @@ namespace Dc {
         private Gtk.SearchEntry message_search_entry;
         private bool search_toggling;
         private FileDropTarget? file_drop_target;
+        private ConversationMediaBar media_bar;
+        private ulong playback_message_handler = 0;
+        private ulong playback_finished_handler = 0;
 
         private bool stick_to_bottom = true;
         private int[] pending_seen_ids = {};
@@ -57,6 +60,7 @@ namespace Dc {
         private uint loaded_start_index = 0;
         private bool loading_more = false;
         private int pending_scroll_message_id = 0;
+        private int pending_voice_direction = 0;
         private bool loading_chat = false;
         private bool messages_loaded = false;
         private bool messages_stale = false;
@@ -106,6 +110,28 @@ namespace Dc {
             pinned = new PinnedMessagesManager (message_store, settings);
             pinned.set_rpc (rpc);
             pinned.scroll_requested.connect ((mid) => { scroll_to_message (mid); });
+
+            media_bar = new ConversationMediaBar ();
+            media_bar.previous_requested.connect (() => {
+                window.navigate_voice_playback (-1);
+            });
+            media_bar.next_requested.connect (() => {
+                window.navigate_voice_playback (1);
+            });
+            media_bar.message_requested.connect ((acct_id, origin_chat_id, mid) => {
+                window.open_media_message.begin (
+                    acct_id, origin_chat_id, mid);
+            });
+
+            var playback = AudioPlayback.shared ();
+            playback_message_handler = playback.notify["current-item"].connect (
+                update_conversation_media_bar);
+            playback_finished_handler = playback.finished.connect ((mid) => {
+                var item = playback.current_item;
+                if (item != null && item.account_id == rpc.account_id
+                        && item.chat_id == chat_id && item.message_id == mid)
+                    queue_next_voice_message (mid);
+            });
 
             build_ui ();
 
@@ -180,18 +206,14 @@ namespace Dc {
                     bubble_avatars_apply_to_this_chat (),
                     chat_kind != ChatKind.DIRECT,
                     mention_roster,
-                    reaction_roster);
+                    reaction_roster,
+                    rpc.account_id);
                 row.selection_toggled.connect ((mid, active) => {
                     update_selection_actions ();
                 });
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
                 int row_msg_id = msg.id;
                 bool row_outgoing = msg.is_outgoing;
-                if (row.audio_player != null) {
-                    row.audio_player.finished.connect (() => {
-                        queue_next_voice_message (row_msg_id);
-                    });
-                }
                 row.action_requested.connect ((action, anchor) => {
                     on_row_action (row_msg_id, row_outgoing, action, anchor);
                 });
@@ -326,6 +348,7 @@ namespace Dc {
             message_search_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
 
             append (message_search_revealer);
+            append (media_bar);
             append (pinned.revealer);
 
             scroll_down_btn = new Gtk.Button ();
@@ -400,53 +423,105 @@ namespace Dc {
         }
 
         private void queue_next_voice_message (int current_msg_id) {
+            var playback = AudioPlayback.shared ();
+            var current_item = playback.current_item;
+            if (current_item == null
+                    || current_item.message_id != current_msg_id) return;
+            var next = find_adjacent_voice_message (current_msg_id, 1);
+            if (next == null) return;
+            Idle.add (() => {
+                if (!playback.playing && playback.current_item == current_item)
+                    playback.play_message (next, rpc.account_id);
+                return Source.REMOVE;
+            });
+        }
+
+        private Message? find_adjacent_voice_message (int current_msg_id,
+                                                       int direction) {
             int current = find_message_index (message_store, current_msg_id);
-            if (current < 0) return;
+            int count = (int) message_store.get_n_items ();
+            if (current < 0 || direction == 0) return null;
+            for (int i = current + direction;
+                    i >= 0 && i < count; i += direction) {
+                var msg = (Message) message_store.get_item ((uint) i);
+                if (msg.has_local_file && msg.is_audio_file ()) return msg;
+            }
+            return null;
+        }
 
-            for (uint i = (uint) current + 1;
-                    i < message_store.get_n_items (); i++) {
-                var msg = (Message) message_store.get_item (i);
-                if (!msg.has_local_file || !msg.is_audio_file ()) continue;
-
-                int position = find_message_index (filtered_message_store, msg.id);
-                if (position < 0) return;
-                int next_msg_id = msg.id;
-                Idle.add (() => {
-                    if (!AudioPlayer.has_active_playback ()) {
-                        play_voice_message_at ((uint) position, next_msg_id);
-                    }
-                    return Source.REMOVE;
-                });
+        public async void play_adjacent_voice_message (int direction) {
+            var playback = AudioPlayback.shared ();
+            var current_item = playback.current_item;
+            if (current_item == null || current_item.account_id != rpc.account_id
+                    || current_item.chat_id != chat_id) return;
+            var msg = find_adjacent_voice_message (
+                current_item.message_id, direction);
+            if (msg != null) {
+                playback.play_message (msg, rpc.account_id);
                 return;
+            }
+            if (direction >= 0 || loading_more || all_msg_ids == null
+                    || loaded_start_index == 0) return;
+
+            int current_id = current_item.message_id;
+            double anchor_top;
+            var anchor = find_message_row (
+                message_listview, 0, out anchor_top);
+            int anchor_id = anchor != null ? anchor.message_id : 0;
+            loading_more = true;
+            set_loading_more_visible (true);
+
+            try {
+                while (loaded_start_index > 0
+                        && playback.current_item == current_item) {
+                    uint new_start = loaded_start_index > 100
+                        ? loaded_start_index - 100 : 0;
+                    var messages = yield fetch_messages_batch (
+                        new_start, loaded_start_index);
+                    message_store.splice (
+                        0, 0, pinned_message_batch (messages));
+                    flush_pending_seen ();
+                    loaded_start_index = new_start;
+                    update_conversation_media_bar ();
+
+                    msg = find_adjacent_voice_message (current_id, -1);
+                    if (msg != null) break;
+                }
+
+                if (msg != null && playback.current_item == current_item)
+                    playback.play_message (msg, rpc.account_id);
+
+                int anchor_pos = anchor_id != 0
+                    ? find_message_index (filtered_message_store, anchor_id)
+                    : -1;
+                if (anchor_pos >= 0) {
+                    restore_prepend_anchor (
+                        (uint) anchor_pos, anchor_id, anchor_top);
+                } else {
+                    Idle.add (() => {
+                        finish_loading_earlier ();
+                        return Source.REMOVE;
+                    });
+                }
+            } catch (Error e) {
+                finish_loading_earlier (false);
+                window.show_toast (
+                    "Failed to load previous voice message: " + e.message);
             }
         }
 
-        private void play_voice_message_at (uint position, int msg_id) {
-            double top;
-            var row = find_message_row (message_listview, msg_id, out top);
-            if (row != null && row.audio_player != null) {
-                row.audio_player.play_if_idle ();
-                return;
-            }
-
-            /* Gtk.ListView only creates rows near the viewport. Realize the
-               next voice message before asking its inline player to start. */
-            message_listview.scroll_to (
-                position, Gtk.ListScrollFlags.NONE, null);
-            uint elapsed_frames = 0;
-            message_listview.add_tick_callback ((widget, clock) => {
-                if (AudioPlayer.has_active_playback ()) return Source.REMOVE;
-
-                double row_top;
-                var next_row = find_message_row (
-                    message_listview, msg_id, out row_top);
-                if (next_row != null && next_row.audio_player != null) {
-                    next_row.audio_player.play_if_idle ();
-                    return Source.REMOVE;
-                }
-                if (++elapsed_frames >= 60) return Source.REMOVE;
-                return Source.CONTINUE;
-            });
+        private void update_conversation_media_bar () {
+            var playback = AudioPlayback.shared ();
+            var item = playback.current_item;
+            if (item == null || item.account_id != rpc.account_id
+                    || item.chat_id != chat_id) return;
+            int current_id = item.message_id;
+            var msg = find_message (message_store, current_id);
+            if (msg == null) return;
+            playback.set_navigation (
+                find_adjacent_voice_message (current_id, -1) != null
+                    || loaded_start_index > 0,
+                find_adjacent_voice_message (current_id, 1) != null);
         }
 
         /* Workspace-style hover action bar: dispatch a button press to the
@@ -704,10 +779,14 @@ namespace Dc {
                 } else {
                     yield rpc.delete_messages (ids);
                 }
+                var playback = AudioPlayback.shared ();
+                if (int_array_contains (ids, playback.current_message_id))
+                    playback.stop ();
                 for (int i = ids.length - 1; i >= 0; i--) {
                     int idx = find_message_index (message_store, ids[i]);
                     if (idx >= 0) message_store.remove (idx);
                 }
+                update_conversation_media_bar ();
                 end_selection_mode ();
             } catch (Error e) {
                 window.show_toast ("Delete failed: " + e.message);
@@ -930,6 +1009,7 @@ namespace Dc {
 
             Object[] replacements = { new_msg };
             message_store.splice (idx, 1, replacements);
+            update_conversation_media_bar ();
 
             /* Wait for row height changes to update the scroll range. */
             message_listview.add_tick_callback ((w, clock) => {
@@ -1080,11 +1160,24 @@ namespace Dc {
 
             if (scroll_to_loaded_message (msg_id)) {
                 pending_scroll_message_id = 0;
+                resume_pending_voice_navigation ();
                 return;
             }
 
             pending_scroll_message_id = msg_id;
             if (!loading_more) load_until_pending_message.begin ();
+        }
+
+        public void request_voice_navigation (int direction) {
+            var item = AudioPlayback.shared ().current_item;
+            if (item == null || direction == 0 || item.account_id != rpc.account_id
+                    || item.chat_id != chat_id) return;
+            if (find_message (message_store, item.message_id) != null) {
+                play_adjacent_voice_message.begin (direction);
+                return;
+            }
+            pending_voice_direction = direction;
+            scroll_to_message (item.message_id);
         }
 
         private bool scroll_to_loaded_message (int msg_id) {
@@ -1136,6 +1229,7 @@ namespace Dc {
 
                 message_store.splice (0, message_store.get_n_items (),
                     pinned_message_batch (messages));
+                update_conversation_media_bar ();
                 messages_loaded = true;
                 messages_stale = false;
                 loading_chat = false;
@@ -1296,6 +1390,7 @@ namespace Dc {
                 flush_pending_seen ();
 
                 loaded_start_index = new_start;
+                update_conversation_media_bar ();
 
                 /* Preserve a real row because GtkListView's upper is estimated. */
                 int anchor_pos = anchor_id != 0
@@ -1309,6 +1404,7 @@ namespace Dc {
                 }
             } catch (Error e) {
                 pending_scroll_message_id = 0;
+                pending_voice_direction = 0;
                 finish_loading_earlier (false);
                 window.show_toast ("Failed to load earlier messages: " + e.message);
             }
@@ -1350,6 +1446,7 @@ namespace Dc {
                     message_store.splice (0, 0, pinned_message_batch (messages));
                     flush_pending_seen ();
                     loaded_start_index = new_start;
+                    update_conversation_media_bar ();
                 }
             } catch (Error e) {
                 pending_scroll_message_id = 0;
@@ -1359,8 +1456,10 @@ namespace Dc {
             }
 
             finish_loading_earlier ();
-            if (unavailable)
+            if (unavailable) {
+                pending_voice_direction = 0;
                 window.show_toast ("Message is no longer available");
+            }
         }
 
         /* Find a row by ID, or the top visible row when message_id is zero. */
@@ -1443,9 +1542,20 @@ namespace Dc {
             if (pending_scroll_message_id == 0) return;
             if (scroll_to_loaded_message (pending_scroll_message_id)) {
                 pending_scroll_message_id = 0;
+                resume_pending_voice_navigation ();
             } else if (!loading_more && all_msg_ids != null) {
                 load_until_pending_message.begin ();
             }
+        }
+
+        private void resume_pending_voice_navigation () {
+            if (pending_voice_direction == 0) return;
+            int direction = pending_voice_direction;
+            pending_voice_direction = 0;
+            var item = AudioPlayback.shared ().current_item;
+            if (item != null && item.account_id == rpc.account_id
+                    && item.chat_id == chat_id)
+                play_adjacent_voice_message.begin (direction);
         }
 
         /* Toggle the top "Loading…" pill while older messages are fetched.
@@ -1534,6 +1644,7 @@ namespace Dc {
                 if (msg.timestamp > last.timestamp ||
                     (msg.timestamp == last.timestamp && msg.id >= last.id)) {
                     message_store.append (msg);
+                    update_conversation_media_bar ();
                     return;
                 }
             }
@@ -1542,10 +1653,12 @@ namespace Dc {
                 if (m.timestamp > msg.timestamp ||
                     (m.timestamp == msg.timestamp && m.id > msg.id)) {
                     message_store.insert ((int) i, msg);
+                    update_conversation_media_bar ();
                     return;
                 }
             }
             message_store.append (msg);
+            update_conversation_media_bar ();
         }
 
         /* ================================================================
@@ -1724,7 +1837,7 @@ namespace Dc {
         }
 
         /* True when the pointer sits over the inline audio player. Its own
-           play/stop button drives playback, so the press must reach it rather
+           play/pause button drives playback, so the press must reach it rather
            than triggering the row action or arming a double-click reaction. */
         private bool pointer_on_audio (double x, double y) {
             var w = message_listview.pick (x, y, Gtk.PickFlags.DEFAULT);
@@ -1798,6 +1911,19 @@ namespace Dc {
             }
             paths = list.steal ();
             start_index = found >= 0 ? found : 0;
+        }
+
+        public override void dispose () {
+            var playback = AudioPlayback.shared ();
+            if (playback_message_handler != 0) {
+                playback.disconnect (playback_message_handler);
+                playback_message_handler = 0;
+            }
+            if (playback_finished_handler != 0) {
+                playback.disconnect (playback_finished_handler);
+                playback_finished_handler = 0;
+            }
+            base.dispose ();
         }
     }
 }

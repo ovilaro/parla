@@ -229,6 +229,7 @@ namespace Dc {
            clickable mention links; null in direct chats and when unavailable. */
         private MentionRoster? mention_roster = null;
         private MentionRoster? reaction_roster = null;
+        private int account_id = 0;
 
         public signal void quote_clicked (int quoted_msg_id);
         public signal void action_requested (string action, Gtk.Widget anchor);
@@ -311,12 +312,14 @@ namespace Dc {
                            bool avatar_scope_enabled = false,
                            bool show_sender_name = true,
                            MentionRoster? mention_roster = null,
-                           MentionRoster? reaction_roster = null) {
+                           MentionRoster? reaction_roster = null,
+                           int account_id = 0) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 0);
             this.message_id = msg.id;
             this.is_outgoing = msg.is_outgoing;
             this.mention_roster = mention_roster;
             this.reaction_roster = reaction_roster;
+            this.account_id = account_id;
             hexpand = true;
             halign = Gtk.Align.FILL;
 
@@ -872,7 +875,7 @@ namespace Dc {
                 && (a.sender_name ?? "") == (b.sender_name ?? "");
         }
 
-        private static string effective_sender_name (Message msg) {
+        internal static string effective_sender_name (Message msg) {
             if (msg.is_outgoing) {
                 if (self_display_name != null && self_display_name.length > 0)
                     return self_display_name;
@@ -994,10 +997,10 @@ namespace Dc {
             return preview;
         }
 
-        private static Gtk.Widget build_audio_player (Message msg) {
+        private Gtk.Widget build_audio_player (Message msg) {
             if (!msg.has_local_file)
                 return build_file_indicator (msg);
-            return new AudioPlayer (msg.file_path, msg.file_name);
+            return new AudioPlayer (msg, account_id);
         }
 
         private static Gtk.Box build_file_indicator (Message msg) {

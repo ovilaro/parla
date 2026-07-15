@@ -2247,6 +2247,41 @@ namespace Dc {
             if (v != null) v.scroll_to_message (msg_id);
         }
 
+        public async void open_media_message (int acct_id, int chat_id,
+                                              int msg_id) {
+            yield open_chat_from_notification (acct_id, chat_id);
+            if (current_chat_id == chat_id) scroll_to_message (msg_id);
+        }
+
+        public void navigate_voice_playback (int direction) {
+            var item = AudioPlayback.shared ().current_item;
+            if (item == null || direction == 0) return;
+            if (item.account_id != rpc.account_id) {
+                navigate_voice_after_open.begin (
+                    item.account_id, item.chat_id, item.message_id, direction);
+                return;
+            }
+            var view = views.lookup (item.chat_id);
+            if (view != null) {
+                view.request_voice_navigation (direction);
+            } else {
+                navigate_voice_after_open.begin (
+                    item.account_id, item.chat_id, item.message_id, direction);
+            }
+        }
+
+        private async void navigate_voice_after_open (int acct_id, int chat_id,
+                                                       int msg_id,
+                                                       int direction) {
+            yield open_media_message (acct_id, chat_id, msg_id);
+            var item = AudioPlayback.shared ().current_item;
+            if (item == null || item.account_id != acct_id
+                    || item.chat_id != chat_id || item.message_id != msg_id)
+                return;
+            var view = views.lookup (chat_id);
+            if (view != null) view.request_voice_navigation (direction);
+        }
+
         /* Entry point for the "app.open-chat" action fired when the user
            clicks a message notification: bring the owning account forward
            (it may be a background one) and open the chat. */
