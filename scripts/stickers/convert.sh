@@ -5,12 +5,12 @@ usage() {
     cat <<'EOF'
 Usage: scripts/stickers/convert.sh INPUT.zip [OUTPUT.zip]
 
-Replace TGS files in a downloaded Telegram sticker-pack archive with
-transparent GIF animations or static WebP/PNG images. The input is never
-modified. VP9 WebM remains available as an option.
+Convert TGS and VP9 WebM files in a downloaded Telegram sticker-pack archive.
+Animated stickers become transparent GIF or VP9 WebM files; static TGS
+stickers become WebP/PNG images. The input archive is never modified.
 
 Environment:
-  RLOTTIE_CONVERTER  Path to rlottie's lottie2gif (default: PATH or .tools)
+  RLOTTIE_CONVERTER  lottie2gif path for TGS input (default: PATH or .tools)
   ANIMATED_FORMAT    Animated output: gif or webm (default: gif)
   ANIMATED_FPS       Maximum animated output FPS, 1-60 (default: 30)
   ANIMATED_SCALE     Animated dimensions multiplier, >0 through 1 (default: 1)
@@ -214,6 +214,117 @@ convert_tgs () {
     converted_source_height="$height"
     converted_target_width="$target_width"
     converted_target_height="$target_height"
+    converted_source_format="tgs"
+    converted_renderer="rlottie/lottie2gif"
+}
+
+convert_webm () {
+    local source="$1"
+    local destination_stem="$2"
+    local render_dir="$3"
+    local probe
+    local width
+    local height
+    local source_fps
+    local target_fps
+    local target_width
+    local target_height
+    local frames
+    local encoded
+
+    mkdir -p "$render_dir"
+    probe="$(ffprobe -v error -count_frames -select_streams v:0 \
+        -show_entries \
+        stream=codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames \
+        -of json "$source")" \
+        || die "could not inspect $(basename "$source")"
+
+    jq -e '
+        (.streams | length) == 1
+        and (.streams[0].codec_name == "vp9")
+        and (.streams[0].width | type == "number" and . > 0 and . <= 1024)
+        and (.streams[0].height | type == "number" and . > 0 and . <= 1024)
+        and (.streams[0].nb_read_frames | tonumber? | . > 0 and . <= 600)
+    ' >/dev/null <<<"$probe" \
+        || die "invalid or unsupported VP9 WebM: $(basename "$source")"
+
+    width="$(jq -er '.streams[0].width' <<<"$probe")"
+    height="$(jq -er '.streams[0].height' <<<"$probe")"
+    frames="$(jq -er '.streams[0].nb_read_frames | tonumber' <<<"$probe")"
+    source_fps="$(jq -er '
+        def rate:
+            split("/") | map(tonumber?)
+            | select(length == 2 and .[0] != null and .[1] != null and .[1] > 0)
+            | .[0] / .[1];
+        [.streams[0].avg_frame_rate, .streams[0].r_frame_rate]
+        | map(rate | select(. > 0 and . <= 120))
+        | first
+    ' <<<"$probe")" \
+        || die "invalid WebM frame rate: $(basename "$source")"
+    target_fps="$(jq -nr \
+        --argjson fps "$source_fps" \
+        --argjson requested "$animated_fps" \
+        '$fps | if . > $requested then $requested else . end')"
+    target_width="$(jq -nr \
+        --argjson size "$width" \
+        --argjson scale "$animated_scale" \
+        '[1, (($size * $scale) | floor)] | max')"
+    target_height="$(jq -nr \
+        --argjson size "$height" \
+        --argjson scale "$animated_scale" \
+        '[1, (($size * $scale) | floor)] | max')"
+
+    converted_extension="$animated_format"
+    converted_target_format="$animated_format"
+    destination="$destination_stem.$animated_format"
+    encoded="$render_dir/output.$animated_format"
+
+    if [ "$animated_format" = "gif" ]; then
+        ffmpeg -hide_banner -loglevel error -y \
+            -c:v libvpx-vp9 -i "$source" \
+            -filter_complex \
+            "[0:v]fps=$target_fps,scale=$target_width:$target_height:flags=lanczos,format=rgba,split[gif][palette_input]; \
+                [palette_input]palettegen=stats_mode=diff:reserve_transparent=1:transparency_color=000000[palette]; \
+                [gif][palette]paletteuse=diff_mode=rectangle:alpha_threshold=128:dither=sierra2_4a[out]" \
+            -map "[out]" \
+            -an \
+            -loop 0 \
+            "$encoded"
+    else
+        # yuva420p requires even dimensions.
+        target_width=$((target_width < 2 ? 2 : target_width - target_width % 2))
+        target_height=$((target_height < 2 ? 2 : target_height - target_height % 2))
+        ffmpeg -hide_banner -loglevel error -y \
+            -c:v libvpx-vp9 -i "$source" \
+            -vf \
+            "fps=$target_fps,scale=$target_width:$target_height:flags=lanczos,format=yuva420p" \
+            -an \
+            -c:v libvpx-vp9 \
+            -pix_fmt yuva420p \
+            -crf "$webm_crf" \
+            -b:v 0 \
+            -deadline good \
+            -cpu-used 2 \
+            -row-mt 1 \
+            -auto-alt-ref 0 \
+            -metadata:s:v:0 alpha_mode=1 \
+            "$encoded"
+    fi
+
+    [ -s "$encoded" ] || die "FFmpeg produced an empty output file"
+    ffmpeg -hide_banner -loglevel error -i "$encoded" -f null - \
+        || die "FFmpeg could not validate $(basename "$destination")"
+    mv "$encoded" "$destination"
+
+    converted_source_fps="$source_fps"
+    converted_target_fps="$target_fps"
+    converted_frames="$frames"
+    converted_source_width="$width"
+    converted_source_height="$height"
+    converted_target_width="$target_width"
+    converted_target_height="$target_height"
+    converted_source_format="webm"
+    converted_renderer="ffmpeg/libvpx-vp9"
 }
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -228,32 +339,11 @@ fi
 
 require_command unzip
 require_command zip
-require_command gzip
 require_command jq
 require_command ffmpeg
 require_command find
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -n "${RLOTTIE_CONVERTER:-}" ]; then
-    rlottie_converter="$RLOTTIE_CONVERTER"
-elif command -v lottie2gif >/dev/null 2>&1; then
-    rlottie_converter="lottie2gif"
-elif [ -x "$script_dir/.tools/bin/lottie2gif" ]; then
-    rlottie_converter="$script_dir/.tools/bin/lottie2gif"
-else
-    die "lottie2gif not found; run: make -C $script_dir lottie2gif"
-fi
-require_command "$rlottie_converter"
-case "$rlottie_converter" in
-    */*)
-        rlottie_converter="$(absolute_file "$rlottie_converter")" \
-            || die "could not resolve RLOTTIE_CONVERTER"
-        ;;
-    *)
-        rlottie_converter="$(command -v "$rlottie_converter")"
-        ;;
-esac
-
 animated_format="${ANIMATED_FORMAT:-gif}"
 case "$animated_format" in
     gif|webm) ;;
@@ -283,7 +373,7 @@ max_json_bytes="${TGS_MAX_JSON_BYTES:-10485760}"
 
 if [ "$animated_format" = "webm" ] \
         && ! ffmpeg -hide_banner -encoders 2>/dev/null \
-            | grep -q '[[:space:]]libvpx-vp9[[:space:]]'; then
+            | grep '[[:space:]]libvpx-vp9[[:space:]]' >/dev/null; then
     die "FFmpeg was built without the libvpx-vp9 encoder"
 fi
 if command -v cwebp >/dev/null 2>&1; then
@@ -330,23 +420,67 @@ pack_dir="$(dirname "$metadata")"
 jq -e '.sticker_set.stickers | type == "array"' "$metadata" >/dev/null \
     || die "metadata.json is not a Parla sticker-pack manifest"
 
+if [ -n "$(find "$pack_dir" -type f -iname '*.tgs' -print -quit)" ]; then
+    require_command gzip
+    if [ -n "${RLOTTIE_CONVERTER:-}" ]; then
+        rlottie_converter="$RLOTTIE_CONVERTER"
+    elif command -v lottie2gif >/dev/null 2>&1; then
+        rlottie_converter="lottie2gif"
+    elif [ -x "$script_dir/.tools/bin/lottie2gif" ]; then
+        rlottie_converter="$script_dir/.tools/bin/lottie2gif"
+    else
+        die "lottie2gif not found; run: make -C $script_dir lottie2gif"
+    fi
+    require_command "$rlottie_converter"
+    case "$rlottie_converter" in
+        */*)
+            rlottie_converter="$(absolute_file "$rlottie_converter")" \
+                || die "could not resolve RLOTTIE_CONVERTER"
+            ;;
+        *)
+            rlottie_converter="$(command -v "$rlottie_converter")"
+            ;;
+    esac
+fi
+
+if [ -n "$(find "$pack_dir" -type f -iname '*.webm' -print -quit)" ]; then
+    require_command ffprobe
+    if ! ffmpeg -hide_banner -decoders 2>/dev/null \
+            | grep '[[:space:]]libvpx-vp9[[:space:]]' >/dev/null; then
+        die "FFmpeg was built without the libvpx-vp9 decoder required for transparent WebM input"
+    fi
+fi
+
 converted_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 converted_count=0
+tgs_source_count=0
+webm_source_count=0
 gif_count=0
 webm_count=0
 webp_count=0
 png_count=0
 # Read the NUL-delimited file list from fd 3. Renderers and encoders may read
 # stdin, which would otherwise consume bytes from the next filename.
-while IFS= read -r -d '' tgs_file <&3; do
-    relative="${tgs_file#"$pack_dir"/}"
+while IFS= read -r -d '' source_file <&3; do
+    relative="${source_file#"$pack_dir"/}"
     destination_stem="$pack_dir/${relative%.*}"
     render_dir="$work_dir/render-$converted_count"
 
     echo "Converting $relative" >&2
-    convert_tgs "$tgs_file" "$destination_stem" "$render_dir"
+    case "$source_file" in
+        *.[Tt][Gg][Ss])
+            convert_tgs "$source_file" "$destination_stem" "$render_dir"
+            tgs_source_count=$((tgs_source_count + 1))
+            ;;
+        *.[Ww][Ee][Bb][Mm])
+            convert_webm "$source_file" "$destination_stem" "$render_dir"
+            webm_source_count=$((webm_source_count + 1))
+            ;;
+    esac
     converted_relative="${relative%.*}.$converted_extension"
-    rm -f "$tgs_file"
+    if [ "$source_file" != "$destination" ]; then
+        rm -f "$source_file"
+    fi
 
     if [ "$converted_target_format" = "gif" ]; then
         gif_count=$((gif_count + 1))
@@ -361,7 +495,9 @@ while IFS= read -r -d '' tgs_file <&3; do
     jq \
         --arg old "$relative" \
         --arg new "$converted_relative" \
+        --arg source_format "$converted_source_format" \
         --arg target "$converted_target_format" \
+        --arg renderer "$converted_renderer" \
         --arg converted_at "$converted_at" \
         --arg source_fps "$converted_source_fps" \
         --arg target_fps "$converted_target_fps" \
@@ -378,10 +514,10 @@ while IFS= read -r -d '' tgs_file <&3; do
             | .is_animated = ($target == "gif")
             | .is_video = ($target == "webm")
             | .conversion = {
-                source_format: "tgs",
+                source_format: $source_format,
                 target_format: $target,
                 source_local_file: $old,
-                renderer: "rlottie/lottie2gif",
+                renderer: $renderer,
                 encoder: (if $target == "gif"
                           then "ffmpeg/gif"
                           elif $target == "webm"
@@ -409,13 +545,29 @@ while IFS= read -r -d '' tgs_file <&3; do
     mv "$work_dir/metadata.json" "$metadata"
 
     converted_count=$((converted_count + 1))
-done 3< <(find "$pack_dir" -type f -iname '*.tgs' -print0)
+done 3< <(find "$pack_dir" -type f \
+    \( -iname '*.tgs' -o -iname '*.webm' \) -print0)
 
-[ "$converted_count" -gt 0 ] || die "archive contains no TGS files"
+[ "$converted_count" -gt 0 ] || die "archive contains no TGS or WebM files"
+
+if [ "$tgs_source_count" -gt 0 ] && [ "$webm_source_count" -gt 0 ]; then
+    summary_source_format="mixed"
+    summary_renderer="mixed"
+elif [ "$webm_source_count" -gt 0 ]; then
+    summary_source_format="webm"
+    summary_renderer="ffmpeg/libvpx-vp9"
+else
+    summary_source_format="tgs"
+    summary_renderer="rlottie/lottie2gif"
+fi
 
 jq \
     --arg converted_at "$converted_at" \
     --argjson count "$converted_count" \
+    --arg source_format "$summary_source_format" \
+    --arg renderer "$summary_renderer" \
+    --argjson tgs_source_count "$tgs_source_count" \
+    --argjson webm_source_count "$webm_source_count" \
     --argjson gif_count "$gif_count" \
     --argjson webm_count "$webm_count" \
     --argjson webp_count "$webp_count" \
@@ -425,7 +577,11 @@ jq \
     --argjson animated_fps "$animated_fps" \
     --argjson animated_scale "$animated_scale" \
     '.conversions = ((.conversions // []) + [{
-        source_format: "tgs",
+        source_format: $source_format,
+        source_formats: {
+            tgs: $tgs_source_count,
+            webm: $webm_source_count
+        },
         target_formats: {
             gif: $gif_count,
             webm: $webm_count,
@@ -433,7 +589,7 @@ jq \
             png: $png_count
         },
         count: $count,
-        renderer: "rlottie/lottie2gif",
+        renderer: $renderer,
         encoders: {
             gif: (if $gif_count > 0 then "ffmpeg/gif" else null end),
             webm: (if $webm_count > 0 then "ffmpeg/libvpx-vp9" else null end),

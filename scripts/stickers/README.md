@@ -66,15 +66,18 @@ different destination. More public Signal packs can be found at
 
 ## Converting a pack
 
-The `convert.sh` file is a bash script that takes the original zip from telegram
-and generates a new zip with .webm or .gif images instead.
+The `convert.sh` file is a Bash script that takes an original Telegram pack and
+generates a new zip with `.webm` or `.gif` images. It converts both TGS vector
+stickers and VP9 WebM video stickers. For WebM input, FFmpeg's `libvpx-vp9`
+decoder is selected explicitly so the alpha channel is retained.
 
 ```bash
 ANIMATED_SCALE=0.3 ANIMATED_FPS=20 ANIMATED_FORMAT=gif \
        bash convert.sh hotcherry.zip hotcherry-gif.zip
 ```
 
-If you don't have lottie2gif installed, the make paves the way with:
+For TGS input, if you don't have lottie2gif installed, the make paves the way
+with:
 
 ```sh
 make -C scripts/stickers macos-deps
