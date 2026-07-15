@@ -6,6 +6,8 @@ namespace Dc {
     public const int FONT_SIZE_MIN = 6;
     public const int FONT_SIZE_MAX = 32;
     public const int FONT_SIZE_FALLBACK = 11;
+    public const int AUTO_DOWNLOAD_NEVER = 32 * 1024;
+    public const int AUTO_DOWNLOAD_DEFAULT = 1024 * 1024;
 
     public enum SidebarMode {
         FULL = 0,
@@ -77,6 +79,7 @@ namespace Dc {
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
         public bool animate_stickers { get; set; default = true; }
+        public int auto_download_limit { get; set; default = AUTO_DOWNLOAD_DEFAULT; }
         public string rpc_server_path { get; set; default = ""; }
         /* An empty value deliberately means the standard Parla account store. */
         public string accounts_path { get; set; default = ""; }
@@ -168,6 +171,8 @@ namespace Dc {
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
             animate_stickers = kf_bool (kf, "animate_stickers", true);
+            auto_download_limit = normalize_auto_download_limit (
+                kf_int (kf, "auto_download_limit", AUTO_DOWNLOAD_DEFAULT));
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
             accounts_path = normalize_accounts_path (kf_str (kf, "accounts_path", ""));
             if (is_default_accounts_path (accounts_path)) accounts_path = "";
@@ -281,6 +286,26 @@ namespace Dc {
             animate_stickers = v;
             save_bool ("animate_stickers", v);
             appearance_changed ();
+        }
+
+        public void save_auto_download_limit (int bytes) {
+            auto_download_limit = normalize_auto_download_limit (bytes);
+            save_int ("auto_download_limit", auto_download_limit);
+        }
+
+        public static int normalize_auto_download_limit (int bytes) {
+            switch (bytes) {
+            case 0:
+            case AUTO_DOWNLOAD_NEVER:
+            case 256 * 1024:
+            case 512 * 1024:
+            case 1024 * 1024:
+            case 2 * 1024 * 1024:
+            case 5 * 1024 * 1024:
+                return bytes;
+            default:
+                return AUTO_DOWNLOAD_DEFAULT;
+            }
         }
 
         public void save_rpc_server_path (string v) {
@@ -814,10 +839,26 @@ namespace Dc {
                     sticker_switch.active);
             });
 
+            var download_row = action_row (
+                "Auto-download attachments",
+                "Larger attachments wait for approval; applies to all profiles");
+            string[] download_labels = {
+                "Never", "256 KB", "512 KB", "1 MB", "2 MB", "5 MB", "Unlimited"
+            };
+            var download_combo = row_dropdown (
+                download_row, download_labels,
+                auto_download_limit_index (
+                    app_window.settings.auto_download_limit));
+            download_combo.notify["selected"].connect (() => {
+                app_window.set_auto_download_limit.begin (
+                    auto_download_limit_for_index (download_combo.selected));
+            });
+
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
             advanced_list.append (audio_row);
             advanced_list.append (sticker_row);
+            advanced_list.append (download_row);
 
             var chatmail_list = settings_list ("Chatmail");
 
@@ -934,6 +975,32 @@ namespace Dc {
             list.add_css_class ("boxed-list");
             content.append (list);
             return list;
+        }
+
+        private static uint auto_download_limit_index (int bytes) {
+            switch (bytes) {
+            case AUTO_DOWNLOAD_NEVER: return 0;
+            case 256 * 1024: return 1;
+            case 512 * 1024: return 2;
+            case 1024 * 1024: return 3;
+            case 2 * 1024 * 1024: return 4;
+            case 5 * 1024 * 1024: return 5;
+            case 0: return 6;
+            default: return 3;
+            }
+        }
+
+        private static int auto_download_limit_for_index (uint index) {
+            switch (index) {
+            case 0: return AUTO_DOWNLOAD_NEVER;
+            case 1: return 256 * 1024;
+            case 2: return 512 * 1024;
+            case 3: return 1024 * 1024;
+            case 4: return 2 * 1024 * 1024;
+            case 5: return 5 * 1024 * 1024;
+            case 6: return 0;
+            default: return AUTO_DOWNLOAD_DEFAULT;
+            }
         }
 
         private static Adw.ActionRow action_row (string title,

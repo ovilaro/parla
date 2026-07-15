@@ -1112,7 +1112,9 @@ namespace Dc {
             box.append (body);
 
             if (msg.is_downloading_full_message) {
-                var status = new Gtk.Label ("Downloading full message...");
+                var status = new Gtk.Label (msg.has_file
+                    ? "Downloading attachment..."
+                    : "Downloading full message...");
                 status.add_css_class ("message-full-text-status");
                 status.halign = Gtk.Align.START;
                 status.xalign = 0;
@@ -1120,7 +1122,9 @@ namespace Dc {
             } else {
                 var btn = new Gtk.Button.with_label (
                     msg.can_download_full_message
-                        ? "Download full message"
+                        ? (msg.has_file
+                            ? "Download attachment"
+                            : "Download full message")
                         : "Show full message");
                 btn.add_css_class ("flat");
                 btn.add_css_class ("message-full-text-button");

@@ -762,6 +762,7 @@ namespace Dc {
             if (acct_desc != null) empty_status.description = acct_desc;
             if (rpc.account_id > 0) {
                 try {
+                    yield apply_auto_download_limit ();
                     yield rpc.start_io_for_all_accounts ();
                 } catch (Error e) {
                     show_toast ("Connection setup error: " + e.message);
@@ -2016,6 +2017,30 @@ namespace Dc {
             dialog.present (this);
         }
 
+        public async void set_auto_download_limit (int bytes) {
+            settings.save_auto_download_limit (bytes);
+            if (!rpc.is_connected) return;
+            try {
+                yield apply_auto_download_limit ();
+            } catch (Error e) {
+                show_toast ("Unable to update attachment downloads: " + e.message);
+            }
+        }
+
+        private async void apply_auto_download_limit () throws Error {
+            var accounts_node = yield rpc.get_all_accounts ();
+            if (accounts_node == null) return;
+            var accounts = accounts_node.get_array ();
+            string limit = settings.auto_download_limit.to_string ();
+            for (uint i = 0; i < accounts.get_length (); i++) {
+                var account = accounts.get_object_element (i);
+                int id = (int) account.get_int_member ("id");
+                if (id > 0) {
+                    yield rpc.batch_set_config ("download_limit", limit, id);
+                }
+            }
+        }
+
         private async void do_add_account (string email, string password) {
             try {
                 int acct_id = yield rpc.add_account ();
@@ -2024,6 +2049,7 @@ namespace Dc {
                 rpc.account_id = acct_id;
                 /* Pick up IO for the freshly added account (and keep the rest
                    running too). */
+                yield apply_auto_download_limit ();
                 yield rpc.start_io_for_all_accounts ();
                 yield reload_active_account ();
             } catch (Error e) {
@@ -2041,6 +2067,7 @@ namespace Dc {
                    which account is shown — the others keep fetching mail in the
                    background. Re-asserting all-accounts IO here is idempotent and
                    also covers accounts created during this session. */
+                yield apply_auto_download_limit ();
                 yield rpc.start_io_for_all_accounts ();
                 yield reload_active_account ();
                 return true;
