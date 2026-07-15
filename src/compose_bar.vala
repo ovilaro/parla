@@ -10,7 +10,9 @@ namespace Dc {
            newline. When true, the roles are swapped. */
         public bool shift_enter_sends { get; set; default = false; }
 
-        public signal void send_message (string text, string? file_path, string? file_name, int quote_msg_id);
+        public signal void send_message (string text, string? file_path,
+            string? file_name, int quote_msg_id);
+        public signal void send_voice_message (string file_path, int quote_msg_id);
         public signal void edit_message (int msg_id, string new_text);
         public signal void edit_last_requested ();
         public signal void draft_changed (string text, string? file_path, string? file_name, int quote_msg_id);
@@ -26,6 +28,13 @@ namespace Dc {
         private Gtk.Button cancel_edit_button;
         private Gtk.Stack send_stack;
         private Gtk.MenuButton sticker_button;
+        private Gtk.Stack compose_mode_stack;
+        private Gtk.Label recording_time_label;
+        private Gtk.Stack recording_action_stack;
+        private Gtk.Button recording_stop_button;
+        private AudioRecorder? audio_recorder = null;
+        private int64 recording_started_us = 0;
+        private uint recording_timer = 0;
         private Gtk.Label reply_label;
         private Gtk.Box reply_bar;
         private Gtk.Box attachment_bar;
@@ -90,7 +99,7 @@ namespace Dc {
             reply_label.ellipsize = Pango.EllipsizeMode.END;
             reply_bar.append (reply_label);
 
-            reply_bar.append (flat_icon_button (
+            reply_bar.append (icon_button (
                 "window-close-symbolic", "Cancel reply", cancel_reply, true));
 
             append (reply_bar);
@@ -134,7 +143,7 @@ namespace Dc {
 
             attachment_bar.append (attachment_info);
 
-            attachment_bar.append (flat_icon_button (
+            attachment_bar.append (icon_button (
                 "window-close-symbolic", "Remove attachment", clear_attachment, true));
 
             append (attachment_bar);
@@ -143,7 +152,7 @@ namespace Dc {
             input_row.hexpand = true;
             input_row.halign = Gtk.Align.FILL;
 
-            attach_button = flat_icon_button (
+            attach_button = icon_button (
                 "mail-attachment-symbolic", "Attach file", on_attach_clicked);
             input_row.append (attach_button);
 
@@ -168,12 +177,12 @@ namespace Dc {
             }
             input_row.append (emoji_button);
 
-            cancel_attach_button = flat_icon_button (
+            cancel_attach_button = icon_button (
                 "edit-clear-symbolic", "Remove attachment", clear_attachment);
             cancel_attach_button.visible = false;
             input_row.append (cancel_attach_button);
 
-            cancel_edit_button = flat_icon_button (
+            cancel_edit_button = icon_button (
                 "edit-undo-symbolic", "Cancel editing", cancel_edit);
             cancel_edit_button.visible = false;
             input_row.append (cancel_edit_button);
@@ -268,12 +277,9 @@ namespace Dc {
             text_view.add_controller (key_ctrl);
             input_row.append (entry_overlay);
 
-            var send_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
-            send_button.add_css_class ("suggested-action");
-            send_button.add_css_class ("circular");
-            send_button.tooltip_text = "Send message";
-            send_button.valign = Gtk.Align.CENTER;
-            send_button.clicked.connect (on_send);
+            var send_button = icon_button (
+                "go-up-symbolic", "Send message", on_send, true,
+                "suggested-action");
 
             sticker_button = new Gtk.MenuButton ();
             sticker_button.icon_name = "sticker-symbolic";
@@ -285,18 +291,57 @@ namespace Dc {
             sticker_picker.sticker_picked.connect (on_sticker_picked);
             sticker_button.popover = sticker_picker;
 
-            /* While the message is empty there is nothing to send, so the
-               send slot offers the sticker picker instead. */
+            var idle_actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            idle_actions.append (sticker_button);
+            idle_actions.append (icon_button ("audio-input-microphone-symbolic",
+                "Record a voice message", start_audio_recording, true));
+
+            /* Idle actions collapse to one send button as soon as text appears. */
             send_stack = new Gtk.Stack ();
             send_stack.valign = Gtk.Align.CENTER;
+            send_stack.hhomogeneous = false;
             send_stack.add_named (send_button, "send");
-            send_stack.add_named (sticker_button, "sticker");
+            send_stack.add_named (idle_actions, "idle");
             input_row.append (send_stack);
             update_send_stack ();
 
-            append (input_row);
+            var recording_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            recording_row.hexpand = true;
+
+            recording_row.append (icon_button (
+                "window-close-symbolic", "Cancel voice message",
+                cancel_audio_recording, true));
+
+            recording_time_label = new Gtk.Label ("00:00");
+            recording_time_label.hexpand = true;
+            recording_time_label.halign = Gtk.Align.CENTER;
+            recording_row.append (recording_time_label);
+
+            recording_stop_button = icon_button (
+                "media-playback-stop-symbolic", "Stop recording",
+                stop_audio_recording, true, "destructive-action");
+            var recording_send_button = icon_button (
+                "go-up-symbolic", "Send voice message",
+                send_audio_recording, true, "suggested-action");
+
+            recording_action_stack = new Gtk.Stack ();
+            recording_action_stack.valign = Gtk.Align.CENTER;
+            recording_action_stack.add_named (recording_stop_button, "stop");
+            recording_action_stack.add_named (recording_send_button, "send");
+            recording_row.append (recording_action_stack);
+
+            compose_mode_stack = new Gtk.Stack ();
+            compose_mode_stack.add_named (input_row, "compose");
+            compose_mode_stack.add_named (recording_row, "recording");
+            compose_mode_stack.visible_child_name = "compose";
+            append (compose_mode_stack);
 
             build_mention_popover ();
+        }
+
+        ~ComposeBar () {
+            stop_recording_timer ();
+            if (audio_recorder != null) audio_recorder.cancel ();
         }
 
         private void build_mention_popover () {
@@ -330,11 +375,12 @@ namespace Dc {
             mention_popover.set_parent (text_view);
         }
 
-        private Gtk.Button flat_icon_button (string icon_name, string tooltip,
-                                             owned VoidFunc on_click,
-                                             bool circular = false) {
+        private Gtk.Button icon_button (string icon_name, string tooltip,
+                                        owned VoidFunc on_click,
+                                        bool circular = false,
+                                        string style = "flat") {
             var button = new Gtk.Button.from_icon_name (icon_name);
-            button.add_css_class ("flat");
+            button.add_css_class (style);
             if (circular) button.add_css_class ("circular");
             button.tooltip_text = tooltip;
             button.valign = Gtk.Align.CENTER;
@@ -529,6 +575,7 @@ namespace Dc {
         }
 
         public void grab_entry_focus () {
+            if (is_recording_mode ()) return;
             /* Gtk.TextView does not select text on grab_focus the way
                Gtk.Entry does, so a plain grab_focus is safe here.
                Defer to idle so focus lands after the current event
@@ -543,6 +590,7 @@ namespace Dc {
         /* Insert text at the cursor and take focus. Used by the window's
            type-ahead so pressing a key anywhere starts a message. */
         public void type_text (string text) {
+            if (is_recording_mode ()) return;
             bool open_emoji = text == ":" && previous_char_is_colon ();
             text_view.buffer.insert_at_cursor (text, text.length);
             text_view.grab_focus ();
@@ -565,13 +613,13 @@ namespace Dc {
             placeholder_label.visible = text_view.buffer.get_char_count () == 0;
         }
 
-        /* The sticker picker sits in the send slot only while there is
-           nothing to send: no text, no attachment and no edit going on. */
+        /* Sticker and microphone actions sit in the send slot only while
+           there is nothing to send. Typing immediately hides the microphone. */
         private void update_send_stack () {
             if (send_stack == null) return;
             bool idle = text_view.buffer.get_char_count () == 0
                 && pending_file == null && editing_msg_id == 0;
-            send_stack.visible_child_name = idle ? "sticker" : "send";
+            send_stack.visible_child_name = idle ? "idle" : "send";
         }
 
         private void on_sticker_picked (Sticker sticker) {
@@ -586,6 +634,102 @@ namespace Dc {
             text_view.grab_focus ();
         }
 
+        private void start_audio_recording () {
+            if (is_recording_mode () || editing_msg_id > 0
+                || pending_file != null
+                || text_view.buffer.get_char_count () > 0) return;
+
+            AudioPlayback.shared ().stop ();
+
+            var recorder = new AudioRecorder (
+                AudioPlayer.prefer_system || Platform.is_macos ());
+            recorder.completed.connect (() => {
+                if (audio_recorder != recorder) return;
+                recording_action_stack.visible_child_name = "send";
+            });
+            recorder.failed.connect ((message) => {
+                if (audio_recorder != recorder) return;
+                leave_audio_recording_mode ();
+                show_recording_error (message);
+            });
+
+            try {
+                recorder.start ();
+            } catch (Error e) {
+                recorder.cancel ();
+                show_recording_error (e.message);
+                return;
+            }
+
+            audio_recorder = recorder;
+            recording_started_us = GLib.get_monotonic_time ();
+            recording_time_label.label = "00:00";
+            recording_action_stack.visible_child_name = "stop";
+            recording_stop_button.sensitive = true;
+            recording_stop_button.tooltip_text = "Stop recording";
+            compose_mode_stack.visible_child_name = "recording";
+            recording_timer = Timeout.add_seconds (1, update_recording_time);
+        }
+
+        private bool update_recording_time () {
+            int elapsed = (int) ((GLib.get_monotonic_time ()
+                - recording_started_us) / 1000000);
+            recording_time_label.label = "%02d:%02d".printf (
+                elapsed / 60, elapsed % 60);
+            return Source.CONTINUE;
+        }
+
+        private void stop_audio_recording () {
+            if (audio_recorder == null) return;
+            stop_recording_timer ();
+            update_recording_time ();
+            recording_stop_button.sensitive = false;
+            recording_stop_button.tooltip_text = "Finishing recording…";
+            audio_recorder.stop ();
+        }
+
+        private void send_audio_recording () {
+            if (audio_recorder == null) return;
+            send_voice_message (audio_recorder.take_output (), replying_msg_id);
+            leave_audio_recording_mode ();
+
+            suppress_draft_signal = true;
+            cancel_reply ();
+            suppress_draft_signal = false;
+            notify_draft_changed ();
+        }
+
+        private void cancel_audio_recording () {
+            if (!is_recording_mode ()) return;
+            leave_audio_recording_mode ();
+        }
+
+        private void leave_audio_recording_mode () {
+            stop_recording_timer ();
+            if (audio_recorder != null) {
+                audio_recorder.cancel ();
+                audio_recorder = null;
+            }
+            compose_mode_stack.visible_child_name = "compose";
+            update_send_stack ();
+        }
+
+        private void stop_recording_timer () {
+            if (recording_timer == 0) return;
+            Source.remove (recording_timer);
+            recording_timer = 0;
+        }
+
+        private bool is_recording_mode () {
+            return compose_mode_stack.visible_child_name == "recording";
+        }
+
+        private void show_recording_error (string message) {
+            var window = get_root () as Dc.Window;
+            if (window != null) window.show_toast ("Recording failed: " + message);
+            else warning ("audio recording: %s", message);
+        }
+
         private void set_entry_active (bool active) {
             if (active) {
                 text_view.add_css_class ("compose-entry-active");
@@ -595,7 +739,7 @@ namespace Dc {
         }
 
         public bool can_accept_attachment () {
-            return editing_msg_id == 0;
+            return editing_msg_id == 0 && !is_recording_mode ();
         }
 
         public void set_pending_attachment (string file_path,
@@ -803,6 +947,7 @@ namespace Dc {
         }
 
         public void begin_edit (int msg_id, string current_text) {
+            cancel_audio_recording ();
             suspend_current_draft ();
             suppress_draft_signal = true;
             cancel_reply ();
@@ -923,12 +1068,13 @@ namespace Dc {
 
         public bool has_active_mode () {
             return editing_msg_id != 0 || replying_msg_id != 0
-                || pending_file != null;
+                || pending_file != null || is_recording_mode ();
         }
 
         public bool has_unsent_content () {
             return text_view.buffer.get_char_count () > 0
-                || replying_msg_id != 0 || pending_file != null;
+                || replying_msg_id != 0 || pending_file != null
+                || is_recording_mode ();
         }
 
         public bool entry_has_focus () {
@@ -940,6 +1086,10 @@ namespace Dc {
         }
 
         public void cancel_active_mode () {
+            if (is_recording_mode ()) {
+                cancel_audio_recording ();
+                return;
+            }
             cancel_edit ();
             cancel_reply ();
             clear_attachment ();

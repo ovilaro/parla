@@ -57,6 +57,8 @@ cat > "$CONTENTS/Info.plist" <<EOF
   <true/>
   <key>NSHumanReadableCopyright</key>
   <string>GPLv3</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Parla uses the microphone when you record a voice message.</string>
 </dict>
 </plist>
 EOF

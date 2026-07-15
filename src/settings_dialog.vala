@@ -749,9 +749,9 @@ namespace Dc {
             behavior_list.append (shift_row);
 
             var audio_row = action_row (
-                "System audio player",
-                "Spawn afplay/gst-play/mpv to play voice messages instead of "
-                + "the built-in GTK media backend");
+                "System audio tools",
+                "Prefer system programs for voice playback and recording "
+                + "instead of Parla's GTK/GStreamer media path");
             var audio_switch = row_switch (
                 audio_row, app_window.settings.system_audio_player);
             audio_switch.notify["active"].connect (() => {

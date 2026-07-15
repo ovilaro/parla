@@ -5,13 +5,16 @@ namespace Dc {
         public string? file_path;
         public string? file_name;
         public int quote_msg_id;
+        public bool temporary_voice;
 
         public PendingSend (string text, string? file_path,
-                            string? file_name, int quote_msg_id) {
+                            string? file_name, int quote_msg_id,
+                            bool temporary_voice = false) {
             this.text = text;
             this.file_path = file_path;
             this.file_name = file_name;
             this.quote_msg_id = quote_msg_id;
+            this.temporary_voice = temporary_voice;
         }
     }
 
@@ -401,6 +404,7 @@ namespace Dc {
             settings.bind_property ("shift-enter-sends", compose_bar,
                                     "shift-enter-sends", BindingFlags.SYNC_CREATE);
             compose_bar.send_message.connect (on_send_message);
+            compose_bar.send_voice_message.connect (on_send_voice_message);
             compose_bar.draft_changed.connect (on_draft_changed);
             compose_bar.edit_message.connect ((msg_id, new_text) => {
                 msg_actions.edit_message.begin (msg_id, new_text);
@@ -1667,10 +1671,20 @@ namespace Dc {
 
         private void on_send_message (string text, string? file_path,
                                       string? file_name, int quote_msg_id) {
+            queue_send (new PendingSend (
+                text, file_path, file_name, quote_msg_id));
+        }
+
+        private void on_send_voice_message (string file_path,
+                                            int quote_msg_id) {
+            queue_send (new PendingSend ("", file_path, "voice-message.m4a",
+                quote_msg_id, true));
+        }
+
+        private void queue_send (PendingSend job) {
             cancel_pending_draft_save ();
             remove_draft.begin ();
-            send_queue.push_tail (new PendingSend (text, file_path, file_name,
-                quote_msg_id));
+            send_queue.push_tail (job);
             process_send_queue.begin ();
         }
 
@@ -1680,17 +1694,19 @@ namespace Dc {
             while (!send_queue.is_empty ()) {
                 var job = send_queue.pop_head ();
                 yield do_send (job.text, job.file_path, job.file_name,
-                    job.quote_msg_id);
+                    job.quote_msg_id, job.temporary_voice);
             }
             sending_queue = false;
         }
 
         private async void do_send (string text, string? file_path,
-                                    string? file_name, int quote_msg_id) {
+                                    string? file_name, int quote_msg_id,
+                                    bool temporary_voice) {
             try {
                 string? send_text = text.length > 0 ? text : null;
-                string? view_type = AttachmentTypes.infer_outgoing_view_type (
-                    file_path, file_name);
+                string? view_type = temporary_voice ? "Voice"
+                    : AttachmentTypes.infer_outgoing_view_type (
+                        file_path, file_name);
                 int msg_id = yield rpc.send_msg (chat_id,
                                                   send_text, file_path, file_name,
                                                   quote_msg_id, view_type);
@@ -1704,6 +1720,9 @@ namespace Dc {
                 }
             } catch (Error e) {
                 window.show_toast ("Send failed: " + e.message);
+            } finally {
+                if (temporary_voice && file_path != null)
+                    FileUtils.unlink (file_path);
             }
         }
 
