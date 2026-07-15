@@ -1202,9 +1202,10 @@ namespace Dc {
             try {
                 var messages = yield fetch_messages_batch (new_start, loaded_start_index);
 
-                var adj = message_scroll.vadjustment;
-                double old_upper = adj.upper;
-                double old_value = adj.value;
+                double anchor_top;
+                var anchor = find_message_row (
+                    message_listview, 0, out anchor_top);
+                int anchor_id = anchor != null ? anchor.message_id : 0;
 
                 /* One splice avoids a per-row ListView relayout storm. */
                 message_store.splice (0, 0, pinned_message_batch (messages));
@@ -1212,18 +1213,96 @@ namespace Dc {
 
                 loaded_start_index = new_start;
 
-                Idle.add (() => {
-                    var a = message_scroll.vadjustment;
-                    a.value = old_value + (a.upper - old_upper);
-                    loading_more = false;
-                    set_loading_more_visible (false);
-                    return Source.REMOVE;
-                });
+                /* Preserve a real row because GtkListView's upper is estimated. */
+                int anchor_pos = anchor_id != 0
+                    ? find_message_index (filtered_message_store, anchor_id)
+                    : -1;
+                if (anchor_pos >= 0) {
+                    restore_prepend_anchor (
+                        (uint) anchor_pos, anchor_id, anchor_top);
+                } else {
+                    Idle.add (() => { finish_loading_earlier (); return Source.REMOVE; });
+                }
             } catch (Error e) {
                 loading_more = false;
                 set_loading_more_visible (false);
                 window.show_toast ("Failed to load earlier messages: " + e.message);
             }
+        }
+
+        /* Find a row by ID, or the top visible row when message_id is zero. */
+        private MessageRow? find_message_row (Gtk.Widget widget,
+                                              int message_id,
+                                              out double top) {
+            top = double.MAX;
+            var row = widget as MessageRow;
+            if (row != null) {
+                Graphene.Point point = Graphene.Point ();
+                if ((message_id != 0 && row.message_id != message_id)
+                        || !row.compute_point (message_scroll,
+                            Graphene.Point () { x = 0, y = 0 }, out point))
+                    return null;
+                top = point.y;
+                bool visible = top + row.get_height () > 0
+                    && top < message_scroll.get_height ();
+                return (message_id != 0 || visible) ? row : null;
+            }
+
+            MessageRow? result = null;
+            for (Gtk.Widget? child = widget.get_first_child ();
+                    child != null; child = child.get_next_sibling ()) {
+                double child_top;
+                var found = find_message_row (child, message_id, out child_top);
+                if (found != null && child_top < top) {
+                    result = found;
+                    top = child_top;
+                    if (message_id != 0) break;
+                }
+            }
+            return result;
+        }
+
+        private void restore_prepend_anchor (uint position, int message_id,
+                                             double wanted_top) {
+            /* Realize the row first; ticks restore its exact pixel offset. */
+            message_listview.scroll_to (
+                position, Gtk.ListScrollFlags.NONE, null);
+
+            uint stable_frames = 0;
+            uint elapsed_frames = 0;
+            message_listview.add_tick_callback ((w, clock) => {
+                double current_top;
+                var row = find_message_row (
+                    message_listview, message_id, out current_top);
+                if (row != null) {
+                    double correction = current_top - wanted_top;
+                    if (Math.fabs (correction) > 0.5) {
+                        restore_scroll_value (
+                            message_scroll.vadjustment.value + correction);
+                        stable_frames = 0;
+                    } else {
+                        stable_frames++;
+                    }
+                } else {
+                    message_listview.scroll_to (
+                        position, Gtk.ListScrollFlags.NONE, null);
+                    stable_frames = 0;
+                }
+
+                if (stable_frames < 3 && ++elapsed_frames < 60)
+                    return Source.CONTINUE;
+
+                finish_loading_earlier ();
+                return Source.REMOVE;
+            });
+        }
+
+        private void finish_loading_earlier () {
+            loading_more = false;
+            set_loading_more_visible (false);
+            stick_to_bottom = is_near_bottom ();
+            scroll_down_btn.visible = !stick_to_bottom;
+            update_date_pill ();
         }
 
         /* Toggle the top "Loading…" pill while older messages are fetched.
