@@ -86,6 +86,20 @@ namespace Dc {
                 ? clean : null;
         }
 
+        /** Rename a pack by moving every sticker into the new name. When
+            the destination pack already holds a same-named sticker it is
+            the same content (names are checksums), so the source duplicate
+            is dropped and the packs merge. */
+        public static void rename_pack (string pack,
+                                        string new_pack) throws Error {
+            if (pack == new_pack) return;
+            foreach (Sticker sticker in list_stickers (pack)) {
+                if (!move_sticker (sticker, new_pack)) {
+                    delete_sticker (sticker);
+                }
+            }
+        }
+
         /** Deleting every sticker of a pack deletes the pack itself. */
         public static void delete_pack (string pack) {
             foreach (Sticker sticker in list_stickers (pack)) {

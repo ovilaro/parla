@@ -16,6 +16,7 @@ namespace Dc {
         private Gtk.DropDown pack_dropdown;
         private Gtk.FlowBox sticker_grid;
         private Gtk.Label placeholder;
+        private Gtk.Button rename_pack_btn;
         private Gtk.Button delete_pack_btn;
         private string[] packs = {};
         private bool syncing_packs = false;
@@ -54,6 +55,12 @@ namespace Dc {
                 if (!syncing_packs) reload_stickers ();
             });
             pack_row.append (pack_dropdown);
+
+            rename_pack_btn = new Gtk.Button.from_icon_name (
+                "document-edit-symbolic");
+            rename_pack_btn.tooltip_text = "Rename the selected pack";
+            rename_pack_btn.clicked.connect (on_rename_pack);
+            pack_row.append (rename_pack_btn);
 
             delete_pack_btn = new Gtk.Button.from_icon_name (
                 "list-remove-symbolic");
@@ -217,6 +224,7 @@ namespace Dc {
             syncing_packs = false;
 
             pack_dropdown.sensitive = packs.length > 0;
+            rename_pack_btn.sensitive = packs.length > 0;
             delete_pack_btn.sensitive = packs.length > 0;
             reload_stickers ();
         }
@@ -396,6 +404,50 @@ namespace Dc {
                 });
             });
             return btn;
+        }
+
+        private void on_rename_pack () {
+            string? pack = selected_pack ();
+            if (pack == null) return;
+            var d = new Adw.AlertDialog ("Rename Sticker Pack",
+                "New name for the pack \"%s\".".printf (pack));
+            d.add_response ("cancel", "Cancel");
+            d.add_response ("rename", "Rename");
+            d.set_response_appearance ("rename",
+                Adw.ResponseAppearance.SUGGESTED);
+            d.default_response = "rename";
+            d.close_response = "cancel";
+
+            var entry = new Gtk.Entry ();
+            entry.text = pack;
+            entry.activates_default = true;
+            d.extra_child = entry;
+
+            d.response.connect ((r) => {
+                if (r != "rename") return;
+                string? new_pack = StickerStore.sanitize_pack_name (entry.text);
+                if (new_pack == null || new_pack == pack) return;
+                try {
+                    StickerStore.rename_pack (pack, new_pack);
+                } catch (Error e) {
+                    show_error (this, "Could not rename pack: " + e.message);
+                    return;
+                }
+                /* Rewrite the in-memory list instead of rescanning the disk
+                   so still-empty session packs survive, deduping in case the
+                   rename merged two packs */
+                string[] updated = {};
+                foreach (string existing in packs) {
+                    string name = existing == pack ? new_pack : existing;
+                    bool seen = false;
+                    foreach (string prev in updated) {
+                        if (prev == name) seen = true;
+                    }
+                    if (!seen) updated += name;
+                }
+                show_packs (updated, new_pack);
+            });
+            d.present (this);
         }
 
         private void on_delete_pack () {
