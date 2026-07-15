@@ -16,6 +16,10 @@ namespace Dc {
            when the GTK media backend is available. */
         public static bool prefer_system = false;
 
+        /* Only one voice message may play at a time. Keep this weak so a
+           message row is not kept alive solely because it was playing. */
+        private static weak AudioPlayer? active_player = null;
+
         private string path;
         private Gtk.Button btn;
         private Gtk.MediaFile? media = null;
@@ -53,6 +57,8 @@ namespace Dc {
 
         private void play () {
             stop ();
+            if (active_player != null) active_player.stop ();
+            active_player = this;
             /* macOS has no usable GTK media backend in brew's gtk4, so the
                external path is mandatory there regardless of the setting. */
             bool try_external = prefer_system || Platform.is_macos ();
@@ -137,7 +143,13 @@ namespace Dc {
                 media.pause ();
                 media = null;
             }
+            if (active_player == this) active_player = null;
             set_playing_visuals (false);
+        }
+
+        public override void dispose () {
+            stop ();
+            base.dispose ();
         }
 
         private void set_playing_visuals (bool playing) {
