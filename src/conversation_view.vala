@@ -56,6 +56,7 @@ namespace Dc {
         private Json.Array? all_msg_ids = null;
         private uint loaded_start_index = 0;
         private bool loading_more = false;
+        private int pending_scroll_message_id = 0;
         private bool loading_chat = false;
         private bool messages_loaded = false;
         private bool messages_stale = false;
@@ -1065,12 +1066,39 @@ namespace Dc {
         }
 
         public void scroll_to_message (int msg_id) {
+            if (msg_id <= 0) return;
+
+            /* A filtered-out message has no ListView position. Close search
+               first and let the filter model expose every message again. */
+            if (close_search_if_active ()) {
+                Idle.add (() => {
+                    scroll_to_message (msg_id);
+                    return Source.REMOVE;
+                });
+                return;
+            }
+
+            if (scroll_to_loaded_message (msg_id)) {
+                pending_scroll_message_id = 0;
+                return;
+            }
+
+            pending_scroll_message_id = msg_id;
+            if (!loading_more) load_until_pending_message.begin ();
+        }
+
+        private bool scroll_to_loaded_message (int msg_id) {
             int pos = find_message_index (filtered_message_store, msg_id);
-            if (pos < 0) return;
+            if (pos < 0) return false;
             var msg = (Message) filtered_message_store.get_item (pos);
             msg.highlighted = true;
+            /* Do not let later row measurements pull an explicit jump back
+               to the bottom. The last row is the one intentional exception. */
+            stick_to_bottom = (uint) pos + 1
+                == filtered_message_store.get_n_items ();
             message_listview.scroll_to (pos, Gtk.ListScrollFlags.FOCUS, null);
-            stick_to_bottom = is_near_bottom ();
+            scroll_down_btn.visible = !stick_to_bottom;
+            return true;
         }
 
         /* ================================================================
@@ -1126,6 +1154,7 @@ namespace Dc {
                 }
 
                 pinned.update_bar.begin ();
+                resume_pending_message_scroll ();
             } catch (Error e) {
                 messages_loaded = false;
                 messages_stale = true;
@@ -1279,10 +1308,59 @@ namespace Dc {
                     Idle.add (() => { finish_loading_earlier (); return Source.REMOVE; });
                 }
             } catch (Error e) {
-                loading_more = false;
-                set_loading_more_visible (false);
+                pending_scroll_message_id = 0;
+                finish_loading_earlier (false);
                 window.show_toast ("Failed to load earlier messages: " + e.message);
             }
+        }
+
+        /* Load every missing history page between the current context and a
+           requested message. Re-evaluate the pending ID after each RPC call
+           so a newer click replaces an older jump without racing it. */
+        private async void load_until_pending_message () {
+            if (loading_more || pending_scroll_message_id == 0
+                    || all_msg_ids == null) return;
+
+            loading_more = true;
+            set_loading_more_visible (true);
+            bool unavailable = false;
+
+            try {
+                while (pending_scroll_message_id != 0) {
+                    int target_id = pending_scroll_message_id;
+                    if (find_message (message_store, target_id) != null) break;
+
+                    int target_index = MessageHistory.find_id (
+                        all_msg_ids, target_id);
+                    if (target_index < 0
+                            || (uint) target_index >= loaded_start_index) {
+                        if (pending_scroll_message_id == target_id)
+                            pending_scroll_message_id = 0;
+                        unavailable = true;
+                        break;
+                    }
+
+                    uint new_start = MessageHistory.earlier_batch_start (
+                        loaded_start_index, (uint) target_index);
+                    var messages = yield fetch_messages_batch (
+                        new_start, loaded_start_index);
+
+                    /* Keep the complete context between the old viewport and
+                       the target instead of inserting only the pinned row. */
+                    message_store.splice (0, 0, pinned_message_batch (messages));
+                    flush_pending_seen ();
+                    loaded_start_index = new_start;
+                }
+            } catch (Error e) {
+                pending_scroll_message_id = 0;
+                finish_loading_earlier (false);
+                window.show_toast ("Failed to load message: " + e.message);
+                return;
+            }
+
+            finish_loading_earlier ();
+            if (unavailable)
+                window.show_toast ("Message is no longer available");
         }
 
         /* Find a row by ID, or the top visible row when message_id is zero. */
@@ -1352,12 +1430,22 @@ namespace Dc {
             });
         }
 
-        private void finish_loading_earlier () {
+        private void finish_loading_earlier (bool resume_pending = true) {
             loading_more = false;
             set_loading_more_visible (false);
             stick_to_bottom = is_near_bottom ();
             scroll_down_btn.visible = !stick_to_bottom;
             update_date_pill ();
+            if (resume_pending) resume_pending_message_scroll ();
+        }
+
+        private void resume_pending_message_scroll () {
+            if (pending_scroll_message_id == 0) return;
+            if (scroll_to_loaded_message (pending_scroll_message_id)) {
+                pending_scroll_message_id = 0;
+            } else if (!loading_more && all_msg_ids != null) {
+                load_until_pending_message.begin ();
+            }
         }
 
         /* Toggle the top "Loading…" pill while older messages are fetched.

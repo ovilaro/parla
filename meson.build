@@ -89,6 +89,7 @@ sources = files(
   'src/account_finder.vala',
   'src/rpc_installer.vala',
   'src/models.vala',
+  'src/message_history.vala',
   'src/chat_row.vala',
   'src/markdown.vala',
   'src/mentions.vala',
@@ -195,3 +196,13 @@ attachment_types_test = executable(
 )
 
 test('attachment-types', attachment_types_test)
+
+message_history_test = executable(
+  'message-history-test',
+  files('tests/message_history_test.vala', 'src/message_history.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
+                 dependency('json-glib-1.0')],
+  install: false,
+)
+
+test('message-history', message_history_test)
