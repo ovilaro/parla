@@ -78,6 +78,8 @@ namespace Dc {
         public bool system_audio_player { get; set; default = false; }
         public bool animate_stickers { get; set; default = true; }
         public string rpc_server_path { get; set; default = ""; }
+        /* An empty value deliberately means the standard Parla account store. */
+        public string accounts_path { get; set; default = ""; }
         public RpcServerSource rpc_server_source { get; set; default = RpcServerSource.AUTO; }
         public bool rpc_check_updates_on_startup { get; set; default = true; }
         public SidebarMode sidebar_mode { get; set; default = SidebarMode.FULL; }
@@ -125,6 +127,32 @@ namespace Dc {
             return !rpc_server_path_is_fixed () && rpc_check_updates_on_startup;
         }
 
+        public string default_accounts_path () {
+            return Path.build_filename (AccountFinder.get_data_dir (), "accounts");
+        }
+
+        private string normalize_accounts_path (string value) {
+            string path = value.strip ();
+            while (path.length > 1 &&
+                   (path.has_suffix ("/") || path.has_suffix ("\\"))) {
+                if (path.length == 3 && path[1] == ':') break;
+                path = path[0:path.length - 1];
+            }
+            return path;
+        }
+
+        public bool is_default_accounts_path (string value) {
+            return normalize_accounts_path (value) == default_accounts_path ();
+        }
+
+        public bool uses_default_accounts_path () {
+            return is_default_accounts_path (accounts_path);
+        }
+
+        public string effective_accounts_path () {
+            return accounts_path.length > 0 ? accounts_path : default_accounts_path ();
+        }
+
         public void load () {
             var kf = new KeyFile ();
             try { kf.load_from_file (get_config_path (), KeyFileFlags.NONE); }
@@ -141,6 +169,8 @@ namespace Dc {
             AudioPlayer.prefer_system = system_audio_player;
             animate_stickers = kf_bool (kf, "animate_stickers", true);
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
+            accounts_path = normalize_accounts_path (kf_str (kf, "accounts_path", ""));
+            if (is_default_accounts_path (accounts_path)) accounts_path = "";
             int source = kf_enum (kf, "rpc_server_source",
                                   (int) RpcServerSource.AUTO, 1);
             rpc_server_source = (RpcServerSource) source;
@@ -256,6 +286,16 @@ namespace Dc {
         public void save_rpc_server_path (string v) {
             rpc_server_path = v;
             save_string ("rpc_server_path", v);
+        }
+
+        public void save_accounts_path (string v) {
+            string clean_path = normalize_accounts_path (v);
+            accounts_path = is_default_accounts_path (clean_path) ? "" : clean_path;
+            save_string ("accounts_path", accounts_path);
+        }
+
+        public void reset_accounts_path () {
+            save_accounts_path ("");
         }
 
         public void save_rpc_server_source (RpcServerSource v) {
@@ -453,6 +493,8 @@ namespace Dc {
         private Gtk.Button rpc_choose_btn;
         private Gtk.Button rpc_download_btn;
         private Gtk.Button rpc_update_btn;
+        private Adw.ActionRow accounts_path_row;
+        private Gtk.Button accounts_path_reset_btn;
         private bool loading_proxy = false;
         private bool saving_proxy = false;
         private bool saved_proxy_enabled = false;
@@ -802,6 +844,34 @@ namespace Dc {
             rpc_row.add_suffix (rpc_download_btn);
 
             chatmail_list.append (rpc_row);
+
+            accounts_path_row = action_row ("Chatmail accounts path");
+
+            var accounts_path_change_btn = new Gtk.Button.with_label ("Change");
+            accounts_path_change_btn.valign = Gtk.Align.CENTER;
+            accounts_path_change_btn.add_css_class ("flat");
+            accounts_path_change_btn.tooltip_text =
+                "Choose a different folder for Chatmail accounts";
+            accounts_path_change_btn.clicked.connect (() => {
+                on_browse_accounts_path.begin ();
+            });
+            accounts_path_row.add_suffix (accounts_path_change_btn);
+
+            accounts_path_reset_btn = new Gtk.Button.from_icon_name (
+                "edit-undo-symbolic");
+            accounts_path_reset_btn.valign = Gtk.Align.CENTER;
+            accounts_path_reset_btn.add_css_class ("flat");
+            accounts_path_reset_btn.tooltip_text =
+                "Use the default Chatmail accounts path";
+            accounts_path_reset_btn.clicked.connect (() => {
+                app_window.settings.reset_accounts_path ();
+                sync_accounts_path_row ();
+                app_window.reconnect_rpc_server.begin ();
+            });
+            accounts_path_row.add_suffix (accounts_path_reset_btn);
+            chatmail_list.append (accounts_path_row);
+
+            sync_accounts_path_row ();
 
             rpc_version_row = action_row ("Chatmail server version", "Checking...");
             rpc_update_btn = new Gtk.Button.with_label ("Check");
@@ -1246,6 +1316,41 @@ namespace Dc {
                     show_error (app_window, e.message);
             }
             update_rpc_row ();
+        }
+
+        private void sync_accounts_path_row () {
+            string path = app_window.settings.effective_accounts_path ();
+            accounts_path_row.subtitle = path;
+            accounts_path_row.tooltip_text = path;
+            accounts_path_reset_btn.sensitive =
+                !app_window.settings.uses_default_accounts_path ();
+        }
+
+        private async void on_browse_accounts_path () {
+            var dlg = new Gtk.FileDialog ();
+            dlg.title = "Choose Chatmail accounts folder";
+            dlg.modal = true;
+
+            string path = app_window.settings.effective_accounts_path ();
+            if (FileUtils.test (path, FileTest.IS_DIR)) {
+                dlg.initial_folder = File.new_for_path (path);
+            }
+
+            try {
+                var folder = yield dlg.select_folder (app_window, null);
+                if (folder != null) {
+                    string? selected_path = folder.get_path ();
+                    if (selected_path != null) {
+                        app_window.settings.save_accounts_path (selected_path);
+                        sync_accounts_path_row ();
+                        app_window.show_toast ("Chatmail accounts path saved");
+                        app_window.reconnect_rpc_server.begin ();
+                    }
+                }
+            } catch (Error e) {
+                if (!is_dialog_dismissal (e))
+                    show_error (app_window, e.message);
+            }
         }
 
         /* One-click: download the latest server into Parla's data dir. */

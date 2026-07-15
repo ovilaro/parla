@@ -718,7 +718,7 @@ namespace Dc {
             }
 
             string data_dir = AccountFinder.get_data_dir ();
-            string accounts_path = Path.build_filename (data_dir, "accounts");
+            string accounts_path = settings.effective_accounts_path ();
 
             /* Try to connect */
             try {
