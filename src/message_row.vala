@@ -223,6 +223,7 @@ namespace Dc {
 
         public int message_id { get; private set; }
         public bool is_outgoing { get; private set; }
+        public AudioPlayer? audio_player { get; private set; default = null; }
 
         /* Roster used to turn @name / @address tokens in the body into
            clickable mention links; null in direct chats and when unavailable. */
@@ -656,7 +657,9 @@ namespace Dc {
                 return;
             }
             if (msg.is_audio_file ()) {
-                box.append (build_audio_player (msg));
+                var widget = build_audio_player (msg);
+                audio_player = widget as AudioPlayer;
+                box.append (widget);
                 return;
             }
             var fi = build_file_indicator (msg);

@@ -186,6 +186,11 @@ namespace Dc {
                 row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
                 int row_msg_id = msg.id;
                 bool row_outgoing = msg.is_outgoing;
+                if (row.audio_player != null) {
+                    row.audio_player.finished.connect (() => {
+                        queue_next_voice_message (row_msg_id);
+                    });
+                }
                 row.action_requested.connect ((action, anchor) => {
                     on_row_action (row_msg_id, row_outgoing, action, anchor);
                 });
@@ -391,6 +396,56 @@ namespace Dc {
             append (request_bar);
 
             install_file_drop_target ();
+        }
+
+        private void queue_next_voice_message (int current_msg_id) {
+            int current = find_message_index (message_store, current_msg_id);
+            if (current < 0) return;
+
+            for (uint i = (uint) current + 1;
+                    i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                if (!msg.has_local_file || !msg.is_audio_file ()) continue;
+
+                int position = find_message_index (filtered_message_store, msg.id);
+                if (position < 0) return;
+                int next_msg_id = msg.id;
+                Idle.add (() => {
+                    if (!AudioPlayer.has_active_playback ()) {
+                        play_voice_message_at ((uint) position, next_msg_id);
+                    }
+                    return Source.REMOVE;
+                });
+                return;
+            }
+        }
+
+        private void play_voice_message_at (uint position, int msg_id) {
+            double top;
+            var row = find_message_row (message_listview, msg_id, out top);
+            if (row != null && row.audio_player != null) {
+                row.audio_player.play_if_idle ();
+                return;
+            }
+
+            /* Gtk.ListView only creates rows near the viewport. Realize the
+               next voice message before asking its inline player to start. */
+            message_listview.scroll_to (
+                position, Gtk.ListScrollFlags.NONE, null);
+            uint elapsed_frames = 0;
+            message_listview.add_tick_callback ((widget, clock) => {
+                if (AudioPlayer.has_active_playback ()) return Source.REMOVE;
+
+                double row_top;
+                var next_row = find_message_row (
+                    message_listview, msg_id, out row_top);
+                if (next_row != null && next_row.audio_player != null) {
+                    next_row.audio_player.play_if_idle ();
+                    return Source.REMOVE;
+                }
+                if (++elapsed_frames >= 60) return Source.REMOVE;
+                return Source.CONTINUE;
+            });
         }
 
         /* Workspace-style hover action bar: dispatch a button press to the

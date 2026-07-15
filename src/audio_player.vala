@@ -27,6 +27,8 @@ namespace Dc {
         private Posix.pid_t proc_pid = 0;
         private GLib.Cancellable? proc_cancel = null;
 
+        public signal void finished ();
+
         public AudioPlayer (string path, string? name) {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
             this.path = path;
@@ -73,6 +75,16 @@ namespace Dc {
             set_playing_visuals (true);
         }
 
+        public bool play_if_idle () {
+            if (active_player != null) return false;
+            play ();
+            return true;
+        }
+
+        public static bool has_active_playback () {
+            return active_player != null;
+        }
+
         private string[]? find_external_command () {
             if (Environment.find_program_in_path ("afplay") != null)
                 return {"afplay", path};
@@ -95,8 +107,18 @@ namespace Dc {
                 proc_pid = pid_str != null ? (Posix.pid_t) int.parse (pid_str) : 0;
                 proc_cancel = new GLib.Cancellable ();
                 p.wait_async.begin (proc_cancel, (obj, res) => {
-                    try { p.wait_async.end (res); } catch (Error e) { /* cancelled */ }
-                    if (proc == p) stop ();
+                    bool completed = false;
+                    try {
+                        p.wait_async.end (res);
+                        completed = p.get_successful ();
+                    } catch (Error e) { /* cancelled */ }
+                    if (proc == p) {
+                        /* The process has already exited; do not signal its
+                           now-stale PID from stop(). */
+                        proc_pid = 0;
+                        stop ();
+                        if (completed) finished ();
+                    }
                 });
                 return true;
             } catch (Error e) {
@@ -109,7 +131,10 @@ namespace Dc {
             var m = Gtk.MediaFile.for_filename (path);
             media = m;
             m.notify["ended"].connect (() => {
-                if (media == m && m.ended) stop ();
+                if (media == m && m.ended) {
+                    stop ();
+                    finished ();
+                }
             });
             m.notify["error"].connect (() => {
                 if (media == m && m.error != null) stop ();
