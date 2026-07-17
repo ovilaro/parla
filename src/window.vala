@@ -500,6 +500,7 @@ namespace Dc {
                 var chat_row = row.child as ChatRow;
                 if (chat_row == null) return;
                 select_chat_by_id (chat_row.chat_id);
+                search_entry.text = "";
                 var v = current_view ();
                 if (v != null) v.focus_entry ();
             });
