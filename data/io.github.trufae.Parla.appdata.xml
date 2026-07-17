@@ -29,6 +29,20 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.7.0" date="2026-07-17">
+      <description>
+        <ul>
+          <li>Improved large message visualization</li>
+          <li>Better stickers support</li>
+          <li>Support voice messages recording</li>
+          <li>Mediabar for consecutive voice messages</li>
+          <li>Improved scrolling experience</li>
+          <li>Better sidebar keyboard navigation</li>
+          <li>Configuratble AccountsPath</li>
+          <li>Fix rescheduled notifications bug</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.8" date="2026-07-13">
       <description>
         <ul>
