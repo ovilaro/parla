@@ -88,6 +88,16 @@ private void test_rendering_modes () {
         "**bold** and `code`");
 }
 
+private void test_explicit_rendering_mode_is_local () {
+    Dc.Markdown.mode = Dc.MarkdownMode.DISABLED;
+
+    assert (Dc.Markdown.format_with_mode (
+        "**bold** and `code`", Dc.MarkdownMode.ENABLED) ==
+        "<b>bold</b> and <tt>code</tt>");
+    assert (Dc.Markdown.mode == Dc.MarkdownMode.DISABLED);
+    assert (Dc.Markdown.format ("**bold**") == "**bold**");
+}
+
 private void test_strip_inline_markdown () {
     string plain = Dc.Markdown.strip (
         "# Title\n" +
@@ -181,6 +191,7 @@ public int main (string[] args) {
     Test.add_func ("/markdown/task-checkboxes", test_task_checkboxes);
     Test.add_func ("/markdown/task-checkboxes-skip-code", test_task_checkboxes_skip_code);
     Test.add_func ("/markdown/rendering-modes", test_rendering_modes);
+    Test.add_func ("/markdown/explicit-rendering-mode-is-local", test_explicit_rendering_mode_is_local);
     Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);
     Test.add_func ("/markdown/strip-links-lists-and-quotes", test_strip_links_lists_and_quotes);
     Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);

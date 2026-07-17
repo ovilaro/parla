@@ -325,6 +325,11 @@ namespace Dc {
         public bool highlighted { get; set; default = false; }
         public bool selection_visible { get; set; default = false; }
         public bool selected { get; set; default = false; }
+        /* Lazily fetched full-message content and its transient presentation
+           state. This data belongs to the current conversation view only. */
+        public string? full_message_text { get; set; default = null; }
+        public bool full_message_expanded { get; set; default = false; }
+        public bool full_message_loading { get; set; default = false; }
 
         /* Delivery state — one of MessageState. */
         public int state { get; set; default = 0; }
@@ -358,7 +363,10 @@ namespace Dc {
             get { return download_state == "InProgress"; }
         }
         public bool has_full_message_action {
-            get { return can_download_full_message || has_html; }
+            get {
+                return can_download_full_message || has_html
+                    || full_message_text != null;
+            }
         }
         public bool can_edit_text {
             get { return is_outgoing && !is_info && has_text; }
@@ -410,6 +418,22 @@ namespace Dc {
 
         public string display_file_name (string fallback = "file") {
             return has_value (file_name) ? file_name : fallback;
+        }
+
+        /** Copy all properties into a fresh instance. Gtk.ListView reuses the
+         * row widget when the same Message pointer reappears at a position, so
+         * mutating in place never rebinds; splicing a distinct copy does. */
+        public Message dup () {
+            var copy = new Message ();
+            const ParamFlags RW = ParamFlags.READABLE | ParamFlags.WRITABLE;
+            foreach (var spec in get_class ().list_properties ()) {
+                if ((spec.flags & RW) != RW) continue;
+                var val = GLib.Value (spec.value_type);
+                get_property (spec.name, ref val);
+                copy.set_property (spec.name, val);
+            }
+            copy.reaction_details = reaction_details;
+            return copy;
         }
 
         private bool has_value (string? value) {

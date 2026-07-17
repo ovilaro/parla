@@ -104,6 +104,7 @@ sources = files(
   'src/emoji.vala',
   'src/file_drop.vala',
   'src/conversation_view.vala',
+  'src/full_message_dialog.vala',
   'src/chat_info_dialog.vala',
   'src/sticker_store.vala',
   'src/sticker_manager_dialog.vala',

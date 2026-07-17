@@ -234,6 +234,7 @@ namespace Dc {
         public signal void quote_clicked (int quoted_msg_id);
         public signal void action_requested (string action, Gtk.Widget anchor);
         public signal void full_message_requested (int msg_id);
+        public signal void full_message_view_requested (int msg_id);
         public signal void selection_toggled (int msg_id, bool selected);
         public signal void checkbox_toggle_requested (int msg_id, string new_text);
 
@@ -1102,7 +1103,15 @@ namespace Dc {
         /** Message body widget with markdown + link markup. Shared by both row styles. */
         private Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
             Gtk.Widget body;
-            if (Markdown.mode == MarkdownMode.ENABLED) {
+            string visible_text = msg.full_message_expanded
+                    && msg.full_message_text != null
+                ? msg.full_message_text : (msg.text ?? "");
+            if (msg.full_message_expanded) {
+                /* The full body has different line offsets than the preview,
+                   so its rendered task glyphs intentionally are read-only. */
+                body = build_markup_label (visible_text, max_width_chars, 0,
+                    mention_roster);
+            } else if (Markdown.mode == MarkdownMode.ENABLED) {
                 var md_body = build_text_with_markdown_blocks (msg, max_width_chars);
                 body = md_body ?? build_markup_label (msg.text, max_width_chars,
                     emoji_only_count (msg.text), mention_roster);
@@ -1117,28 +1126,51 @@ namespace Dc {
             box.halign = Gtk.Align.FILL;
             box.append (body);
 
-            if (msg.is_downloading_full_message) {
-                var status = new Gtk.Label (msg.has_file
-                    ? "Downloading attachment..."
-                    : "Downloading full message...");
+            if (msg.is_downloading_full_message || msg.full_message_loading) {
+                string status_text = msg.full_message_loading
+                    ? "Loading full message…"
+                    : (msg.has_file
+                        ? "Downloading attachment..."
+                        : "Downloading full message...");
+                var status = new Gtk.Label (status_text);
                 status.add_css_class ("message-full-text-status");
                 status.halign = Gtk.Align.START;
                 status.xalign = 0;
                 box.append (status);
             } else {
-                var btn = new Gtk.Button.with_label (
+                var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+                actions.halign = Gtk.Align.FILL;
+                actions.hexpand = true;
+
+                var toggle_btn = new Gtk.Button.with_label (
                     msg.can_download_full_message
                         ? (msg.has_file
                             ? "Download attachment"
                             : "Download full message")
-                        : "Show full message");
-                btn.add_css_class ("flat");
-                btn.add_css_class ("message-full-text-button");
-                btn.halign = Gtk.Align.START;
-                btn.clicked.connect (() => {
+                        : (msg.full_message_expanded
+                            ? "Collapse"
+                            : "Expand"));
+                toggle_btn.add_css_class ("flat");
+                toggle_btn.add_css_class ("message-full-text-button");
+                toggle_btn.halign = Gtk.Align.START;
+                toggle_btn.clicked.connect (() => {
                     full_message_requested (msg.id);
                 });
-                box.append (btn);
+                actions.append (toggle_btn);
+
+                if (!msg.can_download_full_message) {
+                    var view_btn = new Gtk.Button.with_label (
+                        "View full message");
+                    view_btn.add_css_class ("flat");
+                    view_btn.add_css_class ("message-full-text-button");
+                    view_btn.hexpand = true;
+                    view_btn.halign = Gtk.Align.END;
+                    view_btn.clicked.connect (() => {
+                        full_message_view_requested (msg.id);
+                    });
+                    actions.append (view_btn);
+                }
+                box.append (actions);
             }
             return box;
         }

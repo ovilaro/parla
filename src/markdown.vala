@@ -75,9 +75,20 @@ namespace Dc {
          * URLs are always linkified.
          */
         public static string format (string input) {
-            string text = mode == MarkdownMode.STRIPPED ? strip (input) : input;
+            return format_with_mode (input, mode);
+        }
+
+        /**
+         * Format text using an explicit mode without changing the application
+         * setting. This is useful for previews whose rendering can be toggled
+         * locally, such as the full-message reader.
+         */
+        public static string format_with_mode (string input,
+                                               MarkdownMode render_mode) {
+            string text = render_mode == MarkdownMode.STRIPPED
+                ? strip (input) : input;
             var escaped = Markup.escape_text (text);
-            if (mode != MarkdownMode.ENABLED) {
+            if (render_mode != MarkdownMode.ENABLED) {
                 return linkify (escaped);
             }
             try {

@@ -221,7 +221,10 @@ namespace Dc {
                     on_row_action (row_msg_id, row_outgoing, action, anchor);
                 });
                 row.full_message_requested.connect ((mid) => {
-                    load_full_message.begin (mid);
+                    toggle_full_message.begin (mid);
+                });
+                row.full_message_view_requested.connect ((mid) => {
+                    view_full_message.begin (mid);
                 });
                 row.checkbox_toggle_requested.connect ((mid, new_text) => {
                     msg_actions.edit_message.begin (mid, new_text);
@@ -281,6 +284,15 @@ namespace Dc {
                 var row = pick_message_row (x, y);
                 if (row == null) return;
                 if (selection_mode) {
+                    dc_last_id = -1;
+                    dc_last_time = 0;
+                    return;
+                }
+                /* These are real buttons, not message-row activation areas.
+                   Deny the capture gesture for this pointer sequence so the
+                   first click reaches the button unambiguously. */
+                if (pointer_on_css (x, y, { "message-full-text-button" })) {
+                    dc.set_state (Gtk.EventSequenceState.DENIED);
                     dc_last_id = -1;
                     dc_last_time = 0;
                     return;
@@ -1003,6 +1015,7 @@ namespace Dc {
             new_msg.is_pinned = old_msg.is_pinned;
             new_msg.selection_visible = old_msg.selection_visible;
             new_msg.selected = old_msg.selected;
+            preserve_full_message_state (old_msg, new_msg);
 
             var adj = message_scroll.vadjustment;
             double saved_value = adj.value;
@@ -1025,9 +1038,23 @@ namespace Dc {
             });
         }
 
-        private async void load_full_message (int msg_id) {
+        /** Rebind a row after changing transient properties on its existing
+         * Message object. Gtk.ListView keeps the old widget when the same
+         * instance reappears at a position, so splice a fresh copy instead. */
+        private void refresh_message_row (int msg_id) {
+            var msg = find_message (message_store, msg_id);
+            if (msg != null) replace_message (msg_id, msg.dup ());
+        }
+
+        private async void toggle_full_message (int msg_id) {
             var msg = find_message (message_store, msg_id);
             if (msg == null) return;
+
+            if (msg.full_message_expanded) {
+                msg.full_message_expanded = false;
+                refresh_message_row (msg_id);
+                return;
+            }
 
             try {
                 if (msg.can_download_full_message) {
@@ -1036,18 +1063,83 @@ namespace Dc {
                     return;
                 }
 
-                if (msg.has_html) {
-                    string? html = yield rpc.get_message_html (msg_id);
-                    if (html != null && html.length > 0) {
-                        show_full_message_text (msg_id, html_to_text (html));
+                string? full_text = msg.full_message_text;
+                if (full_text == null) {
+                    set_full_message_loading (msg, true);
+                    full_text = yield fetch_full_message_text (msg_id);
+                }
+
+                var current = find_message (message_store, msg_id);
+                if (current != null) {
+                    current.full_message_loading = false;
+                    if (full_text != null && full_text.length > 0) {
+                        current.full_message_text = full_text;
+                        current.full_message_expanded = true;
+                        refresh_message_row (msg_id);
                         return;
                     }
+                }
+
+                clear_full_message_loading (msg_id);
+                window.show_toast ("Full message unavailable");
+            } catch (Error e) {
+                clear_full_message_loading (msg_id);
+                window.show_toast ("Full message failed: " + e.message);
+            }
+        }
+
+        private async void view_full_message (int msg_id) {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null) return;
+            try {
+                string? full_text = msg.full_message_text;
+                if (full_text == null) {
+                    full_text = yield fetch_full_message_text (msg_id);
+                }
+
+                var current = find_message (message_store, msg_id);
+                if (current != null && full_text != null
+                        && full_text.length > 0) {
+                    /* Cache silently. Viewing must not rebuild or otherwise
+                       alter the inline bubble; Expand/Collapse owns that. */
+                    current.full_message_text = full_text;
+                    show_full_message_text (msg_id, full_text);
+                    return;
                 }
 
                 window.show_toast ("Full message unavailable");
             } catch (Error e) {
                 window.show_toast ("Full message failed: " + e.message);
             }
+        }
+
+        private async string? fetch_full_message_text (int msg_id)
+                throws Error {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null || !msg.has_html) return null;
+            string? html = yield rpc.get_message_html (msg_id);
+            return html != null && html.length > 0
+                ? html_to_text (html) : null;
+        }
+
+        private void set_full_message_loading (Message msg, bool loading) {
+            msg.full_message_loading = loading;
+            refresh_message_row (msg.id);
+        }
+
+        private void clear_full_message_loading (int msg_id) {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null) return;
+            msg.full_message_loading = false;
+            refresh_message_row (msg_id);
+        }
+
+        private static void preserve_full_message_state (Message old_msg,
+                                                         Message new_msg) {
+            if (old_msg.text != new_msg.text) return;
+            new_msg.full_message_text = old_msg.full_message_text;
+            new_msg.full_message_expanded = old_msg.full_message_expanded;
+            new_msg.full_message_loading = old_msg.full_message_loading;
         }
 
         private static string html_to_text (string html) {
@@ -1080,29 +1172,10 @@ namespace Dc {
         }
 
         private void show_full_message_text (int msg_id, string full_text) {
-            var dialog = new Adw.Dialog ();
-            dialog.title = "Message %d".printf (msg_id);
-            dialog.content_width = 640;
-            dialog.content_height = 520;
-
-            var toolbar = new Adw.ToolbarView ();
-            var header = new Adw.HeaderBar ();
-            toolbar.add_top_bar (header);
-
-            var scroller = new Gtk.ScrolledWindow ();
-            scroller.hscrollbar_policy = Gtk.PolicyType.NEVER;
-            scroller.vexpand = true;
-
-            var text = new Gtk.TextView ();
-            text.editable = false;
-            text.cursor_visible = false;
-            text.wrap_mode = Gtk.WrapMode.WORD_CHAR;
-            text.buffer.text = full_text;
-            scroller.child = text;
-
-            toolbar.content = scroller;
-            dialog.child = toolbar;
-            install_escape_close (dialog);
+            var msg = find_message (message_store, msg_id);
+            if (msg == null) return;
+            var dialog = new FullMessageDialog (window, rpc, msg_actions, msg,
+                full_text, settings.effective_font_size ());
             dialog.present (window);
         }
 
@@ -1368,6 +1441,10 @@ namespace Dc {
             for (uint i = 0; i < messages.length; i++) {
                 messages[i].is_pinned = pinned.is_pinned (messages[i].id);
                 messages[i].selection_visible = selection_mode;
+                var old_msg = find_message (message_store, messages[i].id);
+                if (old_msg != null) {
+                    preserve_full_message_state (old_msg, messages[i]);
+                }
                 batch[i] = messages[i];
             }
             return batch;
