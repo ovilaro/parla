@@ -127,7 +127,15 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x86_64
+            runner: macos-26-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
 
@@ -154,7 +162,7 @@ jobs:
         id: dmg
         run: |
           version=$(awk -F"'" '/version:/ { print $2; exit }' meson.build)
-          VERSION="$version" scripts/macos/package-dmg.sh | tee /tmp/parla-dmg.log
+          ARCH="${{ matrix.arch }}" VERSION="$version" scripts/macos/package-dmg.sh | tee /tmp/parla-dmg.log
           dmg=$(tail -n 1 /tmp/parla-dmg.log)
           test -f "$dmg"
           case "$dmg" in
@@ -165,7 +173,7 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
-          name: parla-macos-dmg
+          name: parla-macos-${{ matrix.arch }}-dmg
           path: ${{ steps.dmg.outputs.path }}
           if-no-files-found: error
 
