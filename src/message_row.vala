@@ -1101,16 +1101,35 @@ namespace Dc {
         }
 
         /** Message body widget with markdown + link markup. Shared by both row styles. */
+        /* Half of the daemon's DC_DESIRED_TEXT_LEN (38 lines x 100 chars).
+           Parla owns the collapsed-preview length; the core constant is baked
+           into the prebuilt deltachat-rpc-server and can't be tuned at runtime. */
+        private const long PREVIEW_MAX_CHARS = 1000;
+
+        /** Trim a long body for the collapsed preview, cutting at the last line
+         * break before the cap when there is one so markup stays balanced. */
+        private static string collapsed_preview (string text) {
+            if (text.char_count () <= PREVIEW_MAX_CHARS) return text;
+            string head = text.substring (0, text.index_of_nth_char (
+                PREVIEW_MAX_CHARS));
+            int nl = head.last_index_of_char ('\n');
+            if (nl > head.length / 2) head = head.substring (0, nl);
+            return head + "…";
+        }
+
         private Gtk.Widget build_text_widget (Message msg, int max_width_chars) {
             Gtk.Widget body;
-            string visible_text = msg.full_message_expanded
-                    && msg.full_message_text != null
-                ? msg.full_message_text : (msg.text ?? "");
-            if (msg.full_message_expanded) {
+            if (msg.full_message_expanded && msg.full_message_text != null) {
                 /* The full body has different line offsets than the preview,
                    so its rendered task glyphs intentionally are read-only. */
-                body = build_markup_label (visible_text, max_width_chars, 0,
-                    mention_roster);
+                body = build_markup_label (msg.full_message_text,
+                    max_width_chars, 0, mention_roster);
+            } else if (!msg.full_message_expanded && msg.has_full_message_action
+                    && (msg.text ?? "").char_count () > PREVIEW_MAX_CHARS) {
+                /* Collapsed preview of a long/rich message: cap it so the
+                   bubble stays small — the rest is behind Expand / View. */
+                body = build_markup_label (collapsed_preview (msg.text ?? ""),
+                    max_width_chars, 0, mention_roster);
             } else if (Markdown.mode == MarkdownMode.ENABLED) {
                 var md_body = build_text_with_markdown_blocks (msg, max_width_chars);
                 body = md_body ?? build_markup_label (msg.text, max_width_chars,
@@ -1153,6 +1172,9 @@ namespace Dc {
                 toggle_btn.add_css_class ("flat");
                 toggle_btn.add_css_class ("message-full-text-button");
                 toggle_btn.halign = Gtk.Align.START;
+                /* Don't grab focus on click: inside the ListView that scrolls
+                   the button into view mid-press and eats the first click. */
+                toggle_btn.focus_on_click = false;
                 toggle_btn.clicked.connect (() => {
                     full_message_requested (msg.id);
                 });
@@ -1165,6 +1187,7 @@ namespace Dc {
                     view_btn.add_css_class ("message-full-text-button");
                     view_btn.hexpand = true;
                     view_btn.halign = Gtk.Align.END;
+                    view_btn.focus_on_click = false;
                     view_btn.clicked.connect (() => {
                         full_message_view_requested (msg.id);
                     });
