@@ -146,7 +146,7 @@ namespace Dc {
             string work = escaped;
 
             /* Code blocks: ```lang\ncontent``` — extract first to protect contents */
-            work = extract_code (cb_re, work, segments);
+            work = extract_code_block (cb_re, work, segments);
 
             /* Inline code: `content` */
             work = extract_code (ic_re, work, segments);
@@ -360,6 +360,32 @@ namespace Dc {
                 sb.append ("\x01%d\x01".printf (idx));
                 return false;
             });
+        }
+
+        /**
+         * Like extract_code, but runs fenced blocks through the generic
+         * syntax highlighter. The captured content was markup-escaped with
+         * the whole message, so unescape before tokenizing; the highlighter
+         * re-escapes every chunk it emits.
+         */
+        private static string extract_code_block (Regex re, string input,
+                                                  GenericArray<string> segments) throws RegexError {
+            return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
+                int idx = (int) segments.length;
+                string raw = unescape_markup (mi.fetch (1));
+                segments.add ("<tt>" + SyntaxHighlight.highlight (raw) + "</tt>");
+                sb.append ("\x01%d\x01".printf (idx));
+                return false;
+            });
+        }
+
+        private static string unescape_markup (string escaped) {
+            return escaped
+                .replace ("&lt;", "<")
+                .replace ("&gt;", ">")
+                .replace ("&quot;", "\"")
+                .replace ("&apos;", "'")
+                .replace ("&amp;", "&");
         }
 
         private static string extract_plain_code (Regex re, string input,

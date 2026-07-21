@@ -92,6 +92,7 @@ sources = files(
   'src/message_history.vala',
   'src/chat_row.vala',
   'src/markdown.vala',
+  'src/syntax_highlight.vala',
   'src/mentions.vala',
   'src/image_utils.vala',
   'src/message_row.vala',
@@ -175,7 +176,8 @@ test('storage-quota', storage_quota_test)
 
 markdown_test = executable(
   'markdown-test',
-  files('tests/markdown_test.vala', 'src/markdown.vala'),
+  files('tests/markdown_test.vala', 'src/markdown.vala',
+        'src/syntax_highlight.vala'),
   dependencies: [dependency('glib-2.0'), dependency('pango')],
   install: false,
 )
@@ -184,7 +186,8 @@ test('markdown', markdown_test)
 
 mentions_test = executable(
   'mentions-test',
-  files('tests/mentions_test.vala', 'src/mentions.vala', 'src/markdown.vala'),
+  files('tests/mentions_test.vala', 'src/mentions.vala', 'src/markdown.vala',
+        'src/syntax_highlight.vala'),
   dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
                  dependency('pango')],
   install: false,

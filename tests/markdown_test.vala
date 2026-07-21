@@ -75,6 +75,59 @@ private void test_task_checkboxes_skip_code () {
     assert_valid_pango_markup (markup);
 }
 
+private void test_code_block_highlighting () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+    Dc.SyntaxHighlight.dark_mode = false;
+
+    string markup = Dc.Markdown.format (
+        "```c\nint x = 42; // answer\nputs (\"hi\");\n```");
+
+    assert (markup.has_prefix ("<tt>"));
+    assert (markup.has_suffix ("</tt>"));
+    /* keyword/type, number, comment (italic) and string all colored */
+    assert (markup.contains (">int</span>"));
+    assert (markup.contains (">42</span>"));
+    assert (markup.contains ("style=\"italic\">// answer</span>"));
+    assert (markup.contains (">&quot;hi&quot;</span>"));
+    assert (markup.contains (">puts</span>"));
+    assert_valid_pango_markup (markup);
+}
+
+private void test_code_block_highlighting_escapes () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+    Dc.SyntaxHighlight.dark_mode = false;
+
+    string markup = Dc.Markdown.format (
+        "```\nif (a < b && c > 0) return \"x&y\";\n```");
+
+    assert (markup.contains ("&lt;"));
+    assert (markup.contains ("&amp;&amp;"));
+    assert (markup.contains ("&gt;"));
+    assert_valid_pango_markup (markup);
+}
+
+private void test_code_block_theme_none_is_plain () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.NONE;
+
+    string markup = Dc.Markdown.format ("```c\nint x = 42;\n```");
+
+    assert (markup == "<tt>int x = 42;\n</tt>");
+    assert_valid_pango_markup (markup);
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+}
+
+private void test_inline_code_stays_plain () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+
+    string markup = Dc.Markdown.format ("`int x = 42;`");
+
+    assert (markup == "<tt>int x = 42;</tt>");
+}
+
 private void test_rendering_modes () {
     Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
     assert (Dc.Markdown.format ("**bold** and `code`") ==
@@ -190,6 +243,10 @@ public int main (string[] args) {
     Test.add_func ("/markdown/plain-pipe-text", test_plain_pipe_text_is_not_table);
     Test.add_func ("/markdown/task-checkboxes", test_task_checkboxes);
     Test.add_func ("/markdown/task-checkboxes-skip-code", test_task_checkboxes_skip_code);
+    Test.add_func ("/markdown/code-block-highlighting", test_code_block_highlighting);
+    Test.add_func ("/markdown/code-block-highlighting-escapes", test_code_block_highlighting_escapes);
+    Test.add_func ("/markdown/code-block-theme-none", test_code_block_theme_none_is_plain);
+    Test.add_func ("/markdown/inline-code-stays-plain", test_inline_code_stays_plain);
     Test.add_func ("/markdown/rendering-modes", test_rendering_modes);
     Test.add_func ("/markdown/explicit-rendering-mode-is-local", test_explicit_rendering_mode_is_local);
     Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);

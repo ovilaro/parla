@@ -194,6 +194,15 @@ namespace Dc {
             MessageRow.animate_stickers = settings.animate_stickers;
             apply_current_appearance ();
 
+            /* Highlight colors are baked into label markup, so rebuild the
+               open chat whenever the effective dark/light style flips. */
+            var style_manager = Adw.StyleManager.get_default ();
+            SyntaxHighlight.dark_mode = style_manager.dark;
+            style_manager.notify["dark"].connect (() => {
+                SyntaxHighlight.dark_mode = style_manager.dark;
+                rebuild_current_chat_view ();
+            });
+
             settings.appearance_changed.connect (() => {
                 MessageRow.style = settings.message_style;
                 MessageRow.animate_stickers = settings.animate_stickers;

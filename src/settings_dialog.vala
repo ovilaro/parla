@@ -73,6 +73,7 @@ namespace Dc {
 
         public int double_click_action { get; set; default = 0; }
         public MarkdownMode markdown_mode { get; set; default = MarkdownMode.ENABLED; }
+        public CodeTheme code_theme { get; set; default = CodeTheme.ADAPTIVE; }
         public bool shift_enter_sends { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool show_notification_contents { get; set; default = true; }
@@ -165,6 +166,9 @@ namespace Dc {
             double_click_action = kf_enum (kf, "double_click_action", 0, 5);
             markdown_mode = kf_markdown_mode (kf);
             Markdown.mode = markdown_mode;
+            code_theme = (CodeTheme) kf_enum (kf, "code_theme",
+                (int) CodeTheme.ADAPTIVE, (int) CodeTheme.NONE);
+            SyntaxHighlight.theme = code_theme;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             show_notification_contents =
@@ -258,6 +262,13 @@ namespace Dc {
             markdown_mode = mode;
             Markdown.mode = mode;
             save_int ("markdown_rendering", (int) mode);
+            appearance_changed ();
+        }
+
+        public void save_code_theme (CodeTheme theme) {
+            code_theme = theme;
+            SyntaxHighlight.theme = theme;
+            save_int ("code_theme", (int) theme);
             appearance_changed ();
         }
 
@@ -753,6 +764,19 @@ namespace Dc {
                     (MarkdownMode) md_combo.selected);
             });
 
+            var code_row = action_row (
+                "Code highlighting",
+                "Color scheme for code blocks in messages");
+            string[] code_labels = {
+                "Adaptive", "Solarized", "Monokai", "Nord", "None"
+            };
+            var code_combo = row_dropdown (code_row, code_labels,
+                (uint) app_window.settings.code_theme);
+            code_combo.notify["selected"].connect (() => {
+                app_window.settings.save_code_theme (
+                    (CodeTheme) code_combo.selected);
+            });
+
             var shift_row = action_row (
                 "Shift+Return sends message",
                 "When on, Return inserts a newline and Shift+Return sends");
@@ -911,6 +935,7 @@ namespace Dc {
 
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
+            advanced_list.append (code_row);
             advanced_list.append (audio_row);
             advanced_list.append (transcription_row);
             advanced_list.append (transcription_args_row);
