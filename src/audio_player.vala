@@ -340,17 +340,24 @@ namespace Dc {
         private Message message;
         private int account_id;
         private Gtk.Button btn;
+        private Gtk.Button? transcribe_btn = null;
+        private Gtk.Label transcription_label;
         private AudioPlayback playback;
+        private Transcriber transcriber;
         private ulong current_handler = 0;
         private ulong playing_handler = 0;
+        private ulong transcriber_handler = 0;
 
         public AudioPlayer (Message message, int account_id) {
-            Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
+            Object (orientation: Gtk.Orientation.VERTICAL, spacing: 2);
             this.message = message;
             this.account_id = account_id;
             playback = AudioPlayback.shared ();
+            transcriber = Transcriber.shared ();
             add_css_class ("message-audio");
             halign = Gtk.Align.START;
+
+            var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
 
             btn = new Gtk.Button.from_icon_name ("media-playback-start-symbolic");
             btn.add_css_class ("circular");
@@ -359,22 +366,76 @@ namespace Dc {
                 if (is_current_message ()) playback.toggle ();
                 else playback.play_message (message, account_id);
             });
-            append (btn);
+            row.append (btn);
 
-            var label = new Gtk.Label (
-                (message.file_name != null && message.file_name.length > 0)
-                    ? message.file_name : "Voice message");
+            /* No filename on purpose: voice notes carry meaningless
+               recorder-generated names. The size still hints at length. */
+            string size = message.file_bytes > 0
+                ? " (%s)".printf (format_size (message.file_bytes))
+                : "";
+            var label = new Gtk.Label ("Voice Message" + size);
             label.add_css_class ("message-audio-name");
-            label.ellipsize = Pango.EllipsizeMode.MIDDLE;
-            label.max_width_chars = 22;
             label.xalign = 0;
             label.valign = Gtk.Align.CENTER;
-            append (label);
+            row.append (label);
+
+            if (Transcriber.available () && message.has_local_file) {
+                transcribe_btn = new Gtk.Button.with_label ("A");
+                transcribe_btn.add_css_class ("flat");
+                transcribe_btn.add_css_class ("message-transcribe-button");
+                transcribe_btn.valign = Gtk.Align.CENTER;
+                transcribe_btn.tooltip_text = "Transcribe voice message";
+                transcribe_btn.clicked.connect (() => {
+                    transcriber.transcribe (message.file_path);
+                });
+                row.append (transcribe_btn);
+            }
+            append (row);
+
+            transcription_label = new Gtk.Label ("");
+            transcription_label.add_css_class ("message-transcription");
+            transcription_label.visible = false;
+            transcription_label.wrap = true;
+            transcription_label.wrap_mode = Pango.WrapMode.WORD_CHAR;
+            transcription_label.max_width_chars = 42;
+            transcription_label.xalign = 0;
+            transcription_label.halign = Gtk.Align.START;
+            transcription_label.selectable = true;
+            append (transcription_label);
 
             current_handler = playback.notify["current-item"].connect (
                 update_visuals);
             playing_handler = playback.notify["playing"].connect (update_visuals);
+            transcriber_handler = transcriber.updated.connect ((path) => {
+                if (path == message.file_path) update_transcription ();
+            });
             update_visuals ();
+            update_transcription ();
+        }
+
+        /** Reflect the in-memory transcription state: a progress note while
+            whisper runs, then the quoted text. Never persisted anywhere. */
+        private void update_transcription () {
+            string? path = message.file_path;
+            if (path == null) return;
+            bool in_progress = transcriber.is_running (path);
+            string? text = transcriber.result_for (path);
+            if (transcribe_btn != null) {
+                transcribe_btn.sensitive = !in_progress && text == null;
+            }
+            if (in_progress) {
+                transcription_label.set_markup ("<i>Transcribing…</i>");
+                transcription_label.visible = true;
+            } else if (text != null) {
+                string quoted = text.length > 0
+                    ? "“" + Markup.escape_text (text) + "”"
+                    : "(no speech detected)";
+                transcription_label.set_markup (
+                    "Transcription: <i>" + quoted + "</i>");
+                transcription_label.visible = true;
+            } else {
+                transcription_label.visible = false;
+            }
         }
 
         private void update_visuals () {
@@ -400,6 +461,10 @@ namespace Dc {
             if (playing_handler != 0) {
                 playback.disconnect (playing_handler);
                 playing_handler = 0;
+            }
+            if (transcriber_handler != 0) {
+                transcriber.disconnect (transcriber_handler);
+                transcriber_handler = 0;
             }
             base.dispose ();
         }

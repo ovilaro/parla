@@ -98,6 +98,7 @@ sources = files(
   'src/image_viewer.vala',
   'src/video_player.vala',
   'src/audio_player.vala',
+  'src/whisper.vala',
   'src/audio_recorder.vala',
   'src/conversation_media_bar.vala',
   'src/compose_bar.vala',
@@ -199,6 +200,16 @@ attachment_types_test = executable(
 )
 
 test('attachment-types', attachment_types_test)
+
+whisper_test = executable(
+  'whisper-test',
+  files('tests/whisper_test.vala', 'src/whisper.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
+                 dependency('gio-2.0')],
+  install: false,
+)
+
+test('whisper', whisper_test)
 
 message_history_test = executable(
   'message-history-test',

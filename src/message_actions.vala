@@ -89,6 +89,15 @@ namespace Dc {
                 }));
             }
 
+            /* Transcribe voice messages with the external whisper tool */
+            if (msg != null && msg.is_audio_file () && msg.has_local_file
+                && Transcriber.available ()) {
+                string apath = msg.file_path;
+                vbox.append (menu_button (popover, "Transcribe", () => {
+                    Transcriber.shared ().transcribe (apath);
+                }));
+            }
+
             /* Collect sticker attachments into a local pack */
             if (msg != null && msg.is_sticker_file () && msg.has_local_file) {
                 string spath = msg.file_path;

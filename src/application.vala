@@ -408,6 +408,16 @@ namespace Dc {
                 padding: 2px 5px;
             }
             .message-attachment { padding: 4px 0; }
+            .message-transcription {
+                font-size: small;
+                opacity: 0.85;
+            }
+            .message-transcribe-button {
+                min-width: 20px;
+                min-height: 20px;
+                padding: 2px 6px;
+                font-weight: bold;
+            }
             .message-full-text-button {
                 font-size: small;
                 padding: 2px 0;
