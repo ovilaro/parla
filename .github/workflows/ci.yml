@@ -164,9 +164,10 @@ jobs:
         id: dmg
         run: |
           version=$(awk -F"'" '/version:/ { print $2; exit }' meson.build)
-          ARCH="${{ matrix.arch }}" VERSION="$version" scripts/macos/package-dmg.sh | tee /tmp/parla-dmg.log
+          ARCH="${{ matrix.arch }}" DMG_VARIANT="${{ matrix.runner }}" VERSION="$version" scripts/macos/package-dmg.sh | tee /tmp/parla-dmg.log
           dmg=$(tail -n 1 /tmp/parla-dmg.log)
           test -f "$dmg"
+          hdiutil verify "$dmg"
           case "$dmg" in
             "$PWD"/*) dmg="${dmg#"$PWD"/}" ;;
           esac
@@ -232,7 +233,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: artifacts
-          merge-multiple: true
 
       - name: Verify release artifacts
         run: |
@@ -242,11 +242,20 @@ jobs:
           appimages=(artifacts/**/*.AppImage)
           dmgs=(artifacts/**/*.dmg)
           zips=(artifacts/**/*.zip)
-          if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#appimages[@]} == 0 || ${#dmgs[@]} == 0 || ${#zips[@]} == 0 )); then
+          if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#appimages[@]} == 0 || ${#dmgs[@]} != 3 || ${#zips[@]} == 0 )); then
             find artifacts -maxdepth 4 -type f
-            echo "::error::Missing release artifact (.deb, .flatpak, .AppImage, .dmg, or .zip)"
+            echo "::error::Missing release artifact (.deb, .flatpak, three .dmg files, .AppImage, or .zip)"
             exit 1
           fi
+          declare -A dmg_names
+          for dmg in "${dmgs[@]}"; do
+            name=${dmg##*/}
+            if [[ -n "${dmg_names[$name]:-}" ]]; then
+              echo "::error::Duplicate DMG release name: $name"
+              exit 1
+            fi
+            dmg_names[$name]=1
+          done
 
       - name: Publish release
         uses: softprops/action-gh-release@v3

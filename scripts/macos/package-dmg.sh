@@ -6,9 +6,15 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 VERSION="${VERSION:-$(awk -F"'" '/version:/ { print $2; exit }' "$ROOT/meson.build")}"
 ARCH="${ARCH:-$(uname -m)}"
+DMG_VARIANT="${DMG_VARIANT:-}"
 APP_DIR="${APP_DIR:-$ROOT/dist/macos/Parla.app}"
 DMG_DIR="${DMG_DIR:-$ROOT/dist/macos}"
-DMG="$DMG_DIR/Parla-$VERSION-$ARCH.dmg"
+if [[ "$DMG_VARIANT" == *[!A-Za-z0-9._-]* ]]; then
+	echo "error: invalid DMG variant: $DMG_VARIANT" >&2
+	exit 1
+fi
+DMG_VARIANT="${DMG_VARIANT:+-$DMG_VARIANT}"
+DMG="$DMG_DIR/Parla-$VERSION$DMG_VARIANT-$ARCH.dmg"
 APP_BASENAME="$(basename "$APP_DIR")"
 
 make -C "$ROOT" all BUILD_DIR="${BUILD_DIR:-$ROOT/builddir}" BUILDTYPE="${BUILDTYPE:-release}"
