@@ -79,6 +79,48 @@ namespace Dc {
     }
 
     /**
+     * Holds the current frame of a sticker animation. Gtk.Picture reacts to
+     * set_paintable (and to invalidate-size) with queue_resize, which would
+     * relayout the whole window once per frame — breaking clicks and
+     * popovers while an animated sticker is visible — so frames must be
+     * swapped behind one long-lived paintable that only invalidates its
+     * contents. All frames of a PixbufAnimation share the animation's size,
+     * so the intrinsic size never changes.
+     */
+    internal class StickerFramePaintable : Object, Gdk.Paintable {
+        private Gdk.Texture texture;
+
+        public StickerFramePaintable (Gdk.Texture texture) {
+            this.texture = texture;
+        }
+
+        public void set_texture (Gdk.Texture texture) {
+            this.texture = texture;
+            invalidate_contents ();
+        }
+
+        public void snapshot (Gdk.Snapshot snapshot, double width, double height) {
+            texture.snapshot (snapshot, width, height);
+        }
+
+        public Gdk.Paintable get_current_image () {
+            return texture;
+        }
+
+        public Gdk.PaintableFlags get_flags () {
+            return Gdk.PaintableFlags.STATIC_SIZE;
+        }
+
+        public int get_intrinsic_width () {
+            return texture.width;
+        }
+
+        public int get_intrinsic_height () {
+            return texture.height;
+        }
+    }
+
+    /**
      * Steps a Gtk.Picture through a Gdk.PixbufAnimation while the picture is
      * mapped. Frame delays come from the animation itself; the timer stops
      * whenever the widget leaves the visible tree, so off-screen stickers
@@ -90,14 +132,14 @@ namespace Dc {
         private Gdk.PixbufAnimation animation;
         private Gdk.PixbufAnimationIter? iter = null;
         private uint timeout_id = 0;
-        private unowned Gtk.Picture picture;
+        private StickerFramePaintable paintable;
 
         public StickerAnimation (Gtk.Picture picture,
                                  Gdk.PixbufAnimation animation) {
-            this.picture = picture;
             this.animation = animation;
-            picture.paintable = texture_from_pixbuf (
-                animation.get_static_image ());
+            paintable = new StickerFramePaintable (texture_from_pixbuf (
+                animation.get_static_image ()));
+            picture.paintable = paintable;
             picture.map.connect (on_map);
             picture.unmap.connect (on_unmap);
         }
@@ -116,7 +158,7 @@ namespace Dc {
         }
 
         private void show_current_frame () {
-            picture.paintable = texture_from_pixbuf (iter.get_pixbuf ());
+            paintable.set_texture (texture_from_pixbuf (iter.get_pixbuf ()));
         }
 
         private void schedule_next_frame () {
