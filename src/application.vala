@@ -409,7 +409,9 @@ namespace Dc {
             }
             .message-attachment { padding: 4px 0; }
             .message-transcription {
-                font-size: small;
+                /* Relative so it tracks the conversation font-size setting;
+                   absolute keywords like "small" ignore the inherited size. */
+                font-size: 85%;
                 opacity: 0.85;
             }
             .message-transcribe-button {
