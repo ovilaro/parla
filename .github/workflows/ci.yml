@@ -137,8 +137,6 @@ jobs:
             runner: macos-26-intel
           - arch: arm64
             runner: macos-14
-          - arch: x86_64
-            runner: macos-14-large
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
