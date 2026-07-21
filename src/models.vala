@@ -288,6 +288,9 @@ namespace Dc {
         private const string[] AUDIO_EXTENSIONS = {
             ".mp3", ".ogg", ".oga", ".opus", ".wav", ".m4a", ".aac", ".flac", ".weba", ".amr"
         };
+        private const string[] TEXT_EXTENSIONS = {
+            ".txt", ".text", ".md", ".markdown", ".html", ".htm"
+        };
 
         public int id { get; set; default = 0; }
         public int chat_id { get; set; default = 0; }
@@ -421,6 +424,24 @@ namespace Dc {
             return has_mime ("audio/")
                 || view_type_is ("audio", "voice")
                 || path_has_suffix (AUDIO_EXTENSIONS);
+        }
+
+        /** Text-like attachments (txt/md/html) can be previewed inline. */
+        public bool is_text_preview_file () {
+            return has_mime ("text/plain")
+                || has_mime ("text/markdown")
+                || has_mime ("text/html")
+                || path_has_suffix (TEXT_EXTENSIONS);
+        }
+
+        public bool is_markdown_file () {
+            return has_mime ("text/markdown")
+                || path_has_suffix ({ ".md", ".markdown" });
+        }
+
+        public bool is_html_file () {
+            return has_mime ("text/html")
+                || path_has_suffix ({ ".html", ".htm" });
         }
 
         public string display_file_name (string fallback = "file") {

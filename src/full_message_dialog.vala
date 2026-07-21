@@ -2,15 +2,18 @@ namespace Dc {
 
     /**
      * Comfortable, scrollable reader for the unabridged message body.
+     * Also serves as a read-only previewer for text-like attachments
+     * (see the `for_file` constructor).
      * Reading preferences are deliberately local to this dialog.
      */
     public class FullMessageDialog : Adw.Dialog {
 
         private unowned Window window;
-        private unowned RpcClient rpc;
-        private MessageActions actions;
-        private Message msg;
+        private unowned RpcClient? rpc;
+        private MessageActions? actions;
+        private Message? msg;
 
+        private string base_title;
         private string message_text;
         private string edit_original_text;
         private int reader_font_size;
@@ -32,6 +35,23 @@ namespace Dc {
             this.rpc = rpc;
             this.actions = actions;
             this.msg = msg;
+            this.render_markdown = Markdown.mode == MarkdownMode.ENABLED;
+            build_ui ("Message %d".printf (msg.id), full_text,
+                      initial_font_size, msg.can_edit_text);
+        }
+
+        /** Read-only preview of a text-like attachment. */
+        public FullMessageDialog.for_file (Window window, string file_title,
+                                           string content,
+                                           int initial_font_size,
+                                           bool markdown_default) {
+            this.window = window;
+            this.render_markdown = markdown_default;
+            build_ui (file_title, content, initial_font_size, false);
+        }
+
+        private void build_ui (string dialog_title, string full_text,
+                               int initial_font_size, bool can_edit) {
             this.message_text = full_text;
             this.edit_original_text = full_text;
             this.reader_font_size = SettingsManager.clamp_font_size (
@@ -39,9 +59,9 @@ namespace Dc {
             if (this.reader_font_size == FONT_SIZE_SYSTEM) {
                 this.reader_font_size = FONT_SIZE_FALLBACK;
             }
-            this.render_markdown = Markdown.mode == MarkdownMode.ENABLED;
 
-            title = "Message %d".printf (msg.id);
+            base_title = dialog_title;
+            title = dialog_title;
             content_width = 680;
             content_height = 560;
 
@@ -52,7 +72,7 @@ namespace Dc {
             reading_button = build_reading_button ();
             header.pack_end (reading_button);
 
-            if (msg.can_edit_text) {
+            if (can_edit) {
                 edit_button = new Gtk.Button.from_icon_name (
                     "document-edit-symbolic");
                 edit_button.add_css_class ("flat");
@@ -268,7 +288,7 @@ namespace Dc {
             editor.buffer.text = message_text;
             if (edit_status != null) edit_status.label = "";
             content_stack.visible_child_name = "reader";
-            title = "Message %d".printf (msg.id);
+            title = base_title;
             reading_button.visible = true;
             edit_button.visible = true;
             cancel_button.visible = false;

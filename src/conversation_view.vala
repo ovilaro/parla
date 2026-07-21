@@ -1987,9 +1987,41 @@ namespace Dc {
                 window.show_video (msg.file_path, msg.file_name);
             } else if (msg.is_audio_file ()) {
                 /* Audio plays inline via its own play/pause button. */
+            } else if (msg.is_text_preview_file ()) {
+                preview_text_attachment (msg);
             } else {
                 window.save_attachment.begin (msg.file_path, msg.file_name);
             }
+        }
+
+        /* A Gtk.Label renders the whole buffer at once, so cap inline
+           previews and fall back to the save flow for anything larger. */
+        private const size_t TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
+
+        private void preview_text_attachment (Message msg) {
+            string path = msg.file_path;
+            string content;
+            size_t length;
+            try {
+                FileUtils.get_contents (path, out content, out length);
+            } catch (Error e) {
+                window.show_toast ("Preview failed: " + e.message);
+                return;
+            }
+            if (length > TEXT_PREVIEW_MAX_BYTES) {
+                window.save_attachment.begin (path, msg.file_name);
+                return;
+            }
+            if (!content.validate ()) content = content.make_valid ();
+            if (msg.is_html_file ()) content = html_to_text (content);
+            if (content.strip ().length == 0) {
+                window.show_toast ("File is empty");
+                return;
+            }
+            var dialog = new FullMessageDialog.for_file (window,
+                msg.display_file_name (), content,
+                settings.effective_font_size (), msg.is_markdown_file ());
+            dialog.present (window);
         }
 
         private void collect_image_paths (string current_path,
