@@ -578,6 +578,20 @@ namespace Dc {
             });
             appearance_list.append (theme_row);
 
+            var code_row = action_row (
+                "Code highlighting",
+                "Color scheme for code blocks in messages");
+            string[] code_labels = {
+                "Adaptive", "Solarized", "Monokai", "Nord", "None"
+            };
+            var code_combo = row_dropdown (code_row, code_labels,
+                (uint) app_window.settings.code_theme);
+            code_combo.notify["selected"].connect (() => {
+                app_window.settings.save_code_theme (
+                    (CodeTheme) code_combo.selected);
+            });
+            appearance_list.append (code_row);
+
             var style_row = action_row (
                 "Message style",
                 "Chat bubbles, compact IRC lines or workspace rows");
@@ -748,19 +762,6 @@ namespace Dc {
                     (MarkdownMode) md_combo.selected);
             });
 
-            var code_row = action_row (
-                "Code highlighting",
-                "Color scheme for code blocks in messages");
-            string[] code_labels = {
-                "Adaptive", "Solarized", "Monokai", "Nord", "None"
-            };
-            var code_combo = row_dropdown (code_row, code_labels,
-                (uint) app_window.settings.code_theme);
-            code_combo.notify["selected"].connect (() => {
-                app_window.settings.save_code_theme (
-                    (CodeTheme) code_combo.selected);
-            });
-
             var shift_row = action_row (
                 "Shift+Return sends message",
                 "When on, Return inserts a newline and Shift+Return sends");
@@ -881,7 +882,6 @@ namespace Dc {
 
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
-            advanced_list.append (code_row);
             advanced_list.append (audio_row);
             advanced_list.append (sticker_row);
             advanced_list.append (download_row);
