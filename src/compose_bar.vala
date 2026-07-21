@@ -38,6 +38,7 @@ namespace Dc {
         private Gtk.Label reply_label;
         private Gtk.Box reply_bar;
         private Gtk.Box attachment_bar;
+        private Gtk.Box long_msg_bar;
         private Gtk.Picture attachment_picture;
         private Gtk.Image attachment_icon;
         private Gtk.Label attachment_name_label;
@@ -68,7 +69,6 @@ namespace Dc {
         private string suspended_reply_label = "";
         /* Last natural height a resize was queued for; guards the
            vadjustment-driven requeue below against self-feeding. */
-        private int entry_queued_height = -1;
 
         public ComposeBar () {
             Object (
@@ -148,19 +148,40 @@ namespace Dc {
 
             append (attachment_bar);
 
+            long_msg_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            long_msg_bar.add_css_class ("long-message-bar");
+            long_msg_bar.visible = false;
+            var long_msg_icon = new Gtk.Image.from_icon_name (
+                "dialog-information-symbolic");
+            long_msg_bar.append (long_msg_icon);
+            var long_msg_label = new Gtk.Label (
+                "Long message: recipients get a shortened preview with a "
+                + "“Show Full Message” button, and it cannot be "
+                + "edited after sending");
+            long_msg_label.add_css_class ("long-message-label");
+            long_msg_label.halign = Gtk.Align.START;
+            long_msg_label.xalign = 0;
+            long_msg_label.wrap = true;
+            long_msg_bar.append (long_msg_label);
+            append (long_msg_bar);
+
             var input_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
             input_row.hexpand = true;
             input_row.halign = Gtk.Align.FILL;
 
+            /* Action buttons stay pinned to the bottom of the row, so they
+               keep their place next to the last text line when a
+               multi-line draft makes the entry grow. */
             attach_button = icon_button (
                 "mail-attachment-symbolic", "Attach file", on_attach_clicked);
+            attach_button.valign = Gtk.Align.END;
             input_row.append (attach_button);
 
             emoji_button = new Gtk.MenuButton ();
             emoji_button.icon_name = "face-smile-symbolic";
             emoji_button.add_css_class ("flat");
             emoji_button.tooltip_text = "Insert emoji";
-            emoji_button.valign = Gtk.Align.CENTER;
+            emoji_button.valign = Gtk.Align.END;
             var emoji_chooser = create_emoji_chooser ();
             if (emoji_chooser != null) {
                 emoji_chooser.emoji_picked.connect (on_emoji_picked);
@@ -180,11 +201,13 @@ namespace Dc {
             cancel_attach_button = icon_button (
                 "edit-clear-symbolic", "Remove attachment", clear_attachment);
             cancel_attach_button.visible = false;
+            cancel_attach_button.valign = Gtk.Align.END;
             input_row.append (cancel_attach_button);
 
             cancel_edit_button = icon_button (
                 "edit-undo-symbolic", "Cancel editing", cancel_edit);
             cancel_edit_button.visible = false;
+            cancel_edit_button.valign = Gtk.Align.END;
             input_row.append (cancel_edit_button);
 
             text_view = new Gtk.TextView ();
@@ -215,8 +238,27 @@ namespace Dc {
             placeholder_label.can_target = false;
             placeholder_label.ellipsize = Pango.EllipsizeMode.END;
 
+            /* The entry grows with its content only up to a cap, then
+               scrolls internally. Without the cap a long draft makes the
+               compose bar taller than the window and pushes the send
+               button out of sight. The scrolled window also owns the text
+               view's vadjustment, replacing the manual stale-height
+               workaround a bare TextView needed here before. */
+            var entry_scroll = new Gtk.ScrolledWindow ();
+            entry_scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
+            /* AUTOMATIC (EXTERNAL skips natural-height propagation and
+               renders a restored multi-line draft blank). The scrollbar
+               slider's 40px theme minimum would put a two-row floor under
+               the empty entry, so it is shrunk in the CSS
+               (.compose-entry-scroll scrollbar slider). */
+            entry_scroll.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
+            entry_scroll.propagate_natural_height = true;
+            entry_scroll.max_content_height = 220;
+            entry_scroll.add_css_class ("compose-entry-scroll");
+            entry_scroll.child = text_view;
+
             var entry_overlay = new Gtk.Overlay ();
-            entry_overlay.child = text_view;
+            entry_overlay.child = entry_scroll;
             entry_overlay.add_overlay (placeholder_label);
             entry_overlay.hexpand = true;
             entry_overlay.halign = Gtk.Align.FILL;
@@ -227,6 +269,7 @@ namespace Dc {
                 update_send_stack ();
                 notify_draft_changed ();
                 update_mention_popup ();
+                update_long_message_hint ();
             });
             /* AppKit invokes this action signal directly for Command+V, so
                handle the signal rather than relying only on GDK key events. */
@@ -240,37 +283,6 @@ namespace Dc {
                 hide_mention_popup ();
             });
             text_view.add_controller (focus_ctrl);
-
-            /* A bare TextView reports the height of its last *validated*
-               layout, which is computed asynchronously and for the width it
-               had at the time. When its width changes (the cancel-edit
-               button appearing, a window resize) or multi-line text is set
-               programmatically, the surrounding box keeps the stale height
-               and the text gets clipped. The view tracks its content height
-               in the vadjustment's "upper", so whenever that settles on a
-               new value force a revalidation (the measure) and requeue a
-               resize — deferred to idle because the value changes during
-               allocation. The requeue must be conditional: the resize it
-               triggers makes the text view touch this adjustment again
-               during the next allocation, so requeueing unconditionally
-               locks the window into a permanent per-frame relayout loop
-               that repositions every open popover each frame and makes the
-               menus unclickable while a conversation is open. */
-            var entry_vadj = new Gtk.Adjustment (0, 0, 0, 0, 0, 0);
-            entry_vadj.notify["upper"].connect (() => {
-                GLib.Idle.add (() => {
-                    int min_h, nat_h, b3, b4;
-                    text_view.measure (Gtk.Orientation.VERTICAL,
-                                       text_view.get_width (),
-                                       out min_h, out nat_h, out b3, out b4);
-                    if (nat_h != entry_queued_height) {
-                        entry_queued_height = nat_h;
-                        text_view.queue_resize ();
-                    }
-                    return GLib.Source.REMOVE;
-                });
-            });
-            text_view.vadjustment = entry_vadj;
 
             var key_ctrl = new Gtk.EventControllerKey ();
             key_ctrl.key_pressed.connect (on_entry_key_pressed);
@@ -298,7 +310,7 @@ namespace Dc {
 
             /* Idle actions collapse to one send button as soon as text appears. */
             send_stack = new Gtk.Stack ();
-            send_stack.valign = Gtk.Align.CENTER;
+            send_stack.valign = Gtk.Align.END;
             send_stack.hhomogeneous = false;
             send_stack.add_named (send_button, "send");
             send_stack.add_named (idle_actions, "idle");
@@ -889,6 +901,40 @@ namespace Dc {
             placeholder_label.label = placeholder_default;
             update_send_stack ();
             notify_draft_changed ();
+        }
+
+        /* Mirrors core's truncate_by_lines() (tools.rs): a text is sent
+           truncated once it reaches 38 effective lines, where a line
+           wraps into a new one every 100 characters. Such messages get
+           the has_html flag: recipients see a shortened bubble plus a
+           "Show Full Message" button and the message cannot be edited
+           after sending, so warn while composing. */
+        private bool message_would_be_truncated (string text) {
+            const int MAX_LINES = 38;
+            const int MAX_LINE_LEN = 100;
+            int lines = 0;
+            int line_chars = 0;
+            int i = 0;
+            unichar c;
+            while (text.get_next_char (ref i, out c)) {
+                if (c == '\n') {
+                    line_chars = 0;
+                    lines++;
+                } else {
+                    line_chars++;
+                    if (line_chars > MAX_LINE_LEN) {
+                        line_chars = 1;
+                        lines++;
+                    }
+                }
+                if (lines == MAX_LINES) return true;
+            }
+            return false;
+        }
+
+        private void update_long_message_hint () {
+            long_msg_bar.visible = editing_msg_id == 0
+                && message_would_be_truncated (get_text ().strip ());
         }
 
         private void on_send () {

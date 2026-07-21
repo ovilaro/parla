@@ -680,6 +680,20 @@ namespace Dc {
                 font-size: 0.85em;
                 opacity: 0.8;
             }
+            .compose-entry-scroll scrollbar slider {
+                min-height: 16px;
+            }
+            .long-message-bar {
+                padding: 4px 8px;
+                margin-bottom: 4px;
+                border-left: 3px solid @warning_bg_color;
+                background-color: alpha(@warning_bg_color, 0.12);
+                border-radius: 4px;
+            }
+            .long-message-label {
+                font-size: 0.85em;
+                opacity: 0.8;
+            }
             .pinned-bar {
                 background-color: alpha(@accent_bg_color, 0.08);
                 border-bottom: 1px solid alpha(@view_fg_color, 0.12);
