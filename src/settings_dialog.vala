@@ -79,8 +79,6 @@ namespace Dc {
         public bool show_notification_contents { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
-        public string transcription_tool { get; set; default = "whisper"; }
-        public string transcription_args { get; set; default = ""; }
         public bool animate_stickers { get; set; default = true; }
         public int auto_download_limit { get; set; default = AUTO_DOWNLOAD_DEFAULT; }
         public string rpc_server_path { get; set; default = ""; }
@@ -176,9 +174,6 @@ namespace Dc {
             minimize_to_tray = kf_bool (kf, "minimize_to_tray", false);
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
-            transcription_tool = kf_str (kf, "transcription_tool", "whisper");
-            transcription_args = kf_str (kf, "transcription_args", "");
-            Transcriber.extra_args = transcription_args;
             animate_stickers = kf_bool (kf, "animate_stickers", true);
             auto_download_limit = normalize_auto_download_limit (
                 kf_int (kf, "auto_download_limit", AUTO_DOWNLOAD_DEFAULT));
@@ -296,17 +291,6 @@ namespace Dc {
             system_audio_player = v;
             AudioPlayer.prefer_system = v;
             save_bool ("system_audio_player", v);
-        }
-
-        public void save_transcription_tool (string v) {
-            transcription_tool = v;
-            save_string ("transcription_tool", v);
-        }
-
-        public void save_transcription_args (string v) {
-            transcription_args = v;
-            Transcriber.extra_args = v;
-            save_string ("transcription_args", v);
         }
 
         public void save_animate_stickers (bool v) {
@@ -895,50 +879,10 @@ namespace Dc {
                     auto_download_limit_for_index (download_combo.selected));
             });
 
-            bool whisper_found = Transcriber.available ();
-            var transcription_row = action_row (
-                "Transcription",
-                whisper_found
-                    ? "Tool used to transcribe voice messages"
-                    : "Voice transcription needs the whisper tool in PATH");
-            string[] transcription_labels = { "whisper" };
-            var transcription_combo = row_dropdown (transcription_row,
-                transcription_labels, 0);
-            transcription_combo.sensitive = whisper_found;
-            transcription_combo.notify["selected"].connect (() => {
-                app_window.settings.save_transcription_tool (
-                    transcription_labels[transcription_combo.selected]);
-            });
-
-            var transcription_args_row = action_row (
-                "Transcription options",
-                "Extra command-line arguments for the transcription tool");
-            var transcription_args_entry = new Gtk.Entry ();
-            transcription_args_entry.placeholder_text = "--language en";
-            transcription_args_entry.text =
-                app_window.settings.transcription_args;
-            transcription_args_entry.hexpand = true;
-            transcription_args_entry.valign = Gtk.Align.CENTER;
-            transcription_args_entry.sensitive = whisper_found;
-            transcription_args_entry.activate.connect (() => {
-                app_window.settings.save_transcription_args (
-                    transcription_args_entry.text);
-            });
-            var transcription_focus = new Gtk.EventControllerFocus ();
-            transcription_focus.leave.connect (() => {
-                app_window.settings.save_transcription_args (
-                    transcription_args_entry.text);
-            });
-            transcription_args_entry.add_controller (transcription_focus);
-            transcription_args_row.add_suffix (transcription_args_entry);
-            transcription_args_row.activatable_widget = transcription_args_entry;
-
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
             advanced_list.append (code_row);
             advanced_list.append (audio_row);
-            advanced_list.append (transcription_row);
-            advanced_list.append (transcription_args_row);
             advanced_list.append (sticker_row);
             advanced_list.append (download_row);
 

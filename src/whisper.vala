@@ -7,9 +7,6 @@ namespace Dc {
      */
     public class Transcriber : Object {
 
-        /* Extra command-line arguments configured in Settings > Advanced. */
-        public static string extra_args = "";
-
         private static Transcriber? instance = null;
 
         private HashTable<string, string> results =
@@ -50,8 +47,12 @@ namespace Dc {
         private async void run_whisper (string path) {
             string text = "";
             try {
-                string[] argv = { "whisper", path };
-                foreach (string arg in parse_extra_args ()) argv += arg;
+                string[] argv = {
+                    "whisper", path,
+                    "--model", "base",
+                    "--output_format", "txt",
+                    "--fp16", "False"
+                };
                 var launcher = new GLib.SubprocessLauncher (
                     SubprocessFlags.STDOUT_PIPE
                     | SubprocessFlags.STDERR_SILENCE);
@@ -77,19 +78,6 @@ namespace Dc {
                 Environment.get_user_cache_dir (), "parla", "transcribe");
             DirUtils.create_with_parents (dir, 0700);
             return dir;
-        }
-
-        private static string[] parse_extra_args () {
-            string args = extra_args.strip ();
-            if (args.length == 0) return {};
-            try {
-                string[] argv;
-                Shell.parse_argv (args, out argv);
-                return argv;
-            } catch (Error e) {
-                warning ("transcribe: bad extra arguments: %s", e.message);
-                return {};
-            }
         }
 
         /**
