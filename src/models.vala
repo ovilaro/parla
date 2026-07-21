@@ -368,8 +368,15 @@ namespace Dc {
                     || full_message_text != null;
             }
         }
+        /* Mirrors the checks in core's send_edit_request(): messages with an
+           HTML/full-message part are not editable on purpose — the stored
+           full version would keep the old text, silently diverging from the
+           edited one. This includes long messages truncated by core. */
         public bool can_edit_text {
-            get { return is_outgoing && !is_info && has_text; }
+            get {
+                return is_outgoing && !is_info && has_text
+                    && !has_html && !view_type_is ("call");
+            }
         }
         public bool has_file {
             get { return has_value (file_name) || has_value (file_path); }
