@@ -133,10 +133,14 @@ namespace Dc {
         private Gdk.PixbufAnimationIter? iter = null;
         private uint timeout_id = 0;
         private StickerFramePaintable paintable;
+        private bool playing;
+        private bool mapped = false;
 
         public StickerAnimation (Gtk.Picture picture,
-                                 Gdk.PixbufAnimation animation) {
+                                 Gdk.PixbufAnimation animation,
+                                 bool playing) {
             this.animation = animation;
+            this.playing = playing;
             paintable = new StickerFramePaintable (texture_from_pixbuf (
                 animation.get_static_image ()));
             picture.paintable = paintable;
@@ -144,13 +148,30 @@ namespace Dc {
             picture.unmap.connect (on_unmap);
         }
 
+        public void toggle_playing () {
+            playing = !playing;
+            if (playing && mapped) start ();
+            else stop ();
+        }
+
         private void on_map () {
+            mapped = true;
+            if (playing) start ();
+        }
+
+        private void on_unmap () {
+            mapped = false;
+            stop ();
+        }
+
+        private void start () {
+            if (timeout_id != 0) return;
             if (iter == null) iter = animation.get_iter (null);
             show_current_frame ();
             schedule_next_frame ();
         }
 
-        private void on_unmap () {
+        private void stop () {
             if (timeout_id != 0) {
                 Source.remove (timeout_id);
                 timeout_id = 0;
@@ -165,6 +186,7 @@ namespace Dc {
             int delay = iter.get_delay_time ();
             if (delay < 0) return; /* single frame or end of animation */
             timeout_id = Timeout.add (int.max (delay, 20), () => {
+                timeout_id = 0;
                 iter.advance (null);
                 show_current_frame ();
                 schedule_next_frame ();
@@ -182,17 +204,17 @@ namespace Dc {
         private Gtk.MediaFile media;
         private unowned Gtk.Picture picture;
         private unowned ScaledPreviewFrame frame;
-        private bool animate;
+        private bool playing;
         private int max_size;
 
         public StickerVideoAnimation (Gtk.Picture picture,
                                       ScaledPreviewFrame frame,
                                       string path,
-                                      bool animate,
+                                      bool playing,
                                       int max_size) {
             this.picture = picture;
             this.frame = frame;
-            this.animate = animate;
+            this.playing = playing;
             this.max_size = max_size;
 
             media = Gtk.MediaFile.for_filename (path);
@@ -219,8 +241,14 @@ namespace Dc {
             frame.set_natural_size (width, height);
         }
 
+        public void toggle_playing () {
+            playing = !playing;
+            if (playing && picture.get_mapped ()) media.play ();
+            else media.pause ();
+        }
+
         private void on_map () {
-            if (animate) media.play ();
+            if (playing) media.play ();
         }
 
         private void on_unmap () {
@@ -788,49 +816,51 @@ namespace Dc {
 
         /**
          * Load a GIF/WebP/WebM attachment as a sticker: natural size capped at
-         * STICKER_MAX in both dimensions, never upscaled, playing its
-         * animation while the "animate stickers" setting is on. WebM uses a
-         * muted looping media paintable; raster files with a single frame (or
-         * that cannot be decoded as an animation) fall back to a static
+         * STICKER_MAX in both dimensions, never upscaled. Animated stickers
+         * start playing (or paused on their first frame) according to the
+         * "animate stickers" setting, and a click toggles playback. WebM uses
+         * a muted looping media paintable; raster files with a single frame
+         * (or that cannot be decoded as an animation) fall back to a static
          * sticker.
          */
         private static Gtk.Widget? load_sticker (string path,
                                                 bool video = false) {
             if (video) return load_video_sticker (path);
 
-            if (animate_stickers) {
-                try {
-                    var anim = new Gdk.PixbufAnimation.from_file (path);
-                    if (!anim.is_static_image ()) {
-                        int dw = anim.get_width ();
-                        int dh = anim.get_height ();
-                        if (dw > 0 && dh > 0) {
-                            double scale = double.min (1.0, double.min (
-                                (double) STICKER_MAX / dw,
-                                (double) STICKER_MAX / dh));
-                            dw = int.max (1, (int) (dw * scale + 0.5));
-                            dh = int.max (1, (int) (dh * scale + 0.5));
+            try {
+                var anim = new Gdk.PixbufAnimation.from_file (path);
+                if (!anim.is_static_image ()) {
+                    int dw = anim.get_width ();
+                    int dh = anim.get_height ();
+                    if (dw > 0 && dh > 0) {
+                        double scale = double.min (1.0, double.min (
+                            (double) STICKER_MAX / dw,
+                            (double) STICKER_MAX / dh));
+                        dw = int.max (1, (int) (dw * scale + 0.5));
+                        dh = int.max (1, (int) (dh * scale + 0.5));
 
-                            var picture = new Gtk.Picture ();
-                            picture.set_data<StickerAnimation> (
-                                "parla-sticker-animation",
-                                new StickerAnimation (picture, anim));
-                            picture.content_fit = Gtk.ContentFit.CONTAIN;
-                            picture.can_shrink = true;
-                            picture.halign = Gtk.Align.FILL;
-                            picture.valign = Gtk.Align.FILL;
+                        var picture = new Gtk.Picture ();
+                        var sticker = new StickerAnimation (
+                            picture, anim, animate_stickers);
+                        picture.set_data<StickerAnimation> (
+                            "parla-sticker-animation", sticker);
+                        picture.content_fit = Gtk.ContentFit.CONTAIN;
+                        picture.can_shrink = true;
+                        picture.halign = Gtk.Align.FILL;
+                        picture.valign = Gtk.Align.FILL;
 
-                            var frame = new ScaledPreviewFrame (
-                                dw, dh, "message-sticker");
-                            frame.child = picture;
-                            frame.halign = Gtk.Align.START;
-                            frame.valign = Gtk.Align.START;
-                            return frame;
-                        }
+                        var frame = new ScaledPreviewFrame (
+                            dw, dh, "message-sticker");
+                        frame.child = picture;
+                        frame.halign = Gtk.Align.START;
+                        frame.valign = Gtk.Align.START;
+                        add_play_toggle (frame,
+                            () => sticker.toggle_playing ());
+                        return frame;
                     }
-                } catch (Error e) {
-                    stderr.printf ("  -> Sticker load failed: %s\n", e.message);
                 }
+            } catch (Error e) {
+                stderr.printf ("  -> Sticker load failed: %s\n", e.message);
             }
             return load_picture (path, STICKER_MAX, STICKER_MAX, 0, 0,
                                  "message-sticker");
@@ -849,11 +879,23 @@ namespace Dc {
             frame.halign = Gtk.Align.START;
             frame.valign = Gtk.Align.START;
 
+            var sticker = new StickerVideoAnimation (
+                picture, frame, path, animate_stickers, STICKER_MAX);
             picture.set_data<StickerVideoAnimation> (
-                "parla-sticker-video-animation",
-                new StickerVideoAnimation (
-                    picture, frame, path, animate_stickers, STICKER_MAX));
+                "parla-sticker-video-animation", sticker);
+            add_play_toggle (frame, () => sticker.toggle_playing ());
             return frame;
+        }
+
+        private delegate void PlayToggleFunc ();
+
+        /** Primary-click on a sticker toggles its animation playback. */
+        private static void add_play_toggle (Gtk.Widget widget,
+                                             owned PlayToggleFunc toggle) {
+            var click = new Gtk.GestureClick ();
+            click.set_button (Gdk.BUTTON_PRIMARY);
+            click.released.connect (() => toggle ());
+            widget.add_controller (click);
         }
 
         /**
