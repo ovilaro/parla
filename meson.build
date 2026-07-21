@@ -1,7 +1,7 @@
 # to release update version field below and:
 # vim data/io.github.trufae.Parla.appdata.xml
 project('parla', ['vala', 'c'],
-  version: '0.7.0',
+  version: '0.7.2',
   meson_version: '>= 0.59.0',
 )
 

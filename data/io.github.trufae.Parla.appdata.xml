@@ -29,6 +29,20 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.7.2" date="2026-07-21">
+      <description>
+        <ul>
+          <li>Fix UI freeze</li>
+          <li>Toggle sticker animations to save cpu</li>
+          <li>Tap stickers to pause animations</li>
+          <li>Transcribe voice messages with WhisperCli</li>
+          <li>Long messages cannot be edited</li>
+          <li>Add code syntax highlighting</li>
+          <li>Preview md/txt/html files</li>
+          <li>Warn before posting a long uneditable message</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-07-17">
       <description>
         <ul>
