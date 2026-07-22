@@ -253,6 +253,7 @@ namespace Dc {
                (.compose-entry-scroll scrollbar slider). */
             entry_scroll.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
             entry_scroll.propagate_natural_height = true;
+            entry_scroll.min_content_height = 36;
             entry_scroll.max_content_height = 220;
             entry_scroll.add_css_class ("compose-entry-scroll");
             entry_scroll.child = text_view;
