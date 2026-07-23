@@ -1286,11 +1286,12 @@ namespace Dc {
                                                      int max_width_chars,
                                                      int emoji_count = 0,
                                                      MentionRoster? roster = null) {
-            var text = new Gtk.Label (raw);
+            string spread = spread_adjacent_emoji (raw);
+            var text = new Gtk.Label (spread);
             try {
                 string markup = roster != null
-                    ? Mentions.render_markup (raw, roster)
-                    : Markdown.format (raw);
+                    ? Mentions.render_markup (spread, roster)
+                    : Markdown.format (spread);
                 var probe = /<\/?a(\s[^>]*)?>/.replace (markup, -1, 0, "");
                 Pango.AttrList attrs;
                 string parsed;
@@ -1298,7 +1299,10 @@ namespace Dc {
                 Pango.parse_markup (probe, -1, 0, out attrs, out parsed, out accel);
                 text.set_markup (markup);
             } catch { /* fallback: plain text already in label */ }
-            text.wrap = true;
+            /* An enlarged emoji pair must stay on one line: with wrapping
+               enabled the label breaks at the separating space and the
+               emoji stack vertically. */
+            text.wrap = emoji_count == 0;
             text.wrap_mode = Pango.WrapMode.WORD_CHAR;
             text.halign = Gtk.Align.START; text.xalign = 0;
             text.selectable = true;
@@ -1613,6 +1617,34 @@ namespace Dc {
                 consume_whitespace (text, ref index);
             }
             return count;
+        }
+
+        /** On macOS the emoji glyphs draw wider than the advance width
+            Pango measures, so adjacent emoji visually overlap at any font
+            size.  Inserting a thin space between consecutive emoji
+            clusters restores the separation; other platforms render
+            emoji at their advance width and are returned unchanged. */
+        public static string spread_adjacent_emoji (string? raw) {
+            if (raw == null) return "";
+            if (!Platform.is_macos ()) return raw;
+            var sb = new StringBuilder ();
+            int index = 0;
+            bool prev_emoji = false;
+            while (index < raw.length) {
+                int start = index;
+                if (consume_emoji_sequence (raw, ref index)) {
+                    if (prev_emoji) sb.append_unichar (0x2009);
+                    sb.append (raw.substring (start, index - start));
+                    prev_emoji = true;
+                } else {
+                    index = start;
+                    unichar c;
+                    if (!raw.get_next_char (ref index, out c)) break;
+                    sb.append_unichar (c);
+                    prev_emoji = false;
+                }
+            }
+            return sb.str;
         }
 
         private static void consume_whitespace (string text, ref int index) {

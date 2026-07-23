@@ -292,6 +292,22 @@ namespace Dc {
                 provider,
                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             );
+            if (Platform.is_macos ()) {
+                /* Apple Color Emoji inks ~26% past its advance width, so
+                   the enlarged glyph paints beyond the label Pango sized
+                   and spills over the bubble padding.  Right padding
+                   matching the overshoot re-fits it; the overlap between
+                   adjacent emoji is handled by spread_adjacent_emoji. */
+                var mac = new Gtk.CssProvider ();
+                mac.load_from_string (
+                    ".message-big-emoji, .message-medium-emoji"
+                    + " { padding-right: 0.26em; }");
+                add_provider_for_display (
+                    Gdk.Display.get_default (),
+                    mac,
+                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                );
+            }
         }
 
         private const string CSS = """

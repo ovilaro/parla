@@ -129,7 +129,8 @@ namespace Dc {
 
             /* Bottom row: preview + badge */
             var bot = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-            var preview_label = new Gtk.Label (format_preview (entry));
+            var preview_label = new Gtk.Label (
+                MessageRow.spread_adjacent_emoji (format_preview (entry)));
             if (!has_unread) {
                 preview_label.add_css_class ("dim-label");
             }
