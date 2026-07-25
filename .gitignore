@@ -1,3 +1,5 @@
+*.zip
+.DS_Store
 builddir/
 builddir-macos/
 builddir-windows/
