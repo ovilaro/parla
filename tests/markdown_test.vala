@@ -119,6 +119,30 @@ private void test_code_block_theme_none_is_plain () {
     Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
 }
 
+private void test_code_block_tilde_fence () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.NONE;
+
+    string markup = Dc.Markdown.format ("~~~c\nint x = 42;\n~~~");
+
+    assert (markup == "<tt>int x = 42;\n</tt>");
+    assert_valid_pango_markup (markup);
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+}
+
+private void test_code_block_fences_must_match () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.NONE;
+
+    /* A tilde fence is only closed by tildes, so backtick fences
+       survive inside it as literal content. */
+    string markup = Dc.Markdown.format ("~~~\n```c\nint x = 42;\n```\n~~~");
+
+    assert (markup == "<tt>```c\nint x = 42;\n```\n</tt>");
+    assert_valid_pango_markup (markup);
+    Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
+}
+
 private void test_inline_code_stays_plain () {
     Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
     Dc.SyntaxHighlight.theme = Dc.CodeTheme.ADAPTIVE;
@@ -208,6 +232,13 @@ private void test_strip_preserves_code_contents () {
     assert (plain == "**literal**\n* [x] literal");
 }
 
+private void test_strip_preserves_tilde_code_contents () {
+    string plain = Dc.Markdown.strip (
+        "~~~vala\n* [x] literal\n~~~");
+
+    assert (plain == "* [x] literal");
+}
+
 private void test_preview_strips_before_newline_clamp () {
     string preview = Dc.Markdown.preview (
         "Intro\n" +
@@ -246,6 +277,8 @@ public int main (string[] args) {
     Test.add_func ("/markdown/code-block-highlighting", test_code_block_highlighting);
     Test.add_func ("/markdown/code-block-highlighting-escapes", test_code_block_highlighting_escapes);
     Test.add_func ("/markdown/code-block-theme-none", test_code_block_theme_none_is_plain);
+    Test.add_func ("/markdown/code-block-tilde-fence", test_code_block_tilde_fence);
+    Test.add_func ("/markdown/code-block-fences-must-match", test_code_block_fences_must_match);
     Test.add_func ("/markdown/inline-code-stays-plain", test_inline_code_stays_plain);
     Test.add_func ("/markdown/rendering-modes", test_rendering_modes);
     Test.add_func ("/markdown/explicit-rendering-mode-is-local", test_explicit_rendering_mode_is_local);
@@ -254,6 +287,7 @@ public int main (string[] args) {
     Test.add_func ("/markdown/strip-task-checkboxes", test_strip_task_checkboxes);
     Test.add_func ("/markdown/strip-task-checkboxes-standard-only", test_strip_task_checkboxes_standard_only);
     Test.add_func ("/markdown/strip-preserves-code-contents", test_strip_preserves_code_contents);
+    Test.add_func ("/markdown/strip-preserves-tilde-code-contents", test_strip_preserves_tilde_code_contents);
     Test.add_func ("/markdown/preview-strips-before-newline-clamp", test_preview_strips_before_newline_clamp);
     Test.add_func ("/markdown/preview-strips-before-char-clamp", test_preview_strips_before_char_clamp);
     Test.add_func ("/markdown/single-line-preview-strips-before-newline-trim", test_single_line_preview_strips_before_newline_trim);

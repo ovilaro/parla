@@ -49,7 +49,7 @@ namespace Dc {
 
         private static void ensure_regexes () throws RegexError {
             if (cb_re != null) return;
-            cb_re = new Regex ("```(?:[a-zA-Z]*)\\n?([\\s\\S]*?)```");
+            cb_re = new Regex ("(```|~~~)(?:[a-zA-Z]*)\\n?([\\s\\S]*?)\\1");
             ic_re = new Regex ("`([^`\\n]+)`");
             bold_re = new Regex ("(\\*\\*|__)(.+?)\\1");
             italic_re = new Regex ("\\*([^\\*\\n]+)\\*");
@@ -145,7 +145,8 @@ namespace Dc {
             var segments = new GenericArray<string> ();
             string work = escaped;
 
-            /* Code blocks: ```lang\ncontent``` — extract first to protect contents */
+            /* Code blocks: ```lang\ncontent``` or ~~~lang\ncontent~~~ —
+               extract first to protect contents */
             work = extract_code_block (cb_re, work, segments);
 
             /* Inline code: `content` */
@@ -200,7 +201,7 @@ namespace Dc {
             var segments = new GenericArray<string> ();
             string work = input;
 
-            work = extract_plain_code (cb_re, work, segments);
+            work = extract_plain_code (cb_re, work, segments, 2);
             work = extract_plain_code (ic_re, work, segments);
 
             work = strip_task_checkboxes (work);
@@ -364,7 +365,8 @@ namespace Dc {
 
         /**
          * Like extract_code, but runs fenced blocks through the generic
-         * syntax highlighter. The captured content was markup-escaped with
+         * syntax highlighter. Group 1 is the fence delimiter, group 2 the
+         * content. The captured content was markup-escaped with
          * the whole message, so unescape before tokenizing; the highlighter
          * re-escapes every chunk it emits.
          */
@@ -372,7 +374,7 @@ namespace Dc {
                                                   GenericArray<string> segments) throws RegexError {
             return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
                 int idx = (int) segments.length;
-                string raw = unescape_markup (mi.fetch (1));
+                string raw = unescape_markup (mi.fetch (2));
                 segments.add ("<tt>" + SyntaxHighlight.highlight (raw) + "</tt>");
                 sb.append ("\x01%d\x01".printf (idx));
                 return false;
@@ -389,10 +391,11 @@ namespace Dc {
         }
 
         private static string extract_plain_code (Regex re, string input,
-                                                  GenericArray<string> segments) throws RegexError {
+                                                  GenericArray<string> segments,
+                                                  int group = 1) throws RegexError {
             return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
                 int idx = (int) segments.length;
-                segments.add (mi.fetch (1));
+                segments.add (mi.fetch (group));
                 sb.append ("\x01%d\x01".printf (idx));
                 return false;
             });
