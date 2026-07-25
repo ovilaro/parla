@@ -253,6 +253,8 @@ namespace Dc {
                 has_unread ? "Mark as read" : "Mark as unread",
                 () => { set_unread_state.begin (chat_id, !has_unread); },
                 false, has_unread || chat_id != window.current_chat_id);
+            append_menu_button (box, popover, "View Media",
+                () => { show_media (chat_id); });
             append_menu_button (box, popover, "Details…",
                 () => { show_info (chat_id); });
             append_menu_button (box, popover, "Clear Chat…",
@@ -313,8 +315,15 @@ namespace Dc {
             }
         }
 
+        private void show_media (int chat_id) {
+            var entry = find_chat_entry (chat_store, chat_id);
+            var dialog = new GalleryDialog (window, rpc, chat_id,
+                                            entry != null ? entry.name : null);
+            dialog.present (window);
+        }
+
         public void show_info (int chat_id) {
-            var dialog = new ChatInfoDialog (rpc, chat_id);
+            var dialog = new ChatInfoDialog (window, rpc, chat_id);
 
             dialog.chat_deleted.connect ((cid) => {
                 window.show_toast ("Chat deleted");

@@ -2,6 +2,7 @@ namespace Dc {
 
     public class ChatInfoDialog : Adw.Dialog {
 
+        private unowned Window app_window;
         private RpcClient rpc;
         private int chat_id;
         private bool is_group = false;
@@ -60,7 +61,8 @@ namespace Dc {
             return row;
         }
 
-        public ChatInfoDialog (RpcClient rpc, int chat_id) {
+        public ChatInfoDialog (Window window, RpcClient rpc, int chat_id) {
+            this.app_window = window;
             this.rpc = rpc;
             this.chat_id = chat_id;
             this.title = "Chat Info";
@@ -208,6 +210,15 @@ namespace Dc {
                 ephem_row.activatable_widget = combo;
 
                 var ephem_list = boxed_list ();
+                ephem_list.append (action_row (
+                    "View Media",
+                    "Browse apps and media shared in this chat",
+                    "view-grid-symbolic",
+                    () => {
+                        var dialog = new GalleryDialog (
+                            app_window, rpc, chat_id, chat_name);
+                        dialog.present (this);
+                    }));
                 ephem_list.append (ephem_row);
                 content.append (ephem_list);
 
