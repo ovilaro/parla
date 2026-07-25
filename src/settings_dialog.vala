@@ -880,9 +880,22 @@ namespace Dc {
                     auto_download_limit_for_index (download_combo.selected));
             });
 
+            bool whisper_found = Transcriber.available ();
+            var transcription_row = action_row (
+                "Voice transcription",
+                whisper_found
+                    ? "Whisper is available in PATH"
+                    : "Whisper was not found in PATH");
+            var transcription_status = new Gtk.Label (
+                whisper_found ? "Available" : "Not found");
+            transcription_status.valign = Gtk.Align.CENTER;
+            transcription_status.add_css_class ("dim-label");
+            transcription_row.add_suffix (transcription_status);
+
             var advanced_list = settings_list ("Advanced");
             advanced_list.append (md_row);
             advanced_list.append (audio_row);
+            advanced_list.append (transcription_row);
             advanced_list.append (sticker_row);
             advanced_list.append (download_row);
 
