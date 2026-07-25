@@ -211,9 +211,8 @@ namespace Dc {
         }
 
         private static string format_sent_timestamp (int64 timestamp) {
-            if (timestamp <= 0) return "";
-            var dt = new DateTime.from_unix_local (timestamp);
-            return "Sent " + dt.format ("%x · %H:%M");
+            var when = format_date_time (timestamp);
+            return when.length > 0 ? "Sent " + when : "";
         }
 
         internal static string format_playing_time (int64 position_us,

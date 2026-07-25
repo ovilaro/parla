@@ -346,6 +346,26 @@ namespace Dc {
             return result.get_object ();
         }
 
+        /** Fetch and parse several messages at once, keeping msg_ids
+            order. Entries that are missing or tagged "loadingError"
+            (get_messages results are tagged) are skipped. */
+        public async Message[] get_parsed_messages (int[] msg_ids) throws Error {
+            var map = yield get_messages_for (account_id, msg_ids);
+            Message[] msgs = {};
+            if (map == null) return msgs;
+            foreach (int msg_id in msg_ids) {
+                string key = msg_id.to_string ();
+                if (!map.has_member (key)) continue;
+                var node = map.get_member (key);
+                if (node == null ||
+                    node.get_node_type () != Json.NodeType.OBJECT) continue;
+                var obj = node.get_object ();
+                if (json_str (obj, "kind") != "message") continue;
+                msgs += RpcParsers.parse_message (obj, self_email);
+            }
+            return msgs;
+        }
+
         public async int send_msg (int chat_id, string? text,
                                     string? file_path = null,
                                     string? file_name = null,
@@ -566,6 +586,34 @@ namespace Dc {
                     .add_int (chat_id)
                     .add_string (visibility)
                     .build ());
+        }
+
+        /**
+         * Message ids of the given viewtypes (at most three) in a chat,
+         * or in any chat of the account when chat_id <= 0. This is a
+         * metadata-only database query in core — nothing is downloaded.
+         * The result is sorted oldest first; callers wanting newest-first
+         * must reverse it.
+         */
+        public async int[] get_chat_media (int chat_id,
+                                            string[] types) throws Error {
+            var p = Params.begin ().add_int (account_id);
+            if (chat_id > 0) p.add_int (chat_id);
+            else p.add_null ();
+            /* The RPC takes exactly three viewtype slots. */
+            for (int i = 0; i < 3; i++) {
+                p.add_string (i < types.length ? types[i] : null);
+            }
+
+            var result = yield call ("get_chat_media", p.build ());
+            if (result == null || result.get_node_type () != Json.NodeType.ARRAY)
+                return {};
+            var arr = result.get_array ();
+            int[] ids = new int[arr.get_length ()];
+            for (uint i = 0; i < arr.get_length (); i++) {
+                ids[i] = (int) arr.get_int_element (i);
+            }
+            return ids;
         }
 
         public async void delete_messages (int[] msg_ids) throws Error {

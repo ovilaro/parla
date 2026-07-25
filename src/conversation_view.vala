@@ -1517,8 +1517,12 @@ namespace Dc {
                         break;
                     }
 
+                    /* Jumps (quotes, gallery "view in conversation") can
+                       span thousands of messages; the regular 100-message
+                       batches would mean dozens of sequential roundtrips
+                       that look like nothing is happening. */
                     uint new_start = MessageHistory.earlier_batch_start (
-                        loaded_start_index, (uint) target_index);
+                        loaded_start_index, (uint) target_index, 1000);
                     var messages = yield fetch_messages_batch (
                         new_start, loaded_start_index);
 

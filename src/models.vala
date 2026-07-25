@@ -51,6 +51,69 @@ namespace Dc {
         d.present (parent);
     }
 
+    /** Flat, left-aligned button for hand-built popover menus. Disables
+        itself on click and runs the action from an idle so the popover
+        can close first. Shared by the message context menu, the gallery
+        dialog and friends. */
+    public static Gtk.Button popover_menu_button (Gtk.Popover popover,
+                                                  string label,
+                                                  owned VoidFunc action,
+                                                  bool destructive = false,
+                                                  bool hexpand = false) {
+        var btn = new Gtk.Button.with_label (label);
+        btn.add_css_class ("flat");
+        if (destructive) btn.add_css_class ("menu-destructive");
+        var child = btn.child as Gtk.Label;
+        if (child != null) {
+            child.xalign = 0;
+            child.halign = Gtk.Align.START;
+        }
+        btn.hexpand = hexpand;
+        btn.clicked.connect (() => {
+            btn.sensitive = false;
+            popover.popdown ();
+            Idle.add (() => {
+                action ();
+                return Source.REMOVE;
+            });
+        });
+        return btn;
+    }
+
+    /** Skeleton for hand-built popover menus: a no-arrow popover pointing
+        at (x, y) in parent whose child is a vertical "menu" box ready for
+        popover_menu_button rows. Unparents itself after closing. */
+    public static Gtk.Popover popover_menu (Gtk.Widget parent,
+                                            double x, double y,
+                                            out Gtk.Box vbox) {
+        var popover = new Gtk.Popover ();
+        popover.has_arrow = false;
+        popover.set_parent (parent);
+        popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+
+        vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+        vbox.add_css_class ("menu");
+        vbox.margin_start = 8;
+        vbox.margin_end = 8;
+        vbox.margin_top = 8;
+        vbox.margin_bottom = 8;
+        popover.child = vbox;
+
+        unparent_on_close (popover);
+        return popover;
+    }
+
+    /** Unparent a manually-parented popover once it closes, from an idle:
+        tearing it down inside its own closed handler upsets GTK. */
+    public static void unparent_on_close (Gtk.Popover popover) {
+        popover.closed.connect (() => {
+            Idle.add (() => {
+                popover.unparent ();
+                return Source.REMOVE;
+            });
+        });
+    }
+
     public static void install_escape_close (Adw.Dialog dialog) {
         var kc = new Gtk.EventControllerKey ();
         kc.propagation_phase = Gtk.PropagationPhase.CAPTURE;
@@ -69,6 +132,12 @@ namespace Dc {
             } catch (Error e) { /* fallback */ }
         }
         return null;
+    }
+
+    /** Locale date plus time, e.g. "07/25/2026 · 17:42". */
+    public static string format_date_time (int64 ts) {
+        if (ts <= 0) return "";
+        return new DateTime.from_unix_local (ts).format ("%x · %H:%M");
     }
 
     /* ---- JSON helpers ---- */

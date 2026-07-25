@@ -22,6 +22,7 @@ namespace Dc {
         private Gtk.Box sidebar_box;
         private Gtk.Button sidebar_toggle_btn;
         private Gtk.Button message_search_btn;
+        private Gtk.Button gallery_btn;
         private Gtk.MenuButton sidebar_menu_button;
         private Adw.WindowTitle sidebar_title;
 
@@ -73,8 +74,7 @@ namespace Dc {
             private set {
                 _current_chat_id = value;
                 if (events != null) events.active_chat_id = value;
-                if (message_search_btn != null)
-                    message_search_btn.visible = value > 0;
+                update_conversation_header_actions ();
             }
         }
 
@@ -127,6 +127,15 @@ namespace Dc {
             if (events != null) return true;
             show_toast ("RPC not ready");
             return false;
+        }
+
+        /* Header-bar actions that only make sense with a conversation open
+           (search, gallery). Kept in one place so new per-conversation
+           actions stay in sync with chat selection. */
+        private void update_conversation_header_actions () {
+            bool has_chat = _current_chat_id > 0;
+            if (message_search_btn != null) message_search_btn.visible = has_chat;
+            if (gallery_btn != null) gallery_btn.visible = has_chat;
         }
 
         private void present_modal (Adw.Dialog dialog) {
@@ -601,14 +610,24 @@ namespace Dc {
             sidebar_toggle_btn.clicked.connect (() => { toggle_sidebar_button (); });
             content_header.pack_start (sidebar_toggle_btn);
 
-            /* Search/filter button on the right side. Only meaningful with a
-               conversation open, so it stays hidden on the empty page. */
+            /* Per-conversation actions on the right side. Only meaningful
+               with a conversation open, so they stay hidden on the empty
+               page — see update_conversation_header_actions(). pack_end
+               places the first-packed child rightmost, so the gallery
+               button ends up to the right of the search button. */
+            gallery_btn = new Gtk.Button.from_icon_name ("view-grid-symbolic");
+            gallery_btn.tooltip_text = "Apps and media (%s)".printf (
+                Platform.primary_shortcut_text ("M"));
+            gallery_btn.clicked.connect (() => { show_gallery_dialog (); });
+            content_header.pack_end (gallery_btn);
+
             message_search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
             message_search_btn.tooltip_text = "Search in conversation (%s)".printf (
                 Platform.primary_shortcut_text ("F"));
             message_search_btn.clicked.connect (() => { toggle_message_search (); });
-            message_search_btn.visible = false;
             content_header.pack_end (message_search_btn);
+
+            update_conversation_header_actions ();
 
             content_box.append (content_header);
 
@@ -1418,6 +1437,14 @@ namespace Dc {
 
         public void show_image_list (string[] paths, int start_index) {
             image_viewer.show_list (paths, start_index);
+        }
+
+        private void show_gallery_dialog () {
+            if (current_chat_id <= 0 || !can_show_rpc_modal ()) return;
+            var entry = find_chat_entry (chat_store, current_chat_id);
+            var dialog = new GalleryDialog (this, rpc, current_chat_id,
+                                            entry != null ? entry.name : null);
+            present_modal (dialog);
         }
 
         public void show_video (string path, string? name) {
@@ -2757,6 +2784,15 @@ namespace Dc {
                         break;
                     }
                 }
+                /* Focus can sit outside the dialog subtree (or nowhere at
+                   all); close the presented modal anyway so Escape never
+                   goes dead. close() still honours can_close, so dialogs
+                   layering Escape (gallery: viewer → selection → close)
+                   keep their ordering. */
+                if (!dismissed && active_modal != null) {
+                    active_modal.close ();
+                    dismissed = true;
+                }
                 if (!dismissed && v != null && v.close_search_if_active ()) {
                     dismissed = true;
                 }
@@ -2867,6 +2903,9 @@ namespace Dc {
                 if (current_chat_id > 0 && chat_menu != null) {
                     chat_menu.show_info (current_chat_id);
                 }
+                return true;
+            case Gdk.Key.m:
+                show_gallery_dialog ();
                 return true;
             case Gdk.Key.s:
                 if ((state & Gdk.ModifierType.SHIFT_MASK) != 0) {
@@ -3063,6 +3102,7 @@ namespace Dc {
             "Decrease font size",     "<Primary>minus",
             "Reset font size",        "<Primary>0",
             "Open chat info",        "<Primary>i",
+            "Apps and media gallery","<Primary>m",
             "Search in conversation","<Primary>f",
             "Search contacts",       "<Primary><Shift>f",
             "Quick switch chat",     "<Primary>k",
@@ -3154,7 +3194,13 @@ namespace Dc {
         public void show_toast (string message) {
             var toast = new Adw.Toast (message);
             toast.timeout = 4;
-            toast_overlay.add_toast (toast);
+            /* The main overlay is invisible under a modal dialog; route
+               into the dialog's own overlay when it has one (dialogs
+               wanting local toasts make an Adw.ToastOverlay their child,
+               like GalleryDialog). */
+            var modal_toasts = active_modal != null
+                ? active_modal.child as Adw.ToastOverlay : null;
+            (modal_toasts ?? toast_overlay).add_toast (toast);
         }
 
         private Gtk.Revealer build_connection_banner () {

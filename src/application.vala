@@ -507,6 +507,37 @@ namespace Dc {
             .image-viewer-overlay {
                 background-color: alpha(black, 0.75);
             }
+            .gallery-grid {
+                padding: 6px;
+            }
+            .gallery-grid > child {
+                margin: 2px;
+            }
+            .gallery-thumb {
+                border-radius: 10px;
+                background-color: alpha(currentColor, 0.08);
+            }
+            .gallery-thumb-checker {
+                background-image:
+                    linear-gradient(45deg, alpha(currentColor, 0.10) 25%,
+                        transparent 25%, transparent 75%,
+                        alpha(currentColor, 0.10) 75%),
+                    linear-gradient(45deg, alpha(currentColor, 0.10) 25%,
+                        transparent 25%, transparent 75%,
+                        alpha(currentColor, 0.10) 75%);
+                background-size: 16px 16px;
+                background-position: 0 0, 8px 8px;
+            }
+            .gallery-list > row {
+                border-radius: 8px;
+            }
+            /* Six tabs must fit a phone-width dialog: drop the switcher
+               buttons' spare padding and minimum width. */
+            .gallery-tabs button {
+                min-width: 0;
+                padding-left: 3px;
+                padding-right: 3px;
+            }
             .compose-bar { border-top: none; }
             .selection-action-bar {
                 padding: 4px 8px;

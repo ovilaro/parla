@@ -32,17 +32,8 @@ namespace Dc {
         public void show_context_menu (int msg_id, bool is_outgoing,
                                        double x, double y,
                                        Gtk.Widget parent) {
-            var popover = new Gtk.Popover ();
-            popover.has_arrow = false;
-            popover.set_parent (parent);
-            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
-
-            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
-            vbox.add_css_class ("menu");
-            vbox.margin_start = 8;
-            vbox.margin_end = 8;
-            vbox.margin_top = 8;
-            vbox.margin_bottom = 8;
+            Gtk.Box vbox;
+            var popover = popover_menu (parent, x, y, out vbox);
 
             /* Reactions — first so they are most easily reachable */
             append_emoji_rows (vbox, popover, msg_id, parent, x, y);
@@ -50,32 +41,32 @@ namespace Dc {
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            vbox.append (menu_button (popover, "Reply", () => {
+            vbox.append (popover_menu_button (popover, "Reply", () => {
                 start_replying (msg_id);
             }));
 
-            vbox.append (menu_button (popover, "Forward\u2026", () => {
+            vbox.append (popover_menu_button (popover, "Forward\u2026", () => {
                 start_forwarding (msg_id);
             }));
 
             bool msg_is_pinned = pinned.is_pinned (msg_id);
-            vbox.append (menu_button (popover,
+            vbox.append (popover_menu_button (popover,
                 msg_is_pinned ? "Unpin" : "Pin",
                 () => {
                     pinned.toggle_pin (msg_id);
                 }));
 
             if (msg != null && msg.can_edit_text) {
-                vbox.append (menu_button (popover, "Edit", () => {
+                vbox.append (popover_menu_button (popover, "Edit", () => {
                     start_editing (msg_id);
                 }));
             }
 
-            vbox.append (menu_button (popover, "Select...", () => {
+            vbox.append (popover_menu_button (popover, "Select...", () => {
                 select_requested (msg_id);
             }));
 
-            vbox.append (menu_button (popover, "Details...", () => {
+            vbox.append (popover_menu_button (popover, "Details...", () => {
                 show_details (msg_id);
             }));
 
@@ -84,7 +75,7 @@ namespace Dc {
                 msg.file_path.length > 0) {
                 string fpath = msg.file_path;
                 string? fname = msg.file_name;
-                vbox.append (menu_button (popover, "Save file", () => {
+                vbox.append (popover_menu_button (popover, "Save file", () => {
                     window.save_attachment.begin (fpath, fname);
                 }));
             }
@@ -93,7 +84,7 @@ namespace Dc {
             if (msg != null && msg.is_audio_file () && msg.has_local_file
                 && Transcriber.available ()) {
                 string apath = msg.file_path;
-                vbox.append (menu_button (popover, "Transcribe", () => {
+                vbox.append (popover_menu_button (popover, "Transcribe", () => {
                     Transcriber.shared ().transcribe (apath);
                 }));
             }
@@ -101,14 +92,14 @@ namespace Dc {
             /* Collect sticker attachments into a local pack */
             if (msg != null && msg.is_sticker_file () && msg.has_local_file) {
                 string spath = msg.file_path;
-                vbox.append (menu_button (popover, "Add Sticker…", () => {
+                vbox.append (popover_menu_button (popover, "Add Sticker…", () => {
                     StickerManagerDialog.prompt_add_sticker (window, spath);
                 }));
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            vbox.append (menu_button (popover, "Delete…", () => {
+            vbox.append (popover_menu_button (popover, "Delete…", () => {
                 if (is_outgoing) {
                     confirm_delete_options (window, "Delete Message?",
                         "Delete this message from your device only, or from all participants? This cannot be undone.",
@@ -122,7 +113,6 @@ namespace Dc {
                 }
             }, true));
 
-            popover.child = vbox;
             preserve_scroll_until_closed (popover);
             popover.popup ();
         }
@@ -182,50 +172,15 @@ namespace Dc {
         /** Standalone quick-reaction popover pointing at (x, y) in parent. */
         public void show_reaction_menu (int msg_id, Gtk.Widget parent,
                                         double x, double y) {
-            var popover = new Gtk.Popover ();
-            popover.has_arrow = false;
-            popover.set_parent (parent);
-            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
-
-            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
-            vbox.add_css_class ("menu");
-            vbox.margin_start = 8;
-            vbox.margin_end = 8;
-            vbox.margin_top = 8;
-            vbox.margin_bottom = 8;
+            Gtk.Box vbox;
+            var popover = popover_menu (parent, x, y, out vbox);
             append_emoji_rows (vbox, popover, msg_id, parent, x, y);
 
-            popover.child = vbox;
             preserve_scroll_until_closed (popover);
             popover.popup ();
         }
 
-        private Gtk.Button menu_button (Gtk.Popover popover, string label,
-                                        owned VoidFunc action,
-                                        bool destructive = false,
-                                        bool hexpand = false) {
-            var btn = new Gtk.Button.with_label (label);
-            btn.add_css_class ("flat");
-            if (destructive) btn.add_css_class ("menu-destructive");
-            var child = btn.child as Gtk.Label;
-            if (child != null) {
-                child.xalign = 0;
-                child.halign = Gtk.Align.START;
-            }
-            btn.hexpand = hexpand;
-            btn.clicked.connect (() => {
-                btn.sensitive = false;
-                popover.popdown ();
-                Idle.add (() => {
-                    action ();
-                    return Source.REMOVE;
-                });
-            });
-            return btn;
-        }
-
-        private void preserve_scroll_until_closed (Gtk.Popover popover,
-                                                   bool idle_unparent = false) {
+        private void preserve_scroll_until_closed (Gtk.Popover popover) {
             var view = window.current_view ();
             double saved_scroll = view != null ? view.get_scroll_value () : 0;
             if (view != null) view.freeze_scroll_handler (1500);
@@ -234,14 +189,6 @@ namespace Dc {
                     view.restore_scroll_value (saved_scroll);
                     view.restore_scroll_value_deferred (saved_scroll);
                 }
-                if (!idle_unparent) {
-                    popover.unparent ();
-                    return;
-                }
-                Idle.add (() => {
-                    popover.unparent ();
-                    return Source.REMOVE;
-                });
             });
         }
 
@@ -281,6 +228,7 @@ namespace Dc {
             chooser.set_pointing_to ({ (int) x, (int) y, 1, 1 });
 
             preserve_scroll_until_closed (chooser);
+            unparent_on_close (chooser);
             chooser.popup ();
         }
 
@@ -325,20 +273,34 @@ namespace Dc {
         }
 
         public void start_forwarding_many (int[] msg_ids) {
+            forward_with_picker (window, rpc, msg_ids);
+        }
+
+        /** Ask for a destination chat or contact and forward msg_ids there.
+            Shared by the message context menu and the gallery dialog. */
+        public static void forward_with_picker (Window window, RpcClient rpc,
+                                                int[] msg_ids,
+                                                owned VoidFunc? on_picked = null) {
             if (msg_ids.length == 0) return;
             int[] forward_ids = msg_ids.copy ();
             var picker = new ContactPickerDialog (rpc, window.chat_store,
                                                   "Forward To");
             picker.chat_picked.connect ((chat_id) => {
-                forward_to_chat.begin (forward_ids.copy (), chat_id);
+                forward_to_chat.begin (window, rpc, forward_ids.copy (),
+                                       chat_id);
+                if (on_picked != null) on_picked ();
             });
             picker.contact_picked.connect ((contact_id, email) => {
-                forward_to_contact.begin (forward_ids.copy (), contact_id, email);
+                forward_to_contact.begin (window, rpc, forward_ids.copy (),
+                                          contact_id, email);
+                if (on_picked != null) on_picked ();
             });
             picker.present (window);
         }
 
-        private async void forward_to_chat (owned int[] msg_ids, int chat_id) {
+        private static async void forward_to_chat (Window window, RpcClient rpc,
+                                                    owned int[] msg_ids,
+                                                    int chat_id) {
             try {
                 yield rpc.forward_messages (msg_ids, chat_id);
                 window.request_reload_chats ();
@@ -350,22 +312,23 @@ namespace Dc {
             }
         }
 
-        private async void forward_to_contact (owned int[] msg_ids, int contact_id,
-                                                string email) {
+        private static async void forward_to_contact (Window window,
+                                                       RpcClient rpc,
+                                                       owned int[] msg_ids,
+                                                       int contact_id,
+                                                       string email) {
+            int chat_id;
             try {
                 int cid = contact_id;
                 if (cid <= 0) {
                     cid = yield rpc.get_or_create_contact (email);
                 }
-                int chat_id = yield rpc.get_or_create_chat_by_contact (cid);
-                yield rpc.forward_messages (msg_ids, chat_id);
-                window.request_reload_chats ();
-                window.request_chat_messages_reload (chat_id);
-                window.show_toast (msg_ids.length == 1
-                    ? "Message forwarded" : "Messages forwarded");
+                chat_id = yield rpc.get_or_create_chat_by_contact (cid);
             } catch (Error e) {
                 window.show_toast ("Forward failed: " + e.message);
+                return;
             }
+            yield forward_to_chat (window, rpc, (owned) msg_ids, chat_id);
         }
 
         public async void edit_message (int msg_id, string new_text) {

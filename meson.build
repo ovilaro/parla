@@ -123,6 +123,8 @@ sources = files(
   'src/event_handler.vala',
   'src/message_details_dialog.vala',
   'src/message_actions.vala',
+  'src/save_folder.vala',
+  'src/gallery_dialog.vala',
   'src/account_creation.vala',
   'src/relay_picker.vala',
 )
@@ -164,6 +166,16 @@ install_data(
   'data/icons/hicolor/scalable/apps/parla-tray.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
+
+save_folder_test = executable(
+  'save-folder-test',
+  files('tests/save_folder_test.vala', 'src/save_folder.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
+                 dependency('gio-2.0')],
+  install: false,
+)
+
+test('save-folder', save_folder_test)
 
 storage_quota_test = executable(
   'storage-quota-test',

@@ -84,6 +84,10 @@ namespace Dc {
 
         public void set_window (Window w) { this.window = w; }
 
+        private void toast (string text) {
+            if (window != null) window.show_toast (text);
+        }
+
         public void show_list (string[] image_paths, int start_index) {
             if (image_paths.length == 0) return;
             if (start_index < 0 || start_index >= image_paths.length) start_index = 0;
@@ -151,7 +155,7 @@ namespace Dc {
                 update_nav_buttons ();
                 return true;
             } catch (Error e) {
-                if (window != null) window.show_toast ("Cannot open image: " + e.message);
+                toast ("Cannot open image: " + e.message);
                 return false;
             }
         }
@@ -176,7 +180,8 @@ namespace Dc {
             save_btn.add_css_class ("flat");
             save_btn.clicked.connect (() => {
                 popover.popdown ();
-                if (window != null) window.save_attachment.begin (path, Path.get_basename (path));
+                if (window != null) window.save_attachment.begin (
+                    path, Path.get_basename (path));
             });
             vbox.append (save_btn);
 
