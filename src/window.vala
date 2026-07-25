@@ -681,6 +681,13 @@ namespace Dc {
                 apply_sidebar_mode (!split_view.collapsed);
             });
 
+            /* The sidebar always starts visible: hiding it (Ctrl+S) is a
+               within-session state, not a preference worth restoring —
+               a fresh launch with no chat list reads as broken. The
+               FULL/COMPACT width choice does persist. */
+            if (settings.sidebar_mode == SidebarMode.HIDDEN) {
+                settings.save_sidebar_mode (SidebarMode.FULL);
+            }
             apply_sidebar_mode (true);
 
             /* Fullscreen image viewer overlay */

@@ -259,7 +259,7 @@ namespace Dc {
                 var actions_list = boxed_list ();
 
                 actions_list.append (action_row ("Clear Chat",
-                    "Remove messages from this device; keep the chat in your list",
+                    "Remove messages from this device",
                     "edit-clear-symbolic",
                     () => { confirm_clear_history (false); }));
 
