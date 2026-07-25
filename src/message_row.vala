@@ -1338,15 +1338,17 @@ namespace Dc {
             body.hexpand = true;
 
             bool found_block = false;
-            bool in_code_block = false;
+            string? open_fence = null;
             int text_start = 0;
             for (int i = 0; i < lines.length;) {
-                if (is_code_fence_line (lines[i])) {
-                    in_code_block = !in_code_block;
+                string? fence = code_fence_marker (lines[i]);
+                if (open_fence != null) {
+                    if (fence == open_fence) open_fence = null;
                     i++;
                     continue;
                 }
-                if (in_code_block) {
+                if (fence != null) {
+                    open_fence = fence;
                     i++;
                     continue;
                 }
@@ -1388,8 +1390,11 @@ namespace Dc {
             return body;
         }
 
-        private static bool is_code_fence_line (string line) {
-            return line.strip ().has_prefix ("```");
+        private static string? code_fence_marker (string line) {
+            string s = line.strip ();
+            if (s.has_prefix ("```")) return "```";
+            if (s.has_prefix ("~~~")) return "~~~";
+            return null;
         }
 
         private void append_text_block (Gtk.Box body, string[] lines,

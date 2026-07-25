@@ -21,6 +21,7 @@ namespace Dc {
         private Gtk.SearchEntry search_entry;
         private Gtk.Box sidebar_box;
         private Gtk.Button sidebar_toggle_btn;
+        private Gtk.Button message_search_btn;
         private Gtk.MenuButton sidebar_menu_button;
         private Adw.WindowTitle sidebar_title;
 
@@ -72,6 +73,8 @@ namespace Dc {
             private set {
                 _current_chat_id = value;
                 if (events != null) events.active_chat_id = value;
+                if (message_search_btn != null)
+                    message_search_btn.visible = value > 0;
             }
         }
 
@@ -598,12 +601,14 @@ namespace Dc {
             sidebar_toggle_btn.clicked.connect (() => { toggle_sidebar_button (); });
             content_header.pack_start (sidebar_toggle_btn);
 
-            /* Search/filter button on the right side */
-            var search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
-            search_btn.tooltip_text = "Search in conversation (%s)".printf (
+            /* Search/filter button on the right side. Only meaningful with a
+               conversation open, so it stays hidden on the empty page. */
+            message_search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
+            message_search_btn.tooltip_text = "Search in conversation (%s)".printf (
                 Platform.primary_shortcut_text ("F"));
-            search_btn.clicked.connect (() => { toggle_message_search (); });
-            content_header.pack_end (search_btn);
+            message_search_btn.clicked.connect (() => { toggle_message_search (); });
+            message_search_btn.visible = false;
+            content_header.pack_end (message_search_btn);
 
             content_box.append (content_header);
 
