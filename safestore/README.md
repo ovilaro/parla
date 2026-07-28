@@ -47,6 +47,33 @@ Runtime requirements:
 CryFS 2.0 is currently an alpha with a different support/CLI story. SafeStore
 targets stable CryFS 1.x and should not be used with the alpha.
 
+### Installing CryFS on macOS
+
+Homebrew's core `cryfs` formula is deprecated and now supports Linux only. On
+macOS, install stable CryFS 1.x from the
+[official CryFS Homebrew tap](https://github.com/cryfs/homebrew-tap) together
+with macFUSE:
+
+```sh
+brew install --cask macfuse
+brew install cryfs/tap/cryfs
+```
+
+macOS may require you to approve the macFUSE system extension in **System
+Settings → Privacy & Security** and restart the machine. Verify that both
+executables required by SafeStore are available:
+
+```sh
+cryfs --version
+cryfs-unmount --help
+```
+
+Alternatively, [MacPorts packages CryFS](https://ports.macports.org/port/cryfs/):
+
+```sh
+sudo port install cryfs
+```
+
 The official CryFS documentation describes Windows support as experimental.
 Stable CryFS 1.x mounts a Windows vault on an unused drive letter such as
 `G:`, not an arbitrary directory. Type that drive letter directly into the

@@ -1146,7 +1146,9 @@ namespace Dc {
             if (!replace_emoji_trigger (emoji)) {
                 text_view.buffer.insert_at_cursor (emoji, emoji.length);
             }
-            text_view.grab_focus ();
+            /* The chooser restores focus to its menu button while closing,
+               so defer a second focus grab until that has finished. */
+            grab_entry_focus ();
         }
 
         private void on_attach_clicked () {
