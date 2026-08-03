@@ -26,6 +26,15 @@ namespace Dc {
         private const int CELL_MAX = 512;
         private const int FETCH_CHUNK = 50;
 
+        /* Ctrl+wheel thumbnail zoom, expressed as the grids' column cap:
+           fewer columns means larger cells. Never implemented by raising
+           the cells' minimum width — that pins the grid minimum past the
+           dialog's fixed natural width and trips min > natural warnings.
+           Static so the zoom persists across gallery openings within the
+           session. */
+        private const int ZOOM_COLUMNS_MAX = 12;
+        private static int zoom_columns = ZOOM_COLUMNS_MAX;
+
         /* The Images and Stickers tabs share viewtypes: anything Parla
            renders as a sticker (webp/gif/webm or Sticker viewtype, see
            Message.is_sticker_file) lands under Stickers, the rest under
@@ -67,6 +76,7 @@ namespace Dc {
             new HashTable<int, bool> (direct_hash, direct_equal);
 
         private GalleryTab[] tabs = {};
+        private Gtk.GridView[] media_grids = {};
         private bool is_open = true;
 
         private HashTable<string, Gdk.Texture> thumb_cache =
@@ -319,6 +329,25 @@ namespace Dc {
                 return false;
             });
             ((Gtk.Widget) this).add_controller (kc);
+
+            /* Ctrl+wheel resizes the grid thumbnails (the window's font
+               zoom is scoped to the chat area and never sees events over
+               this dialog). Claimed even on the list tabs so the wheel
+               with the modifier held does nothing surprising there. */
+            var zoom_ctrl = new Gtk.EventControllerScroll (
+                Gtk.EventControllerScrollFlags.VERTICAL |
+                Gtk.EventControllerScrollFlags.DISCRETE);
+            zoom_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+            zoom_ctrl.scroll.connect ((dx, dy) => {
+                if (!Platform.has_primary_modifier (
+                        zoom_ctrl.get_current_event_state ())) {
+                    return false;
+                }
+                if (dy == 0) return false;
+                adjust_thumb_zoom (dy < 0 ? 1 : -1);
+                return true;
+            });
+            ((Gtk.Widget) this).add_controller (zoom_ctrl);
 
             /* The dialog's own Escape shortcut fires at the window root,
                before the controller above — block it while a viewer is up
@@ -595,6 +624,30 @@ namespace Dc {
          *  Image / video grid
          * ================================================================ */
 
+        /* One wheel notch removes or adds a grid column; GridView divides
+           the width among the remaining columns, so the cells grow or
+           shrink. The zoom floor is the grids' min_columns (GridView packs
+           as many CELL_MIN columns as fit up to max_columns, so only the
+           cap can force fewer). The step starts from the columns the
+           current width actually fits (the width may cap them below
+           zoom_columns), so the first notch always reacts. */
+        private void adjust_thumb_zoom (int direction) {
+            int avail = view_stack.get_width ();
+            if (avail <= 0 || media_grids.length == 0) return;
+            int min_cols = int.max (1, (int) media_grids[0].min_columns);
+            int minw, nat, mb, nb;
+            media_grids[0].measure (Gtk.Orientation.HORIZONTAL, -1,
+                                    out minw, out nat, out mb, out nb);
+            /* minw is min_cols cells plus the grid's padding/spacing. */
+            int overhead = int.max (0, minw - min_cols * CELL_MIN);
+            int fit = int.max (min_cols, (avail - overhead) / CELL_MIN);
+            int cols = int.min (zoom_columns, fit);
+            cols = (cols - direction).clamp (min_cols, ZOOM_COLUMNS_MAX);
+            if (cols == zoom_columns) return;
+            zoom_columns = cols;
+            foreach (var g in media_grids) g.max_columns = cols;
+        }
+
         private delegate Gtk.Widget CellCreator ();
 
         private static Gtk.SignalListItemFactory make_cell_factory (
@@ -625,10 +678,12 @@ namespace Dc {
             var grid = new Gtk.GridView (new Gtk.NoSelection (tab.store),
                                          factory);
             grid.single_click_activate = true;
-            /* Keep three thumbnails per row even in narrow windows. */
-            grid.min_columns = 3;
-            grid.max_columns = 12;
+            /* min_columns is the Ctrl+wheel zoom-in floor (1 = a single
+               huge thumbnail); the max_columns cap is the zoom level. */
+            grid.min_columns = 1;
+            grid.max_columns = zoom_columns;
             grid.add_css_class ("gallery-grid");
+            media_grids += grid;
             grid.activate.connect ((pos) => {
                 on_media_activated (tab, pos);
             });

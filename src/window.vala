@@ -705,12 +705,17 @@ namespace Dc {
             key_ctrl.key_pressed.connect (on_window_key_pressed);
             ((Gtk.Widget) this).add_controller (key_ctrl);
 
+            /* Ctrl+wheel font zoom, scoped to the chat content area: over
+               the sidebar, dialogs (gallery, settings…) or the fullscreen
+               viewers the wheel must not change a font the user cannot
+               see. Those contexts handle the wheel themselves or ignore
+               it. */
             var scroll_ctrl = new Gtk.EventControllerScroll (
                 Gtk.EventControllerScrollFlags.VERTICAL |
                 Gtk.EventControllerScrollFlags.DISCRETE);
             scroll_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
-            scroll_ctrl.scroll.connect (on_window_scroll);
-            ((Gtk.Widget) this).add_controller (scroll_ctrl);
+            scroll_ctrl.scroll.connect (on_chat_scroll);
+            content_stack.add_controller (scroll_ctrl);
         }
 
         private Gtk.Popover build_account_popover () {
@@ -2950,8 +2955,8 @@ namespace Dc {
             settings.save_font_size (next_size);
         }
 
-        private bool on_window_scroll (Gtk.EventControllerScroll scroll,
-                                       double dx, double dy) {
+        private bool on_chat_scroll (Gtk.EventControllerScroll scroll,
+                                     double dx, double dy) {
             if (!Platform.has_primary_modifier (
                     scroll.get_current_event_state ())) {
                 return false;
