@@ -21,13 +21,8 @@ namespace Dc {
      */
     public class GalleryDialog : Adw.Dialog {
 
-        /* Media cells are responsive squares: at least CELL_MIN wide (the
-           floor decides how many columns fit — three per row on
-           phone-width windows, bottoming out at min_columns on anything
-           narrower), growing to fill the row so no dead space is left.
-           CELL_MAX only bounds the frame's natural size, far above any
-           real column. */
-        private const int CELL_MIN = 104;
+        /* Keep three responsive cells within the narrow dialog floor. */
+        private const int CELL_MIN = 76;
         private const int CELL_MAX = 512;
         private const int FETCH_CHUNK = 50;
 
@@ -52,13 +47,12 @@ namespace Dc {
         private Adw.ToastOverlay toasts;
         private Gtk.Button save_all_btn;
         private Gtk.MenuButton more_btn;
-        private Gtk.Label more_label;
-        private Gtk.Image more_icon;
         private SimpleAction section_action;
         private ImageViewer viewer;
         private VideoPlayer player;
 
         private Gtk.ActionBar selection_bar;
+        private Gtk.Revealer selection_revealer;
         private Gtk.Label selection_label;
         private Gtk.Button forward_sel_btn;
         private Gtk.Button save_sel_btn;
@@ -90,9 +84,7 @@ namespace Dc {
             public string empty_description;
             /* "…" is substituted with the item kind in save-all texts. */
             public string kind_plural;
-            /* Overflow tabs hide from the switcher bar and live in the
-               "More" menu instead (at most four regular tabs fit a
-               phone-width bottom bar). */
+            /* Overflow tabs live in the "More" menu. */
             public bool overflow;
             public GLib.ListStore store = new GLib.ListStore (typeof (Message));
             public Gtk.Stack stack;
@@ -115,11 +107,9 @@ namespace Dc {
             title = "Apps and Media";
             content_width = 860;
             content_height = 600;
-            /* The compact tab bar (four tabs plus "More") keeps the
-               content minimum small; request a sane floor so the dialog
-               still lays out sensibly on phone-sized screens. */
-            width_request = 320;
-            height_request = 400;
+            /* Do not force the dialog beyond small window bounds. */
+            width_request = 280;
+            height_request = 200;
 
             try {
                 thumb_pool = new ThreadPool<ThumbRequest>.with_owned_data ((req) => {
@@ -177,7 +167,8 @@ namespace Dc {
                     types = { "File" },
                     empty_title = "No Files",
                     empty_description = "Documents and other files shared in this chat will appear here",
-                    kind_plural = "files"
+                    kind_plural = "files",
+                    overflow = true
                 },
                 new GalleryTab () {
                     key = "apps", title = "Apps",
@@ -212,11 +203,7 @@ namespace Dc {
             save_all_btn.clicked.connect (() => { on_save_all_clicked (); });
             header.pack_start (save_all_btn);
 
-            /* The tabs always live in a compact bottom bar. Six of them
-               do not fit phone-width windows and GNOME has no scrollable
-               tab idiom, so only the main sections get switcher tabs; the
-               overflow ones hide from the switcher and live in a "More"
-               menu button dressed up as a fifth tab. */
+            /* Keep primary sections in the bar and the rest in "More". */
             var switcher = new Adw.ViewSwitcher ();
             switcher.stack = view_stack;
             switcher.policy = Adw.ViewSwitcherPolicy.NARROW;
@@ -240,8 +227,8 @@ namespace Dc {
             gallery_actions.add_action (section_action);
             insert_action_group ("gallery", gallery_actions);
 
-            more_icon = new Gtk.Image.from_icon_name ("view-more-symbolic");
-            more_label = new Gtk.Label ("More");
+            var more_icon = new Gtk.Image.from_icon_name ("view-more-symbolic");
+            var more_label = new Gtk.Label ("More");
             more_label.add_css_class ("caption");
             var more_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 3);
             more_box.valign = Gtk.Align.CENTER;
@@ -264,7 +251,6 @@ namespace Dc {
             switcher_bar.append (more_btn);
 
             selection_bar = new Gtk.ActionBar ();
-            selection_bar.revealed = false;
 
             var cancel_selection = new Gtk.Button.with_label ("Cancel");
             cancel_selection.clicked.connect (() => { exit_selection_mode (); });
@@ -287,10 +273,22 @@ namespace Dc {
             delete_sel_btn.clicked.connect (() => { delete_selection (); });
             selection_bar.pack_end (delete_sel_btn);
 
+            /* Hide the bar after its animation so it does not constrain width. */
+            selection_bar.visible = false;
+            selection_revealer = new Gtk.Revealer ();
+            selection_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_UP;
+            selection_revealer.child = selection_bar;
+            selection_revealer.notify["child-revealed"].connect (() => {
+                if (!selection_revealer.reveal_child &&
+                    !selection_revealer.child_revealed) {
+                    selection_bar.visible = false;
+                }
+            });
+
             var toolbar_view = new Adw.ToolbarView ();
             toolbar_view.add_top_bar (header);
             toolbar_view.add_bottom_bar (switcher_bar);
-            toolbar_view.add_bottom_bar (selection_bar);
+            toolbar_view.add_bottom_bar (selection_revealer);
             toolbar_view.content = view_stack;
 
             /* Same fullscreen viewers the conversation uses, overlaid on the
@@ -367,20 +365,14 @@ namespace Dc {
             load_tab.begin (find_tab ("images"));
         }
 
-        /* While an overflow section is open none of the regular switcher
-           tabs is active, so the "More" button borrows that section's
-           icon and title plus the switcher's selected look. */
+        /* Highlight "More" while an overflow section is active. */
         private void sync_more_button () {
             var key = view_stack.visible_child_name ?? "";
             section_action.set_state (new Variant.string (key));
             var tab = find_tab (key);
             if (tab != null && tab.overflow) {
-                more_icon.icon_name = tab.icon_name;
-                more_label.label = tab.title;
                 more_btn.add_css_class ("gallery-more-active");
             } else {
-                more_icon.icon_name = "view-more-symbolic";
-                more_label.label = "More";
                 more_btn.remove_css_class ("gallery-more-active");
             }
         }
@@ -422,7 +414,9 @@ namespace Dc {
 
         private void update_selection_ui () {
             uint count = selected_ids.size ();
-            selection_bar.revealed = selection_mode;
+            /* Show the bar before starting its reveal animation. */
+            if (selection_mode) selection_bar.visible = true;
+            selection_revealer.reveal_child = selection_mode;
             selection_label.label = "%u selected".printf (count);
             forward_sel_btn.sensitive = count > 0;
             save_sel_btn.sensitive = count > 0;
@@ -631,9 +625,8 @@ namespace Dc {
             var grid = new Gtk.GridView (new Gtk.NoSelection (tab.store),
                                          factory);
             grid.single_click_activate = true;
-            /* Never a single huge picture per row, even below CELL_MIN's
-               two-column break point. */
-            grid.min_columns = 2;
+            /* Keep three thumbnails per row even in narrow windows. */
+            grid.min_columns = 3;
             grid.max_columns = 12;
             grid.add_css_class ("gallery-grid");
             grid.activate.connect ((pos) => {
@@ -705,15 +698,7 @@ namespace Dc {
                 check.visible = false;
                 overlay.add_overlay (check);
 
-                /* Uniform square cells regardless of image aspect. The
-                   frame's CELL_MAX natural size is never reached, so its
-                   height-for-width tracks the allocated width 1:1 and the
-                   cell stays square while filling whatever column width
-                   GridView hands out. The frame's 1px measure minimum
-                   must be floored back up, otherwise GridView packs
-                   max_columns crushed cells; the floor is deliberately
-                   unscaled so phone-width windows keep two columns
-                   regardless of the user's font scale. */
+                /* Keep allocated thumbnails square and prevent crushed cells. */
                 var frame = new ScaledPreviewFrame (CELL_MAX, CELL_MAX,
                                                     "gallery-thumb");
                 frame.set_size_request (CELL_MIN, -1);

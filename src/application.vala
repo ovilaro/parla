@@ -531,16 +531,13 @@ namespace Dc {
             .gallery-list > row {
                 border-radius: 8px;
             }
-            /* Five bottom-bar tabs must fit a phone-width dialog: drop
-               the switcher buttons' spare padding and minimum width. */
+            /* Remove spare width so the gallery tabs fit narrow dialogs. */
             .gallery-tabs button {
                 min-width: 0;
                 padding-left: 3px;
                 padding-right: 3px;
             }
-            /* The gallery's "More" bottom-bar button: match the narrow
-               view switcher tabs it sits next to, including the selected
-               highlight while an overflow section is open. */
+            /* Match the "More" button to the adjacent view-switcher tabs. */
             .gallery-more > button {
                 min-height: 0;
                 padding: 4px 6px;
