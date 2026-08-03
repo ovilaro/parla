@@ -21,7 +21,14 @@ namespace Dc {
      */
     public class GalleryDialog : Adw.Dialog {
 
-        private const int THUMB_SIZE = 108;
+        /* Media cells are responsive squares: at least CELL_MIN wide (the
+           floor decides how many columns fit — three per row on
+           phone-width windows, bottoming out at min_columns on anything
+           narrower), growing to fill the row so no dead space is left.
+           CELL_MAX only bounds the frame's natural size, far above any
+           real column. */
+        private const int CELL_MIN = 104;
+        private const int CELL_MAX = 512;
         private const int FETCH_CHUNK = 50;
 
         /* The Images and Stickers tabs share viewtypes: anything Parla
@@ -44,6 +51,10 @@ namespace Dc {
         private Adw.ViewStack view_stack;
         private Adw.ToastOverlay toasts;
         private Gtk.Button save_all_btn;
+        private Gtk.MenuButton more_btn;
+        private Gtk.Label more_label;
+        private Gtk.Image more_icon;
+        private SimpleAction section_action;
         private ImageViewer viewer;
         private VideoPlayer player;
 
@@ -79,6 +90,10 @@ namespace Dc {
             public string empty_description;
             /* "…" is substituted with the item kind in save-all texts. */
             public string kind_plural;
+            /* Overflow tabs hide from the switcher bar and live in the
+               "More" menu instead (at most four regular tabs fit a
+               phone-width bottom bar). */
+            public bool overflow;
             public GLib.ListStore store = new GLib.ListStore (typeof (Message));
             public Gtk.Stack stack;
             public bool load_started = false;
@@ -100,9 +115,9 @@ namespace Dc {
             title = "Apps and Media";
             content_width = 860;
             content_height = 600;
-            /* With breakpoints in use the dialog has no implicit minimum;
-               without an explicit request it would keep the wide header
-               switcher's ~750px minimum and overflow narrow screens. */
+            /* The compact tab bar (four tabs plus "More") keeps the
+               content minimum small; request a sane floor so the dialog
+               still lays out sensibly on phone-sized screens. */
             width_request = 320;
             height_request = 400;
 
@@ -137,7 +152,8 @@ namespace Dc {
                     filter = MediaFilter.STICKERS_ONLY,
                     empty_title = "No Stickers",
                     empty_description = "Stickers shared in this chat will appear here",
-                    kind_plural = "stickers"
+                    kind_plural = "stickers",
+                    overflow = true
                 },
                 new GalleryTab () {
                     key = "video", title = "Video",
@@ -169,7 +185,8 @@ namespace Dc {
                     types = { "Webxdc" },
                     empty_title = "No Apps",
                     empty_description = "Delta Chat apps shared in this chat will appear here",
-                    kind_plural = "apps"
+                    kind_plural = "apps",
+                    overflow = true
                 },
             };
 
@@ -186,23 +203,65 @@ namespace Dc {
                 });
             }
 
-            var switcher = new Adw.ViewSwitcher ();
-            switcher.stack = view_stack;
-            switcher.policy = Adw.ViewSwitcherPolicy.WIDE;
-
             var header = new Adw.HeaderBar ();
-            header.title_widget = switcher;
+            header.title_widget = new Adw.WindowTitle ("Apps and Media",
+                chat_name ?? "");
 
             save_all_btn = new Gtk.Button.from_icon_name ("document-save-symbolic");
             save_all_btn.sensitive = false;
             save_all_btn.clicked.connect (() => { on_save_all_clicked (); });
             header.pack_start (save_all_btn);
 
-            var switcher_bar = new Adw.ViewSwitcherBar ();
-            switcher_bar.stack = view_stack;
-            /* Six tabs exceed very narrow windows; the CSS for this class
-               strips button padding so they all fit (see application.vala). */
+            /* The tabs always live in a compact bottom bar. Six of them
+               do not fit phone-width windows and GNOME has no scrollable
+               tab idiom, so only the main sections get switcher tabs; the
+               overflow ones hide from the switcher and live in a "More"
+               menu button dressed up as a fifth tab. */
+            var switcher = new Adw.ViewSwitcher ();
+            switcher.stack = view_stack;
+            switcher.policy = Adw.ViewSwitcherPolicy.NARROW;
+
+            var more_menu = new GLib.Menu ();
+            foreach (var tab in tabs) {
+                if (!tab.overflow) continue;
+                view_stack.get_page (tab.stack).visible = false;
+                more_menu.append (tab.title,
+                                  "gallery.section('%s')".printf (tab.key));
+            }
+
+            /* Stateful so the active overflow section gets a checkmark in
+               the menu; the state is synced from the stack, not here. */
+            section_action = new SimpleAction.stateful ("section",
+                GLib.VariantType.STRING, new Variant.string ("images"));
+            section_action.activate.connect ((param) => {
+                view_stack.visible_child_name = param.get_string ();
+            });
+            var gallery_actions = new SimpleActionGroup ();
+            gallery_actions.add_action (section_action);
+            insert_action_group ("gallery", gallery_actions);
+
+            more_icon = new Gtk.Image.from_icon_name ("view-more-symbolic");
+            more_label = new Gtk.Label ("More");
+            more_label.add_css_class ("caption");
+            var more_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 3);
+            more_box.valign = Gtk.Align.CENTER;
+            more_box.append (more_icon);
+            more_box.append (more_label);
+
+            more_btn = new Gtk.MenuButton ();
+            more_btn.child = more_box;
+            more_btn.menu_model = more_menu;
+            more_btn.direction = Gtk.ArrowType.UP;
+            more_btn.add_css_class ("flat");
+            more_btn.add_css_class ("gallery-more");
+
+            var switcher_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+            switcher_bar.halign = Gtk.Align.CENTER;
+            /* Strips the buttons' spare padding and minimum width (see
+               application.vala) so the whole bar fits narrow windows. */
             switcher_bar.add_css_class ("gallery-tabs");
+            switcher_bar.append (switcher);
+            switcher_bar.append (more_btn);
 
             selection_bar = new Gtk.ActionBar ();
             selection_bar.revealed = false;
@@ -252,17 +311,6 @@ namespace Dc {
             toasts.child = media_overlay;
             child = toasts;
 
-            /* On narrow widths move the tab switcher to the bottom bar.
-               Six wide-policy tabs plus the header buttons need ~800px;
-               below that the header switcher would clip tabs. */
-            var title_label = new Adw.WindowTitle ("Apps and Media",
-                chat_name ?? "");
-            var bp = new Adw.Breakpoint (
-                Adw.BreakpointCondition.parse ("max-width: 800sp"));
-            bp.add_setter (switcher_bar, "reveal", true);
-            bp.add_setter (header, "title-widget", title_label);
-            add_breakpoint (bp);
-
             /* Route keys to the fullscreen viewers while they are open, so
                arrows navigate and Escape closes the viewer, not the dialog. */
             var kc = new Gtk.EventControllerKey ();
@@ -308,13 +356,33 @@ namespace Dc {
                 var tab = current_tab ();
                 if (tab != null) load_tab.begin (tab);
                 update_save_all_button ();
+                sync_more_button ();
             });
 
             /* Images is the most useful default in Parla (unlike the
                official client, Parla cannot run Webxdc apps yet). */
             view_stack.visible_child_name = "images";
             update_save_all_button ();
+            sync_more_button ();
             load_tab.begin (find_tab ("images"));
+        }
+
+        /* While an overflow section is open none of the regular switcher
+           tabs is active, so the "More" button borrows that section's
+           icon and title plus the switcher's selected look. */
+        private void sync_more_button () {
+            var key = view_stack.visible_child_name ?? "";
+            section_action.set_state (new Variant.string (key));
+            var tab = find_tab (key);
+            if (tab != null && tab.overflow) {
+                more_icon.icon_name = tab.icon_name;
+                more_label.label = tab.title;
+                more_btn.add_css_class ("gallery-more-active");
+            } else {
+                more_icon.icon_name = "view-more-symbolic";
+                more_label.label = "More";
+                more_btn.remove_css_class ("gallery-more-active");
+            }
         }
 
         private bool playback_was_started = false;
@@ -563,7 +631,9 @@ namespace Dc {
             var grid = new Gtk.GridView (new Gtk.NoSelection (tab.store),
                                          factory);
             grid.single_click_activate = true;
-            grid.min_columns = 1;
+            /* Never a single huge picture per row, even below CELL_MIN's
+               two-column break point. */
+            grid.min_columns = 2;
             grid.max_columns = 12;
             grid.add_css_class ("gallery-grid");
             grid.activate.connect ((pos) => {
@@ -635,21 +705,21 @@ namespace Dc {
                 check.visible = false;
                 overlay.add_overlay (check);
 
-                /* Uniform square cells regardless of image aspect; the
-                   frame also scales with the user's media/font scale. Its
-                   1px measure minimum must be floored back up, otherwise
-                   GridView packs max_columns crushed cells instead of
-                   sizing columns from the natural size. */
-                var frame = new ScaledPreviewFrame (THUMB_SIZE, THUMB_SIZE,
+                /* Uniform square cells regardless of image aspect. The
+                   frame's CELL_MAX natural size is never reached, so its
+                   height-for-width tracks the allocated width 1:1 and the
+                   cell stays square while filling whatever column width
+                   GridView hands out. The frame's 1px measure minimum
+                   must be floored back up, otherwise GridView packs
+                   max_columns crushed cells; the floor is deliberately
+                   unscaled so phone-width windows keep two columns
+                   regardless of the user's font scale. */
+                var frame = new ScaledPreviewFrame (CELL_MAX, CELL_MAX,
                                                     "gallery-thumb");
-                /* Unscaled floor: with the user's font scale applied a
-                   phone-width window could not fit three columns. */
-                frame.set_size_request (THUMB_SIZE, THUMB_SIZE);
+                frame.set_size_request (CELL_MIN, -1);
                 if (contain) frame.add_css_class ("gallery-thumb-checker");
                 frame.child = overlay;
                 append (frame);
-                halign = Gtk.Align.CENTER;
-                valign = Gtk.Align.CENTER;
 
                 add_context_menu_gestures (this, dialog);
                 /* Cells live exactly as long as the dialog, so the
@@ -718,7 +788,7 @@ namespace Dc {
             var req = new ThumbRequest ();
             req.path = path;
             /* 2x for crisp rendering on hidpi displays. */
-            req.size = THUMB_SIZE * 2;
+            req.size = CELL_MIN * 2;
             req.cb = load_thumb.callback;
             try {
                 thumb_pool.add (req);
