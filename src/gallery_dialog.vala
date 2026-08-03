@@ -1071,6 +1071,14 @@ namespace Dc {
                     app_window.scroll_to_message (msg_id);
                 }));
 
+            /* Collect sticker attachments into a local pack */
+            if (m.is_sticker_file () && m.has_local_file) {
+                string spath = m.file_path;
+                vbox.append (popover_menu_button (popover, "Add Sticker…", () => {
+                    StickerManagerDialog.prompt_add_sticker (app_window, spath);
+                }));
+            }
+
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
             bool is_outgoing = m.is_outgoing;
