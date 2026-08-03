@@ -35,6 +35,12 @@ namespace Dc {
         private unowned RpcClient rpc;
         private int chat_id;
 
+        /* Dialog this gallery was presented on top of (Chat Info). "View
+           in Conversation" must close the whole stack, not just the
+           gallery, or the leftover dialog re-scrolls the chat when the
+           user closes it later. */
+        public unowned Adw.Dialog? presenter_dialog = null;
+
         private Adw.ViewStack view_stack;
         private Adw.ToastOverlay toasts;
         private Gtk.Button save_all_btn;
@@ -1067,8 +1073,26 @@ namespace Dc {
 
             vbox.append (popover_menu_button (popover, "View in Conversation",
                 () => {
+                    /* Each closing dialog restores the window focus it saved
+                       when presented, and such a focus shift can scroll the
+                       chat. Close the stack bottom-up through the closed
+                       signals and jump only once the last one is gone, so
+                       nothing runs after the jump to drag the viewport away. */
+                    int target_chat = chat_id;
+                    var presenter = presenter_dialog;
+                    closed.connect (() => {
+                        if (presenter != null) {
+                            presenter.closed.connect (() => {
+                                app_window.open_conversation_message (
+                                    target_chat, msg_id);
+                            });
+                            presenter.close ();
+                        } else {
+                            app_window.open_conversation_message (
+                                target_chat, msg_id);
+                        }
+                    });
                     close ();
-                    app_window.scroll_to_message (msg_id);
                 }));
 
             /* Collect sticker attachments into a local pack */

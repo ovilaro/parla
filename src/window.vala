@@ -2296,6 +2296,19 @@ namespace Dc {
             if (v != null) v.scroll_to_message (msg_id);
         }
 
+        /* Jump to a message in a specific chat (gallery "View in
+           Conversation"). The gallery can be opened for a chat that is
+           not the current one; selecting the already-current chat again
+           would re-run on_reselected and scroll to the bottom, so only
+           switch when needed. scroll_to_message survives the chat still
+           loading: it parks the ID in pending_scroll_message_id and
+           load_messages resumes it. */
+        public void open_conversation_message (int chat_id, int msg_id) {
+            if (current_chat_id != chat_id
+                    && !select_chat_by_id (chat_id)) return;
+            scroll_to_message (msg_id);
+        }
+
         public async void open_media_message (int acct_id, int chat_id,
                                               int msg_id) {
             yield open_chat_from_notification (acct_id, chat_id);

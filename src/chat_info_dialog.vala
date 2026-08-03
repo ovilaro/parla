@@ -217,6 +217,7 @@ namespace Dc {
                     () => {
                         var dialog = new GalleryDialog (
                             app_window, rpc, chat_id, chat_name);
+                        dialog.presenter_dialog = this;
                         dialog.present (this);
                     }));
                 ephem_list.append (ephem_row);
