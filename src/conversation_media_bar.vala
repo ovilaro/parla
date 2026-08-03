@@ -12,6 +12,7 @@ namespace Dc {
 
         private AudioPlayback playback;
         private Gtk.Revealer revealer;
+        private Gtk.Box content;
         private Adw.Avatar avatar;
         private Gtk.Button previous_button;
         private Gtk.Button play_button;
@@ -40,7 +41,7 @@ namespace Dc {
             revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
             revealer.reveal_child = false;
 
-            var content = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            content = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             content.margin_start = 10;
             content.margin_end = 10;
             content.margin_top = 6;
@@ -110,6 +111,19 @@ namespace Dc {
             content.append (close_button);
 
             revealer.child = content;
+            /* A revealer only scales the axis it animates, so a collapsed
+               SLIDE_DOWN revealer still reports its child's full width. That
+               pinned the whole window to this bar's ~330px minimum even with
+               no voice note playing, and once the window was forced narrower
+               the conversation overflowed and clipped from the right — taking
+               the compose bar's send button with it. An invisible child
+               measures 0, so drop it out of measurement while collapsed. */
+            content.visible = false;
+            revealer.notify["child-revealed"].connect (() => {
+                if (!revealer.reveal_child && !revealer.child_revealed) {
+                    content.visible = false;
+                }
+            });
             append (revealer);
 
             var click = new Gtk.GestureClick ();
@@ -186,6 +200,9 @@ namespace Dc {
             sender_label.tooltip_text = item.sender_address ?? item.sender_name;
             sent_label.label = format_sent_timestamp (item.sent_timestamp);
             sent_label.tooltip_text = sent_label.label;
+            /* Must precede reveal_child: the revealer measures a hidden child
+               as zero, so the slide-down would have nothing to animate. */
+            content.visible = true;
             revealer.reveal_child = true;
             sync_navigation ();
             sync_playback ();
