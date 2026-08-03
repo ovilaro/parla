@@ -60,7 +60,8 @@ namespace Dc {
         private ImageViewer viewer;
         private VideoPlayer player;
 
-        private Gtk.ActionBar selection_bar;
+        private Gtk.Box switcher_bar;
+        private Gtk.Box selection_bar;
         private Gtk.Revealer selection_revealer;
         private Gtk.Label selection_label;
         private Gtk.Button forward_sel_btn;
@@ -252,7 +253,7 @@ namespace Dc {
             more_btn.add_css_class ("flat");
             more_btn.add_css_class ("gallery-more");
 
-            var switcher_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+            switcher_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
             switcher_bar.halign = Gtk.Align.CENTER;
             /* Strips the buttons' spare padding and minimum width (see
                application.vala) so the whole bar fits narrow windows. */
@@ -260,28 +261,38 @@ namespace Dc {
             switcher_bar.append (switcher);
             switcher_bar.append (more_btn);
 
-            selection_bar = new Gtk.ActionBar ();
-
+            /* Two rows so the bar fits the narrow dialog floor: Cancel and
+               the count on top, the actions sharing the width below. */
             var cancel_selection = new Gtk.Button.with_label ("Cancel");
             cancel_selection.clicked.connect (() => { exit_selection_mode (); });
-            selection_bar.pack_start (cancel_selection);
 
             selection_label = new Gtk.Label ("");
-            selection_bar.set_center_widget (selection_label);
+
+            var selection_top = new Gtk.CenterBox ();
+            selection_top.start_widget = cancel_selection;
+            selection_top.center_widget = selection_label;
 
             forward_sel_btn = new Gtk.Button.with_label ("Forward…");
             forward_sel_btn.add_css_class ("suggested-action");
             forward_sel_btn.clicked.connect (() => { forward_selection (); });
-            selection_bar.pack_end (forward_sel_btn);
 
             save_sel_btn = new Gtk.Button.with_label ("Save…");
             save_sel_btn.clicked.connect (() => { save_selection (); });
-            selection_bar.pack_end (save_sel_btn);
 
             delete_sel_btn = new Gtk.Button.with_label ("Delete…");
             delete_sel_btn.add_css_class ("destructive-action");
             delete_sel_btn.clicked.connect (() => { delete_selection (); });
-            selection_bar.pack_end (delete_sel_btn);
+
+            var selection_actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            selection_actions.homogeneous = true;
+            selection_actions.append (delete_sel_btn);
+            selection_actions.append (save_sel_btn);
+            selection_actions.append (forward_sel_btn);
+
+            selection_bar = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
+            selection_bar.add_css_class ("toolbar");
+            selection_bar.append (selection_top);
+            selection_bar.append (selection_actions);
 
             /* Hide the bar after its animation so it does not constrain width. */
             selection_bar.visible = false;
@@ -443,8 +454,12 @@ namespace Dc {
 
         private void update_selection_ui () {
             uint count = selected_ids.size ();
-            /* Show the bar before starting its reveal animation. */
+            /* Show the bar before starting its reveal animation. The tab
+               bar swaps out for the duration of the selection so the two
+               bars never stack (and its width never constrains a narrow
+               dialog while selecting). */
             if (selection_mode) selection_bar.visible = true;
+            switcher_bar.visible = !selection_mode;
             selection_revealer.reveal_child = selection_mode;
             selection_label.label = "%u selected".printf (count);
             forward_sel_btn.sensitive = count > 0;
