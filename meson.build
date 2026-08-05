@@ -160,6 +160,18 @@ install_data(
   install_dir: get_option('datadir') / 'applications',
 )
 
+# D-Bus activation (DBusActivatable=true in the desktop file): launchers
+# start Parla by asking the bus for this name instead of forking Exec.
+dbus_service_conf = configuration_data()
+dbus_service_conf.set('bindir', get_option('prefix') / get_option('bindir'))
+configure_file(
+  input: 'data/io.github.trufae.Parla.service.in',
+  output: 'io.github.trufae.Parla.service',
+  configuration: dbus_service_conf,
+  install: true,
+  install_dir: get_option('datadir') / 'dbus-1' / 'services',
+)
+
 install_data(
   'data/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg',
   'data/icons/hicolor/scalable/apps/parla-welcome.svg',

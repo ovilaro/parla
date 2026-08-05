@@ -294,8 +294,20 @@ namespace Dc {
                 minimize_to_tray ();
                 return true;
             }
+            /* Started with --background: the process outlives its window,
+               so closing only hides it. Quit (Ctrl+Q, the tray menu) still
+               exits for real via handle_primary_q. */
+            if (runs_in_background ()) {
+                minimize_to_tray ();
+                return true;
+            }
             release_background_hold ();
             return false;
+        }
+
+        private bool runs_in_background () {
+            var app = this.application as Dc.Application;
+            return app != null && app.background_mode;
         }
 
         public void set_minimize_to_tray (bool enabled) {
@@ -316,7 +328,7 @@ namespace Dc {
         }
 
         public void handle_primary_w () {
-            if (ensure_tray_visible ()) {
+            if (ensure_tray_visible () || runs_in_background ()) {
                 minimize_to_tray ();
                 return;
             }
@@ -341,6 +353,10 @@ namespace Dc {
 
             if (!settings.minimize_to_tray) {
                 if (tray != null) tray.hide ();
+                /* In background/service mode the hidden window is
+                   deliberate — the tray setting being off (or getting
+                   toggled off) must not summon it. */
+                if (runs_in_background ()) return;
                 if (held_in_background || !this.visible) restore_from_tray ();
                 else release_background_hold ();
                 return;

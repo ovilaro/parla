@@ -1,0 +1,7 @@
+# D-Bus activation for the desktop entry (DBusActivatable=true).
+# --gapplication-service puts GApplication in service mode: it claims the
+# bus name and waits for an Activate/Open call instead of opening a window
+# on its own.
+[D-BUS Service]
+Name=io.github.trufae.Parla
+Exec=@bindir@/parla --gapplication-service

@@ -17,6 +17,11 @@ namespace Dc {
 
         public RpcClient rpc { get; private set; }
 
+        /* Set once by --background: the process is a long-lived service
+           whose window is optional. It keeps running with no window and
+           closing the window only hides it (quit still exits for real). */
+        public bool background_mode { get; private set; default = false; }
+
         private Gtk.CssProvider? accent_provider = null;
         private Gtk.CssProvider? background_provider = null;
         private Gtk.CssProvider? font_provider = null;
@@ -24,15 +29,26 @@ namespace Dc {
         public Application () {
             Object (
                 application_id: "io.github.trufae.Parla",
-                /* HANDLES_COMMAND_LINE (not HANDLES_OPEN) so we see invite URIs
-                   verbatim: GFile rewrites "openpgp4fpr:FPR#..." into
-                   "openpgp4fpr:///FPR#..." which Delta Chat's check_qr rejects. */
+                /* HANDLES_COMMAND_LINE (not plain HANDLES_OPEN) so that CLI
+                   invocations see invite URIs verbatim: GFile rewrites
+                   "openpgp4fpr:FPR#..." into "openpgp4fpr:///FPR#..." which
+                   Delta Chat's check_qr rejects. HANDLES_OPEN is still set
+                   for the D-Bus activation path (org.freedesktop.Application
+                   .Open), where GLib forces the GFile round-trip — open ()
+                   repairs the known damage there. */
                 flags: ApplicationFlags.HANDLES_COMMAND_LINE
+                    | ApplicationFlags.HANDLES_OPEN
             );
         }
 
         construct {
             rpc = new RpcClient ();
+            add_main_option (
+                "background", 'b', OptionFlags.NONE, OptionArg.NONE,
+                "Start in the background without opening a window", null);
+            add_main_option (
+                "show", 's', OptionFlags.NONE, OptionArg.NONE,
+                "Present the main window of the running instance", null);
         }
 
         public void apply_theme_override (ThemeOverride theme) {
@@ -207,16 +223,74 @@ namespace Dc {
            the primary instance. We pass the raw argument straight through so
            the SecureJoin code receives the exact link the user clicked. */
         protected override int command_line (ApplicationCommandLine cmd) {
-            var window = get_or_create_window ();
-            window.restore_from_tray ();
-
+            string? invite_uri = null;
             foreach (unowned string arg in cmd.get_arguments ()) {
                 if (is_delta_invite_uri (arg)) {
-                    window.handle_invite_uri (arg);
+                    invite_uri = arg;
                     break;
                 }
             }
+
+            var options = cmd.get_options_dict ();
+
+            /* --background brings up the whole service stack without a
+               window. It only means something for the invocation that
+               becomes the primary instance: a remote `parla --background`
+               finds the services already running and has nothing to do
+               (in particular it must not hide an already-open window). */
+            if (options.contains ("background")
+                && !options.contains ("show")
+                && invite_uri == null
+                && Platform.supports_background_mode ()) {
+                if (!cmd.get_is_remote ()) enter_background_mode ();
+                return 0;
+            }
+
+            /* Default launch and --show both present the window; when the
+               primary instance is already running this call arrived over
+               D-Bus and wakes its window. */
+            var window = get_or_create_window ();
+            window.restore_from_tray ();
+            if (invite_uri != null) window.handle_invite_uri (invite_uri);
             return 0;
+        }
+
+        /* Build the window — and with it everything a normal startup
+           brings up (RPC server, event stream, notifications) — without
+           presenting it. The explicit hold keeps the process alive even
+           though no window has ever been mapped; only an explicit quit
+           (tray menu, Ctrl+Q, SIGTERM) ends it. */
+        private void enter_background_mode () {
+            if (background_mode) return;
+            background_mode = true;
+            hold ();
+            get_or_create_window ();
+        }
+
+        /* D-Bus activation (DBusActivatable=true) delivers clicked links
+           through org.freedesktop.Application.Open instead of the command
+           line, and GLib hands them over as GFiles whose round-trip mangles
+           scheme-only URIs ("openpgp4fpr:FPR#..." becomes
+           "openpgp4fpr:///FPR%23..."). Undo that known damage before the
+           SecureJoin code sees the link; CLI invocations still arrive
+           verbatim via command_line. */
+        protected override void open (File[] files, string hint) {
+            var window = get_or_create_window ();
+            window.restore_from_tray ();
+            foreach (var file in files) {
+                string uri = repair_dbus_open_uri (file.get_uri ());
+                if (is_delta_invite_uri (uri)) {
+                    window.handle_invite_uri (uri);
+                    break;
+                }
+            }
+        }
+
+        private static string repair_dbus_open_uri (string uri) {
+            if (!uri.has_prefix ("openpgp4fpr:")) return uri;
+            string rest = uri.substring ("openpgp4fpr:".length);
+            while (rest.has_prefix ("/")) rest = rest.substring (1);
+            return "openpgp4fpr:" + rest.replace ("%23", "#");
         }
 
         protected override void startup () {

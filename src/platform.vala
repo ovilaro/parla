@@ -123,6 +123,21 @@ namespace Dc.Platform {
         return platform_is_macos ();
     }
 
+    public bool is_windows () {
+#if WINDOWS
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    /* Background/service mode is a freedesktop pattern: it depends on
+       D-Bus-based single-instance ownership and activation. On macOS and
+       Windows `--background` degrades to a normal launch. */
+    public bool supports_background_mode () {
+        return !is_macos () && !is_windows ();
+    }
+
     public void setup_macos_bundle_environment () {
         platform_setup_macos_bundle_environment ();
     }

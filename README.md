@@ -153,6 +153,11 @@ release.
 See [docs/rpc-server.md](docs/rpc-server.md) for how Parla finds the JSON-RPC
 server and how to package it for Flatpak or distro packages.
 
+Parla is single-instance and can run as a background service on Linux:
+`parla --background` starts it without a window (e.g. for session
+autostart) and `parla --show` presents the window of the running
+instance. See [docs/background.md](docs/background.md).
+
 ## Contributing
 
 Early-stage project &mdash; contributions welcome! Open areas: Flatpak packaging, theming, richer notifications, accessibility polish, and more message types.
