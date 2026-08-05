@@ -209,6 +209,31 @@ namespace Dc {
                 ephem_row.add_suffix (combo);
                 ephem_row.activatable_widget = combo;
 
+                /* Mute selector. Core only reports the boolean isMuted, not
+                   the remaining time, so a timed mute shows as "Forever"
+                   here; picking any entry always applies that duration. */
+                bool is_muted = json_bool (chat, "isMuted");
+                var mute_row = new Adw.ActionRow ();
+                mute_row.title = "Mute notifications";
+                string[] mute_labels = new string[MUTE_DURATION_LABELS.length + 1];
+                mute_labels[0] = "Off";
+                for (int i = 0; i < MUTE_DURATION_LABELS.length; i++) {
+                    mute_labels[i + 1] = MUTE_DURATION_LABELS[i];
+                }
+                var mute_combo = new Gtk.DropDown.from_strings (mute_labels);
+                mute_combo.selected = is_muted ? mute_labels.length - 1 : 0;
+                mute_combo.valign = Gtk.Align.CENTER;
+                mute_combo.notify["selected"].connect (() => {
+                    uint idx = mute_combo.selected;
+                    if (idx < mute_labels.length) {
+                        int secs = idx == 0
+                            ? 0 : MUTE_DURATION_SECONDS[(int) idx - 1];
+                        set_mute.begin (secs);
+                    }
+                });
+                mute_row.add_suffix (mute_combo);
+                mute_row.activatable_widget = mute_combo;
+
                 var ephem_list = boxed_list ();
                 ephem_list.append (action_row (
                     "View Media",
@@ -220,6 +245,7 @@ namespace Dc {
                         dialog.presenter_dialog = this;
                         dialog.present (this);
                     }));
+                ephem_list.append (mute_row);
                 ephem_list.append (ephem_row);
                 content.append (ephem_list);
 
@@ -306,6 +332,15 @@ namespace Dc {
                 err.add_css_class ("dim-label");
                 err.wrap = true;
                 content.append (err);
+            }
+        }
+
+        private async void set_mute (int seconds) {
+            try {
+                yield rpc.set_chat_mute_duration (chat_id, seconds);
+                chat_changed ();
+            } catch (Error e) {
+                show_error (this, e.message);
             }
         }
 

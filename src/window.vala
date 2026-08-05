@@ -18,6 +18,7 @@ namespace Dc {
         private Adw.HeaderBar sidebar_header;
         private Adw.HeaderBar content_header;
         private Gtk.Label content_title_label;
+        private Gtk.Image content_mute_icon;
         private Gtk.SearchEntry search_entry;
         private Gtk.Box sidebar_box;
         private Gtk.Button sidebar_toggle_btn;
@@ -150,6 +151,7 @@ namespace Dc {
             clear_listbox (chat_listbox);
             search_entry.text = "";
             content_title_label.label = "Select a chat";
+            content_mute_icon.visible = false;
         }
 
         private void show_empty_status (string icon_name, string title,
@@ -601,7 +603,16 @@ namespace Dc {
             content_title_label = new Gtk.Label ("Select a chat");
             content_title_label.add_css_class ("heading");
             content_title_label.ellipsize = Pango.EllipsizeMode.END;
-            content_header.title_widget = content_title_label;
+            content_mute_icon = new Gtk.Image.from_icon_name (
+                "notifications-disabled-symbolic");
+            content_mute_icon.pixel_size = 14;
+            content_mute_icon.add_css_class ("dim-label");
+            content_mute_icon.tooltip_text = "Notifications muted";
+            content_mute_icon.visible = false;
+            var content_title_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            content_title_box.append (content_title_label);
+            content_title_box.append (content_mute_icon);
+            content_header.title_widget = content_title_box;
 
             /* Sidebar visibility button. On collapsed/mobile widths this
                opens the sidebar as the full-width overlay instead of compact. */
@@ -1196,6 +1207,7 @@ namespace Dc {
             chat_listbox.select_row (null);
             suppress_chat_selection = false;
             content_title_label.label = "Select a chat";
+            content_mute_icon.visible = false;
             show_empty_status ("parla-welcome", "Parla",
                 "Select a chat to start messaging.");
         }
@@ -1276,6 +1288,10 @@ namespace Dc {
 
                     if (entry.id == desired_chat_id) {
                         reselect_row = row;
+                        /* Refresh header state that can change while the
+                           chat stays open (rename, mute toggled). */
+                        content_title_label.label = entry.name;
+                        content_mute_icon.visible = entry.is_muted;
                     }
                 }
 
@@ -1397,6 +1413,7 @@ namespace Dc {
             if (entry != null) {
                 content_title_label.label = entry.name;
             }
+            content_mute_icon.visible = entry != null && entry.is_muted;
             /* Contact requests swap the compose box for an Accept/Block bar. */
             view.set_contact_request (entry != null && entry.is_contact_request);
 

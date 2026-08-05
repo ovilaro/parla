@@ -579,6 +579,23 @@ namespace Dc {
                     .build ());
         }
 
+        /* Mute a chat's notifications: seconds > 0 mutes for that long,
+           seconds < 0 mutes forever, 0 unmutes. Core tracks the deadline
+           itself and reports the result as the boolean isMuted. */
+        public async void set_chat_mute_duration (int chat_id, int seconds) throws Error {
+            var p = Params.begin ()
+                .add_int (account_id)
+                .add_int (chat_id)
+                .begin_object ();
+            if (seconds > 0) {
+                p.set_string_member ("kind", "Until");
+                p.set_int_member ("duration", seconds);
+            } else {
+                p.set_string_member ("kind", seconds < 0 ? "Forever" : "NotMuted");
+            }
+            yield call ("set_chat_mute_duration", p.end_object ().build ());
+        }
+
         public async void set_chat_visibility (int chat_id, string visibility) throws Error {
             yield call ("set_chat_visibility",
                 Params.begin ()
