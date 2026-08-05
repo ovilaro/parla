@@ -21,4 +21,5 @@ for dmg in *.dmg; do
         exit 1
     fi
     xcrun stapler staple "${dmg}"
+    xcrun stapler validate "${dmg}"
 done

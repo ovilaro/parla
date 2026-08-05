@@ -130,13 +130,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # dmgname is the user-facing suffix of the released DMG:
+        # Parla-<version>-<dmgname>.dmg
         include:
           - arch: arm64
             runner: macos-26
+            dmgname: macos-arm64
           - arch: x86_64
             runner: macos-26-intel
+            dmgname: macos-intel
           - arch: arm64
             runner: macos-14
+            dmgname: macos-arm64-legacy
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -168,8 +173,7 @@ jobs:
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v7
         with:
-          # The runner name already starts with "macos"
-          name: parla-${{ matrix.runner }}-${{ matrix.arch }}-zip
+          name: parla-${{ matrix.dmgname }}-zip
           path: Parla-*.zip
           if-no-files-found: error
 
@@ -266,7 +270,8 @@ jobs:
         with:
           name: parla-macos-signed
           path: ./*.dmg
-      
+          if-no-files-found: error
+
       - name: Remove keychain
         if: always()
         run: security delete-keychain release.keychain
@@ -287,6 +292,7 @@ jobs:
           debs=(artifacts/**/*.deb)
           flatpaks=(artifacts/**/*.flatpak)
           appimages=(artifacts/**/*.AppImage)
+          # One DMG per entry in the build-macos matrix
           dmgs=(artifacts/parla-macos-signed/*.dmg)
           zips=(artifacts/parla-windows-*/*.zip)
           if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#appimages[@]} == 0 || ${#dmgs[@]} != 3 || ${#zips[@]} == 0 )); then

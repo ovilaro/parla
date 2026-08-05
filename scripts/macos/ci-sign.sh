@@ -16,15 +16,25 @@ sign_binary() {
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$1"
 }
 
-for folder in artifacts/parla-macos-*-zip; do
-    # The macos-macos dedup keeps DMG names sane when rescuing artifacts
-    # from runs older than the parla-macos-* -> parla-* artifact rename
-    build=$(basename "$folder" | sed -e 's,^parla-,,' -e 's,-zip$,,' -e 's,^macos-macos-,macos-,')
+shopt -s nullglob
+folders=(artifacts/parla-macos-*-zip)
+if [ "${#folders[@]}" -eq 0 ]; then
+    echo "Error: no artifacts/parla-macos-*-zip folders to sign"
+    exit 1
+fi
+
+for folder in "${folders[@]}"; do
+    build=$(basename "$folder" | sed -e 's,^parla-,,' -e 's,-zip$,,')
 
     echo "[${build}] Extracting build..."
     disk="disks/${build}/"
-    zip=$(echo "${folder}/"Parla*.zip)
-    zipname=$(basename ${zip} .zip)
+    zips=("${folder}"/Parla*.zip)
+    if [ "${#zips[@]}" -ne 1 ]; then
+        echo "Error: expected exactly one zip in ${folder}, found ${#zips[@]}"
+        exit 1
+    fi
+    zip=${zips[0]}
+    zipname=$(basename "${zip}" .zip)
     mkdir -p "${disk}"
     ditto -x -k "${zip}" "${disk}"
 
