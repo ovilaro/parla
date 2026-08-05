@@ -82,22 +82,15 @@ namespace SafeStore {
                 | SubprocessFlags.STDOUT_PIPE
                 | SubprocessFlags.STDERR_PIPE
             );
-            launcher.setenv ("CRYFS_FRONTEND", "noninteractive", true);
-            launcher.setenv ("CRYFS_NO_UPDATE_CHECK", "true", true);
-            string state_dir = Path.build_filename (
-                Environment.get_user_data_dir (),
-                "safestore",
-                "cryfs-state"
-            );
-            if (DirUtils.create_with_parents (state_dir, 0700) != 0
-                    && !FileUtils.test (state_dir, FileTest.IS_DIR)) {
+            try {
+                CryfsBackend.apply_environment (launcher);
+            } catch (Error error) {
                 transition (
                     StoreState.ERROR,
                     "Could not create private CryFS state directory"
                 );
-                throw new IOError.FAILED ("%s", detail);
+                throw error;
             }
-            launcher.setenv ("CRYFS_LOCAL_STATE_DIR", state_dir, true);
 
             Subprocess process;
             try {
@@ -143,7 +136,7 @@ namespace SafeStore {
                     && generation == process_generation
                     && cryfs_process == process;
                  attempt++) {
-                if (yield mount_is_active (mount_path)) {
+                if (MountCheck.is_active (mount_path)) {
                     mounted = true;
                     break;
                 }
@@ -181,7 +174,7 @@ namespace SafeStore {
             expected_exit = true;
             output ("Requesting a clean CryFS unmount.");
 
-            string unmount_binary = unmount_binary_for (binary);
+            string unmount_binary = CryfsBackend.unmount_binary_for (binary);
             string? stdout_text;
             string? stderr_text;
             Subprocess process;
@@ -274,35 +267,11 @@ namespace SafeStore {
 
             int status = 1;
             if (process.get_if_exited ()) status = process.get_exit_status ();
-            string message = exit_message (status);
+            string message = CryfsBackend.exit_message (status);
             transition (
                 status == 0 ? StoreState.LOCKED : StoreState.ERROR,
                 message
             );
-        }
-
-        private static string exit_message (int status) {
-            switch (status) {
-            case 0: return "CryFS exited; vault is locked";
-            case 10: return "CryFS rejected the command-line options";
-            case 11: return "Wrong vault password";
-            case 12: return "CryFS rejected an empty password";
-            case 13: return "Vault format is newer than this CryFS version";
-            case 14: return "Vault requires an explicit filesystem upgrade";
-            case 15: return "Vault uses an unsupported cipher";
-            case 16: return "Encrypted vault folder is inaccessible";
-            case 17: return "Mount location is inaccessible";
-            case 18: return "Encrypted vault is inside the mount location";
-            case 19: return "Selected folder is not a valid CryFS vault";
-            case 20: return "CryFS detected a replaced filesystem";
-            case 21: return "CryFS detected a changed encryption key";
-            case 22: return "CryFS integrity setup does not match";
-            case 23: return "Vault is configured for a single client";
-            case 24: return "CryFS detected an earlier integrity violation";
-            case 25: return "CryFS detected a filesystem integrity violation";
-            default:
-                return "CryFS exited with status %d".printf (status);
-            }
         }
 
         private void transition (StoreState new_state, string new_detail) {
@@ -317,77 +286,6 @@ namespace SafeStore {
                 if (clean.length > 0) output (clean);
             }
         }
-
-        private static string unmount_binary_for (string cryfs_binary) {
-            string directory = Path.get_dirname (cryfs_binary);
-            string basename = Path.get_basename (cryfs_binary);
-            if (directory == "." && basename == cryfs_binary) {
-                return "cryfs-unmount";
-            }
-#if WINDOWS
-            string executable = basename.ascii_down ();
-            if (executable.has_suffix (".exe")) {
-                return Path.build_filename (
-                    directory, "cryfs-unmount.exe");
-            }
-#endif
-            return Path.build_filename (directory, "cryfs-unmount");
-        }
-
-        private static async bool mount_is_active (string mount_path) {
-#if WINDOWS
-            return FileUtils.test (
-                PathPolicy.normalize (mount_path) + "\\",
-                FileTest.IS_DIR
-            );
-#elif LINUX
-            string contents;
-            try {
-                FileUtils.get_contents ("/proc/self/mountinfo", out contents);
-            } catch (Error error) {
-                return false;
-            }
-            string wanted = PathPolicy.normalize (mount_path);
-            foreach (string line in contents.split ("\n")) {
-                string[] fields = line.split (" ");
-                if (fields.length > 4
-                        && decode_mount_path (fields[4]) == wanted) {
-                    return true;
-                }
-            }
-            return false;
-#else
-            try {
-                string? stdout_text;
-                string? stderr_text;
-                var process = new Subprocess (
-                    SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE,
-                    "/sbin/mount"
-                );
-                yield process.communicate_utf8_async (
-                    null, null, out stdout_text, out stderr_text);
-                if (!process.get_successful ()) return false;
-                string marker = " on %s (".printf (
-                    PathPolicy.normalize (mount_path));
-                foreach (string line in (stdout_text ?? "").split ("\n")) {
-                    if (line.contains (marker)) return true;
-                }
-            } catch (Error error) {
-                return false;
-            }
-            return false;
-#endif
-        }
-
-#if LINUX
-        private static string decode_mount_path (string path) {
-            return path
-                .replace ("\\040", " ")
-                .replace ("\\011", "\t")
-                .replace ("\\012", "\n")
-                .replace ("\\134", "\\");
-        }
-#endif
 
         private static async void delay (uint milliseconds) {
             SourceFunc callback = delay.callback;

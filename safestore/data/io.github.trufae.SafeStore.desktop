@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=SafeStore
 Comment=Experiment with local encrypted CryFS vaults
-Exec=safestore
+Exec=safestore-gui
 Icon=drive-harddisk-symbolic
 Terminal=false
 Type=Application

@@ -19,24 +19,6 @@ else
   )
 endif
 
-adwaita_dep = dependency('libadwaita-1', version: '>= 1.5')
-if host_machine.system() == 'darwin'
-  # Homebrew installs the VAPI beside the keg instead of in valac's
-  # versioned default search directory.
-  adwaita_prefix = adwaita_dep.get_variable(pkgconfig: 'prefix')
-  add_project_arguments(
-    '--vapidir=' + adwaita_prefix / 'share' / 'vala' / 'vapi',
-    language: 'vala',
-  )
-endif
-
-deps = [
-  dependency('glib-2.0'),
-  dependency('gio-2.0'),
-  dependency('gtk4'),
-  adwaita_dep,
-]
-
 # These warnings come from valac-generated C rather than the Vala source.
 cc = meson.get_compiler('c')
 add_project_arguments(
@@ -49,18 +31,64 @@ add_project_arguments(
   language: 'c',
 )
 
-safestore_sources = files(
-  'src/main.vala',
-  'src/settings.vala',
-  'src/path_policy.vala',
-  'src/cryfs_controller.vala',
-  'src/window.vala',
+core_deps = [
+  dependency('glib-2.0'),
+  dependency('gio-2.0'),
+]
+
+# The Secret Service keyring backend; macOS uses /usr/bin/security instead
+# and Windows has no keyring backend yet.
+if host_machine.system() != 'darwin' and host_machine.system() != 'windows'
+  secret_dep = dependency('libsecret-1', required: false)
+  if secret_dep.found()
+    add_project_arguments('--define=HAVE_LIBSECRET', language: 'vala')
+    core_deps += secret_dep
+  endif
+endif
+
+core_sources = files(
+  'lib/path_policy.vala',
+  'lib/settings.vala',
+  'lib/backend.vala',
+  'lib/mount_check.vala',
+  'lib/vault.vala',
+  'lib/keyring.vala',
+  'lib/cryfs_controller.vala',
+)
+
+core_lib = static_library(
+  'safestore-core',
+  core_sources,
+  dependencies: core_deps,
+)
+
+core_dep = declare_dependency(
+  link_with: core_lib,
+  dependencies: core_deps,
 )
 
 executable(
   'safestore',
-  safestore_sources,
-  dependencies: deps,
+  files('cli/main.vala'),
+  dependencies: core_dep,
+  install: true,
+)
+
+adwaita_dep = dependency('libadwaita-1', version: '>= 1.5')
+if host_machine.system() == 'darwin'
+  # Homebrew installs the VAPI beside the keg instead of in valac's
+  # versioned default search directory.
+  adwaita_prefix = adwaita_dep.get_variable(pkgconfig: 'prefix')
+  add_project_arguments(
+    '--vapidir=' + adwaita_prefix / 'share' / 'vala' / 'vapi',
+    language: 'vala',
+  )
+endif
+
+executable(
+  'safestore-gui',
+  files('gui/main.vala', 'gui/window.vala'),
+  dependencies: [core_dep, dependency('gtk4'), adwaita_dep],
   install: true,
   win_subsystem: 'windows',
 )
@@ -72,11 +100,8 @@ install_data(
 
 path_policy_test = executable(
   'path-policy-test',
-  files('tests/path_policy_test.vala', 'src/path_policy.vala'),
-  dependencies: [
-    dependency('glib-2.0'),
-    dependency('gio-2.0'),
-  ],
+  files('tests/path_policy_test.vala'),
+  dependencies: core_dep,
   install: false,
 )
 

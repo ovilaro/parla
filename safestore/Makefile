@@ -19,7 +19,10 @@ all:
 	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
 
 run: all
-	$(RUN_ENV) "./$(BUILD_DIR)/safestore"
+	$(RUN_ENV) "./$(BUILD_DIR)/safestore-gui"
+
+cli: all
+	$(RUN_ENV) "./$(BUILD_DIR)/safestore" --help
 
 test: all
 	$(RUN_ENV) meson test -C "$(BUILD_DIR)" --print-errorlogs
@@ -34,4 +37,5 @@ install: all
 
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/safestore"
+	rm -f "$(DESTDIR)$(PREFIX)/bin/safestore-gui"
 	rm -f "$(DESTDIR)$(PREFIX)/share/applications/io.github.trufae.SafeStore.desktop"
