@@ -29,6 +29,16 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.7.4" date="2026-07-05">
+      <description>
+        <ul>
+          <li>Introduce the media gallery</li>
+          <li>Fix emoji bubbles on hidpi screens</li>
+          <li>Various composebar minor fixes</li>
+          <li>Support escaped markdown codeblocks</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.2" date="2026-07-21">
       <description>
         <ul>
