@@ -61,12 +61,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
-          shopt -s nullglob globstar
-          debs=(artifacts/**/*.deb)
-          flatpaks=(artifacts/**/*.flatpak)
-          appimages=(artifacts/**/*.AppImage)
+          # macOS ships bash 3.2, which has no globstar: use find instead of **
+          shopt -s nullglob
+          debs=( $(find artifacts -type f -name '*.deb') )
+          flatpaks=( $(find artifacts -type f -name '*.flatpak') )
+          appimages=( $(find artifacts -type f -name '*.AppImage') )
           dmgs=(./*.dmg)
-          zips=(artifacts/parla-windows-*/*.zip)
+          zips=( $(find artifacts -type f -name '*.zip' -path '*/parla-windows-*') )
           if (( ${#debs[@]} == 0 || ${#flatpaks[@]} == 0 || ${#appimages[@]} == 0 || ${#dmgs[@]} != 3 || ${#zips[@]} == 0 )); then
             find artifacts -maxdepth 4 -type f
             echo "::error::Missing release artifact (.deb, .flatpak, three .dmg files, .AppImage, or .zip)"
