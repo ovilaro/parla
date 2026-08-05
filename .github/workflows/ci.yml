@@ -249,78 +249,17 @@ jobs:
           CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: "keychainpass-${{ github.run_id }}"
-        run: |
-          # Create keychain
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" release.keychain
-          security default-keychain -s release.keychain
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" release.keychain
-          security set-keychain-settings -t 3600 -u release.keychain
-          
-          # Import certificate
-          echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
-          security import certificate.p12 -k release.keychain -P "${CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" release.keychain
-          
-          # Check if the certificate was imported correctly and find its identity
-          security find-identity -v -p codesigning release.keychain
-          
-          # Clean up
-          rm certificate.p12
+        run: ./scripts/macos/ci-keychain.sh
 
       - name: Sign and package the App Bundle
-        run: |
-          # Find the Developer ID Application certificate identity
-          IDENTITY=$(security find-identity -v -p codesigning | awk '/Developer ID Application/{print $2;exit}')
-          
-          if [ -z "$IDENTITY" ]; then
-            echo "Error: No Developer ID Application certificate found in keychain"
-            exit 1
-          fi
-
-          # Sign and package for all builds
-          for folder in artifacts/*; do
-            build=$(echo "$folder" | sed -e 's,artifacts/parla-,,' -e 's,-zip$,,')
-            
-            echo "[${build}] Extracting build..."
-            disk="disks/${build}/"
-            zip=$(echo "${folder}/"Parla*.zip)
-            zipname=$(basename ${zip} .zip)
-            mkdir -p "${disk}"
-            ditto -x -k "${zip}" "${disk}"
-
-            echo "[${build}] Signing app bundle..."
-            app="${disk}/Parla.app"
-            codesign --force --deep --options runtime --entitlements "scripts/macos/release.entitlements" --sign "$IDENTITY" "${app}"
-            codesign --verify --verbose "${app}"
-
-            dmg="${zipname}-${build}.dmg"
-            echo "[${build}] Packaging into ${dmg}..."
-            create-dmg \
-                --volname "Parla" \
-                --window-pos 200 120 \
-                --window-size 600 400 \
-                --icon-size 100 \
-                --icon "Parla.app" 150 185 \
-                --app-drop-link 450 185 \
-                --no-internet-enable \
-                "${dmg}" \
-                "disks/${build}/"
-
-            echo "[${build}] Signing ${dmg}..."
-            codesign --force --sign "$IDENTITY" --timestamp "${dmg}"
-          done
+        run: ./scripts/macos/ci-sign.sh
 
       - name: Notarize DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          for dmg in *.dmg; do
-            echo "Notary $dmg..."
-            xcrun notarytool submit "${dmg}" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --wait
-            xcrun stapler staple "${dmg}"
-          done
+        run: ./scripts/macos/ci-notarize.sh
 
       - uses: actions/upload-artifact@v7
         with:
