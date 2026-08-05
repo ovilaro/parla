@@ -168,7 +168,8 @@ jobs:
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v7
         with:
-          name: parla-macos-${{ matrix.runner }}-${{ matrix.arch }}-zip
+          # The runner name already starts with "macos"
+          name: parla-${{ matrix.runner }}-${{ matrix.arch }}-zip
           path: Parla-*.zip
           if-no-files-found: error
 

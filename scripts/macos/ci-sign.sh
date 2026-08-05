@@ -17,7 +17,9 @@ sign_binary() {
 }
 
 for folder in artifacts/parla-macos-*-zip; do
-    build=$(basename "$folder" | sed -e 's,^parla-,,' -e 's,-zip$,,')
+    # The macos-macos dedup keeps DMG names sane when rescuing artifacts
+    # from runs older than the parla-macos-* -> parla-* artifact rename
+    build=$(basename "$folder" | sed -e 's,^parla-,,' -e 's,-zip$,,' -e 's,^macos-macos-,macos-,')
 
     echo "[${build}] Extracting build..."
     disk="disks/${build}/"
