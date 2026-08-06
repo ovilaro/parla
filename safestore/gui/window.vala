@@ -383,8 +383,6 @@ namespace SafeStore {
         private void mount_vault (string password, bool create) {
             try {
                 save_settings ();
-                validate_paths (create);
-                prepare_directories ();
                 controller.mount (
                     settings.cryfs_binary,
                     settings.vault_path,
@@ -400,21 +398,6 @@ namespace SafeStore {
             password = "";
         }
 
-        private void prepare_directories () throws Error {
-            ensure_directory (settings.vault_path);
-#if !WINDOWS
-            ensure_directory (settings.mount_path);
-#endif
-        }
-
-        private static void ensure_directory (string path) throws Error {
-            if (DirUtils.create_with_parents (path, 0700) != 0
-                    && !FileUtils.test (path, FileTest.IS_DIR)) {
-                throw new IOError.FAILED (
-                    "Could not create folder: %s", path);
-            }
-        }
-
         private async void lock_vault () {
             try {
                 yield controller.unmount (
@@ -424,17 +407,6 @@ namespace SafeStore {
             } catch (Error error) {
                 append_log ("Error: " + error.message);
                 show_error (error.message);
-            }
-        }
-
-        private void validate_paths (bool create) throws Error {
-            PathPolicy.validate_layout (
-                settings.vault_path, settings.mount_path);
-            PathPolicy.validate_mountpoint (settings.mount_path);
-            if (create) {
-                PathPolicy.validate_new_vault (settings.vault_path);
-            } else {
-                PathPolicy.validate_existing_vault (settings.vault_path);
             }
         }
 

@@ -48,11 +48,7 @@ namespace SafeStore {
                 "safestore",
                 "cryfs-state"
             );
-            if (DirUtils.create_with_parents (dir, 0700) != 0
-                    && !FileUtils.test (dir, FileTest.IS_DIR)) {
-                throw new IOError.FAILED (
-                    "Could not create private CryFS state directory: %s", dir);
-            }
+            PathPolicy.ensure_private_directory (dir);
             return dir;
         }
 

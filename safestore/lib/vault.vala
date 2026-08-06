@@ -82,9 +82,9 @@ namespace SafeStore {
                 throw new VaultError.ALREADY_MOUNTED (
                     "Something is already mounted at %s", mount);
             }
-            ensure_directory (vault);
+            PathPolicy.ensure_private_directory (vault);
 #if !WINDOWS
-            ensure_directory (mount);
+            PathPolicy.ensure_private_directory (mount);
 #endif
             PathPolicy.validate_mountpoint (mount);
 
@@ -174,14 +174,6 @@ namespace SafeStore {
             }
             throw new VaultError.UNMOUNT_FAILED (
                 "Unmount reported success, but %s is still mounted", mount);
-        }
-
-        private static void ensure_directory (string path) throws Error {
-            if (DirUtils.create_with_parents (path, 0700) != 0
-                    && !FileUtils.test (path, FileTest.IS_DIR)) {
-                throw new IOError.FAILED (
-                    "Could not create folder: %s", path);
-            }
         }
 
         private static string read_all (InputStream input) {

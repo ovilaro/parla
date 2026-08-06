@@ -9,6 +9,8 @@ namespace SafeStore {
 
     public class PathPolicy : Object {
 
+        private const int PRIVATE_MODE = 0700;
+
         public static string normalize (string path) {
             string clean = path.strip ();
             if (clean.length == 0) return "";
@@ -109,6 +111,59 @@ namespace SafeStore {
                 throw new PathPolicyError.NOT_A_VAULT (
                     "No cryfs.config was found in the selected vault folder.");
             }
+        }
+
+        // CryFS protects the contents at rest, but the backing directory and
+        // the unmounted mountpoint still need ordinary OS access controls.
+        // Refuse symlinks and directories belonging to another account, then
+        // remove all group/other permissions before CryFS sees the path.
+        public static void ensure_private_directory (string directory_path)
+                                                     throws Error {
+            string path = normalize (directory_path);
+            if (DirUtils.create_with_parents (path, PRIVATE_MODE) != 0
+                    && !FileUtils.test (path, FileTest.IS_DIR)) {
+                throw new IOError.FAILED (
+                    "Could not create private folder: %s", path);
+            }
+#if !WINDOWS
+            int descriptor = Posix.open (
+                path,
+                Posix.O_RDONLY | Posix.O_DIRECTORY
+                    | Posix.O_NOFOLLOW | Posix.O_CLOEXEC
+            );
+            if (descriptor < 0) {
+                throw new PathPolicyError.INVALID (
+                    "Private folder must be a real accessible directory: %s",
+                    path);
+            }
+            Posix.Stat info;
+            if (Posix.fstat (descriptor, out info) != 0
+                    || !Posix.S_ISDIR (info.st_mode)) {
+                Posix.close (descriptor);
+                throw new PathPolicyError.INVALID (
+                    "Private folder is not a directory: %s",
+                    path);
+            }
+            if (info.st_uid != Posix.geteuid ()) {
+                Posix.close (descriptor);
+                throw new PathPolicyError.INVALID (
+                    "Private folder is not owned by the current user: %s", path);
+            }
+            if (Posix.fchmod (descriptor, PRIVATE_MODE) != 0) {
+                Posix.close (descriptor);
+                throw new IOError.PERMISSION_DENIED (
+                    "Could not restrict private folder permissions: %s", path);
+            }
+            if (Posix.fstat (descriptor, out info) != 0
+                    || !Posix.S_ISDIR (info.st_mode)
+                    || info.st_uid != Posix.geteuid ()
+                    || (info.st_mode & 07777) != PRIVATE_MODE) {
+                Posix.close (descriptor);
+                throw new IOError.PERMISSION_DENIED (
+                    "Private folder permissions could not be verified: %s", path);
+            }
+            Posix.close (descriptor);
+#endif
         }
 
         private static bool mount_is_absolute (string mount) {

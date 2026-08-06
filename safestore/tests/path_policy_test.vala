@@ -32,6 +32,51 @@ private void test_relative_layout () {
 }
 
 #if !WINDOWS
+private void test_private_directory_permissions () {
+    string? root = null;
+    try {
+        root = DirUtils.make_tmp ("safestore-private-policy-XXXXXX");
+        string directory = Path.build_filename (root, "private");
+        assert_true (DirUtils.create (directory, 0755) == 0);
+
+        SafeStore.PathPolicy.ensure_private_directory (directory);
+
+        Posix.Stat info;
+        assert_true (Posix.lstat (directory, out info) == 0);
+        assert_true (Posix.S_ISDIR (info.st_mode));
+        assert_true (info.st_uid == Posix.geteuid ());
+        assert_true ((info.st_mode & 0777) == 0700);
+        assert_true (DirUtils.remove (directory) == 0);
+        assert_true (DirUtils.remove (root) == 0);
+    } catch (Error error) {
+        Test.fail_printf ("Could not verify private directory: %s", error.message);
+    }
+}
+
+private void test_private_directory_rejects_symlink () {
+    string? root = null;
+    try {
+        root = DirUtils.make_tmp ("safestore-private-symlink-XXXXXX");
+        string directory = Path.build_filename (root, "private");
+        string alias = Path.build_filename (root, "alias");
+        assert_true (DirUtils.create (directory, 0700) == 0);
+        assert_true (Posix.symlink (directory, alias) == 0);
+
+        bool failed = false;
+        try {
+            SafeStore.PathPolicy.ensure_private_directory (alias);
+        } catch (Error error) {
+            failed = true;
+        }
+        assert_true (failed);
+        assert_true (FileUtils.unlink (alias) == 0);
+        assert_true (DirUtils.remove (directory) == 0);
+        assert_true (DirUtils.remove (root) == 0);
+    } catch (Error error) {
+        Test.fail_printf ("Could not prepare private symlink test: %s", error.message);
+    }
+}
+
 private void test_symlinked_nested_layout () {
     string? root = null;
     try {
@@ -71,6 +116,14 @@ int main (string[] args) {
     Test.add_func ("/path-policy/vault-inside-mount", test_vault_inside_mount);
     Test.add_func ("/path-policy/relative", test_relative_layout);
 #if !WINDOWS
+    Test.add_func (
+        "/path-policy/private-directory-permissions",
+        test_private_directory_permissions
+    );
+    Test.add_func (
+        "/path-policy/private-directory-symlink",
+        test_private_directory_rejects_symlink
+    );
     Test.add_func (
         "/path-policy/symlinked-nesting",
         test_symlinked_nested_layout

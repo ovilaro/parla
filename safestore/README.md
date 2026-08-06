@@ -32,6 +32,9 @@ It is split into three parts:
   text, and locks with the strict `cryfs-unmount --immediate` path.
 - Supports CryFS idle unmounting.
 - Rejects nested vault/mount paths and non-empty mount directories.
+- On Unix, requires the encrypted vault, plaintext mountpoint, and CryFS
+  integrity-state directory to belong to the invoking user, rejects symlinks,
+  and enforces mode `0700` before mounting.
 - Stores only paths and the idle-lock preference.
 
 ## Requirements
@@ -160,6 +163,13 @@ machine, memory/swap/hibernation extraction, files copied out of the
 mounted view, or plaintext that applications spill outside the mount
 (caches, thumbnails, logs, crash dumps). User-facing wording must say
 "encrypted account storage at rest," never "no plaintext anywhere."
+
+On Unix, SafeStore relies on FUSE's default owner-only mount access and never
+requests `allow_other` or `allow_root`. Directory mode `0700` additionally
+protects the ciphertext and the mountpoint from other local accounts. These
+controls are not a security boundary against a hostile system administrator:
+root can impersonate the user, inspect process memory, or change the running
+system. Run SafeStore as the desktop user, not through `sudo`.
 
 Rules that must hold in any integration:
 

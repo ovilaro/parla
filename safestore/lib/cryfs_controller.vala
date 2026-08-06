@@ -54,6 +54,24 @@ namespace SafeStore {
                 throw new IOError.BUSY ("A vault operation is already active.");
             }
 
+            PathPolicy.validate_layout (vault_path, mount_path);
+            if (create) {
+                PathPolicy.validate_new_vault (vault_path);
+            } else {
+                PathPolicy.validate_existing_vault (vault_path);
+            }
+            string vault = PathPolicy.normalize (vault_path);
+            string mount = PathPolicy.normalize (mount_path);
+            if (MountCheck.is_active (mount)) {
+                throw new IOError.BUSY (
+                    "Something is already mounted at %s", mount);
+            }
+            PathPolicy.ensure_private_directory (vault);
+#if !WINDOWS
+            PathPolicy.ensure_private_directory (mount);
+#endif
+            PathPolicy.validate_mountpoint (mount);
+
             string starting_detail = create
                 ? "Creating and mounting vault…"
                 : "Unlocking vault…";
@@ -74,8 +92,8 @@ namespace SafeStore {
                 argv += "--unmount-idle";
                 argv += idle_minutes.to_string ();
             }
-            argv += vault_path;
-            argv += mount_path;
+            argv += vault;
+            argv += mount;
 
             var launcher = new SubprocessLauncher (
                 SubprocessFlags.STDIN_PIPE
@@ -123,7 +141,7 @@ namespace SafeStore {
             }
 
             confirm_mount.begin (
-                process, generation, mount_path, idle_minutes);
+                process, generation, mount, idle_minutes);
         }
 
         private async void confirm_mount (Subprocess process,
