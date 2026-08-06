@@ -1,5 +1,245 @@
 namespace SafeStore {
 
+    /** A stable backend identifier saved in settings and accepted by the CLI. */
+    public enum BackendKind {
+        CRYFS,
+        ZIP;
+
+        public string id () {
+            return this == ZIP ? "zip" : "cryfs";
+        }
+
+        public static BackendKind parse (string value) throws Error {
+            switch (value.ascii_down ()) {
+            case "cryfs": return CRYFS;
+            case "zip": return ZIP;
+            default:
+                throw new VaultError.BACKEND (
+                    "Unknown encryption backend: %s", value);
+            }
+        }
+    }
+
+    /** Runtime capability and security information suitable for a CLI or UI. */
+    public class BackendInfo : Object {
+        public BackendKind kind { get; construct; }
+        public string id { get; construct; }
+        public string name { get; construct; }
+        public bool available { get; construct; }
+        public string status { get; construct; }
+        public string protection { get; construct; }
+        public string operation { get; construct; }
+        public string vault_path { get; construct; }
+
+        public BackendInfo (BackendKind kind,
+                            string name,
+                            bool available,
+                            string status,
+                            string protection,
+                            string operation,
+                            string vault_path) {
+            Object (
+                kind: kind,
+                id: kind.id (),
+                name: name,
+                available: available,
+                status: status,
+                protection: protection,
+                operation: operation,
+                vault_path: vault_path
+            );
+        }
+    }
+
+    /** Backend discovery is deliberately side-effect free. */
+    public class Backends : Object {
+
+        public static BackendInfo[] list (Settings settings) {
+            BackendInfo[] result = {};
+            result += inspect_cryfs (settings);
+            result += inspect_zip (settings);
+            return result;
+        }
+
+        public static BackendInfo selected (Settings settings) throws Error {
+            BackendKind wanted = BackendKind.parse (settings.backend);
+            return inspect (settings, wanted);
+        }
+
+        public static BackendInfo inspect (Settings settings,
+                                           BackendKind kind) {
+            return kind == BackendKind.ZIP
+                ? inspect_zip (settings) : inspect_cryfs (settings);
+        }
+
+        public static void select (Settings settings,
+                                   BackendKind kind) {
+            settings.backend = kind.id ();
+        }
+
+        public static bool executable_available (string binary) {
+            if (Path.is_absolute (binary)) {
+                return FileUtils.test (binary, FileTest.IS_EXECUTABLE);
+            }
+            return Environment.find_program_in_path (binary) != null;
+        }
+
+        private static BackendInfo inspect_cryfs (Settings settings) {
+            bool available = executable_available (settings.cryfs_binary);
+            string status = available
+                ? "Installed; stable CryFS 1.x is required"
+                : "Unavailable: CryFS executable was not found";
+            if (available) {
+                try {
+                    string version = Vault.backend_version (
+                        settings.cryfs_binary);
+                    available = version.contains ("CryFS Version 1.")
+                        || version.ascii_down ().has_prefix ("cryfs 1.");
+                    status = available ? version
+                        : "Unsupported version: %s".printf (version);
+                } catch (Error error) {
+                    available = false;
+                    status = "Unavailable: " + error.message;
+                }
+            }
+            return new BackendInfo (
+                BackendKind.CRYFS,
+                "CryFS",
+                available,
+                status,
+                "Strong encrypted filesystem: XChaCha20-Poly1305; hides "
+                    + "file names, sizes, contents, and directory structure.",
+                "Mounts a decrypted filesystem while unlocked; ciphertext "
+                    + "remains in the vault directory.",
+                AccountsPath.vault_path ()
+            );
+        }
+
+        private static BackendInfo inspect_zip (Settings settings) {
+            bool zip = executable_available (settings.zip_binary);
+            bool unzip = executable_available (settings.unzip_binary);
+            bool pty = ZipBackend.password_channel_available ();
+            bool available = zip && unzip && pty;
+            string status;
+            if (!zip) status = "Unavailable: zip executable was not found";
+            else if (!unzip) {
+                status = "Unavailable: unzip executable was not found";
+            } else if (!pty) {
+                status = "Unavailable: no private interactive password channel "
+                    + "on this platform";
+            } else {
+                try {
+                    status = "Available: " + ZipBackend.probe_tools (settings);
+                } catch (Error error) {
+                    available = false;
+                    status = "Unavailable: " + error.message;
+                }
+            }
+            return new BackendInfo (
+                BackendKind.ZIP,
+                "ZIP archive (weaker)",
+                available,
+                status,
+                "Weak legacy ZipCrypto. File names and archive metadata remain "
+                    + "visible; use only as an explicit compatibility option.",
+                "Extracts a full plaintext copy while unlocked and rewrites the "
+                    + "archive when locking. Passwords use a private pseudo-terminal.",
+                AccountsPath.zip_path ()
+            );
+        }
+    }
+
+    /**
+     * Backend-neutral one-shot API for CLI use and Parla integration.
+     * GUI callers may use CryfsController when they need foreground process
+     * monitoring, but backend selection and lifecycle semantics stay here.
+     */
+    public class EncryptedStore : Object {
+
+        public static BackendInfo[] list_backends (Settings settings) {
+            return Backends.list (settings);
+        }
+
+        public static BackendInfo info (Settings settings) throws Error {
+            return Backends.selected (settings);
+        }
+
+        public static bool exists (Settings settings) throws Error {
+            return BackendKind.parse (settings.backend) == BackendKind.ZIP
+                ? ZipBackend.is_encrypted (settings)
+                : Vault.is_encrypted (settings.vault_path);
+        }
+
+        public static bool unlocked (Settings settings) throws Error {
+            if (BackendKind.parse (settings.backend) == BackendKind.ZIP) {
+                return ZipBackend.is_unlocked (settings);
+            }
+            var mount = Vault.mount_info (settings.mount_path);
+            return mount != null && mount.is_cryfs ();
+        }
+
+        public static void create (Settings settings,
+                                   string password,
+                                   bool allow_executable_files = false)
+                                   throws Error {
+            require_available (settings);
+            if (BackendKind.parse (settings.backend) == BackendKind.ZIP) {
+                ZipBackend.create (settings, password);
+            } else {
+                Vault.mount (
+                    settings.cryfs_binary,
+                    settings.vault_path,
+                    settings.mount_path,
+                    password,
+                    true,
+                    settings.idle_minutes,
+                    allow_executable_files);
+            }
+        }
+
+        public static void unlock (Settings settings,
+                                   string password,
+                                   bool allow_executable_files = false)
+                                   throws Error {
+            require_available (settings);
+            if (BackendKind.parse (settings.backend) == BackendKind.ZIP) {
+                ZipBackend.unlock (settings, password);
+            } else {
+                Vault.mount (
+                    settings.cryfs_binary,
+                    settings.vault_path,
+                    settings.mount_path,
+                    password,
+                    false,
+                    settings.idle_minutes,
+                    allow_executable_files);
+            }
+        }
+
+        public static void lock (Settings settings,
+                                 string? password = null) throws Error {
+            require_available (settings);
+            if (BackendKind.parse (settings.backend) == BackendKind.ZIP) {
+                if (password == null || password.length == 0) {
+                    throw new VaultError.WRONG_PASSWORD (
+                        "The ZIP backend needs a password when locking");
+                }
+                ZipBackend.lock (settings, password);
+            } else {
+                Vault.unmount (
+                    settings.cryfs_binary, settings.mount_path);
+            }
+        }
+
+        private static void require_available (Settings settings)
+                                               throws Error {
+            BackendInfo backend = info (settings);
+            if (!backend.available) {
+                throw new VaultError.BACKEND ("%s", backend.status);
+            }
+        }
+    }
+
     internal class CryfsBackend : Object {
 
         public static string exit_message (int status) {

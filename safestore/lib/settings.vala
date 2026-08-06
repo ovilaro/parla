@@ -6,16 +6,29 @@ namespace SafeStore {
            follow the Delta Chat accounts path so that SafeStore, Parla, and
            deltachat-rpc-server agree on where the data lives. */
         public string vault_path {
-            owned get { return AccountsPath.vault_path (); }
+            owned get {
+                return backend == "zip"
+                    ? AccountsPath.zip_path () : AccountsPath.vault_path ();
+            }
         }
         public string mount_path {
             owned get { return AccountsPath.mount_path (); }
         }
         public string cryfs_binary { get; set; }
+        public string zip_binary { get; set; }
+        public string unzip_binary { get; set; }
+        public string shred_binary { get; set; }
+        public string backend { get; set; }
+        public bool secure_delete { get; set; }
         public int idle_minutes { get; set; }
 
         public Settings () {
             cryfs_binary = Environment.get_variable ("SAFESTORE_CRYFS") ?? "cryfs";
+            zip_binary = Environment.get_variable ("SAFESTORE_ZIP") ?? "zip";
+            unzip_binary = Environment.get_variable ("SAFESTORE_UNZIP") ?? "unzip";
+            shred_binary = Environment.get_variable ("SAFESTORE_SHRED") ?? "shred";
+            backend = "cryfs";
+            secure_delete = false;
             idle_minutes = 0;
             load ();
         }
@@ -38,6 +51,14 @@ namespace SafeStore {
 
             cryfs_binary = read_string (
                 keyfile, "cryfs_binary", cryfs_binary);
+            zip_binary = read_string (keyfile, "zip_binary", zip_binary);
+            unzip_binary = read_string (keyfile, "unzip_binary", unzip_binary);
+            shred_binary = read_string (
+                keyfile, "shred_binary", shred_binary);
+            backend = read_string (keyfile, "backend", backend);
+            if (backend != "cryfs" && backend != "zip") backend = "cryfs";
+            secure_delete = read_boolean (
+                keyfile, "secure_delete", secure_delete);
             idle_minutes = read_integer (
                 keyfile, "idle_minutes", idle_minutes);
             if (idle_minutes < 0) idle_minutes = 0;
@@ -47,6 +68,12 @@ namespace SafeStore {
         public void save () {
             var keyfile = new KeyFile ();
             keyfile.set_string ("SafeStore", "cryfs_binary", cryfs_binary);
+            keyfile.set_string ("SafeStore", "zip_binary", zip_binary);
+            keyfile.set_string ("SafeStore", "unzip_binary", unzip_binary);
+            keyfile.set_string ("SafeStore", "shred_binary", shred_binary);
+            keyfile.set_string ("SafeStore", "backend", backend);
+            keyfile.set_boolean (
+                "SafeStore", "secure_delete", secure_delete);
             keyfile.set_integer ("SafeStore", "idle_minutes", idle_minutes);
 
             try {
@@ -73,6 +100,16 @@ namespace SafeStore {
                                          int fallback) {
             try {
                 return keyfile.get_integer ("SafeStore", key);
+            } catch (Error error) {
+                return fallback;
+            }
+        }
+
+        private static bool read_boolean (KeyFile keyfile,
+                                          string key,
+                                          bool fallback) {
+            try {
+                return keyfile.get_boolean ("SafeStore", key);
             } catch (Error error) {
                 return fallback;
             }

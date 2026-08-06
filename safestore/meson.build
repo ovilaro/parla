@@ -36,6 +36,13 @@ core_deps = [
   dependency('gio-2.0'),
 ]
 
+if host_machine.system() != 'windows'
+  util_dep = cc.find_library('util', required: false)
+  if util_dep.found()
+    core_deps += util_dep
+  endif
+endif
+
 # The Secret Service keyring backend; macOS uses /usr/bin/security instead
 # and Windows has no keyring backend yet.
 if host_machine.system() != 'darwin' and host_machine.system() != 'windows'
@@ -51,11 +58,14 @@ core_sources = files(
   'lib/path_policy.vala',
   'lib/settings.vala',
   'lib/backend.vala',
+  'lib/zip_backend.vala',
+  'lib/plaintext_eraser.vala',
   'lib/mount_check.vala',
   'lib/vault.vala',
   'lib/keyring.vala',
   'lib/cryfs_controller.vala',
 )
+core_sources += files('lib/pty_password.c')
 
 core_lib = static_library(
   'safestore-core',
@@ -116,3 +126,12 @@ accounts_path_test = executable(
 )
 
 test('accounts-path', accounts_path_test)
+
+backend_test = executable(
+  'backend-test',
+  files('tests/backend_test.vala'),
+  dependencies: core_dep,
+  install: false,
+)
+
+test('backends', backend_test)

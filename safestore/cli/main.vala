@@ -5,27 +5,32 @@ namespace SafeStore {
         private const string USAGE = """Usage: safestore [options] <command>
 
 SafeStore always works on the Delta Chat accounts location: the plaintext
-mount point is $DC_ACCOUNTS_PATH when set, otherwise the accounts path the
-Parla JSON-RPC server will use, and the encrypted vault sits beside it as
-"<accounts>.vault". Run "safestore status" to see the resolved paths.
+path is $DC_ACCOUNTS_PATH when set, otherwise the accounts path the Parla
+JSON-RPC server will use. CryFS stores "<accounts>.vault"; ZIP stores
+"<accounts>.zip". Run "safestore status" to see the resolved paths.
 
 Commands:
+  backends       List encryption backends, availability, and security model
   check          Classify the accounts location: encrypted vault (exit 0),
-                 decrypted vault mount (exit 3), or neither (exit 1)
+                 unlocked plaintext view (exit 3), or neither (exit 1)
   status         Show the resolved paths and the vault and mount state
-  create         Create the encrypted vault and mount it
-  mount          Unlock the encrypted vault onto the accounts path
-  umount         Lock the mounted vault again
+  create         Create and unlock the selected encrypted store
+  mount          Unlock the selected store onto the accounts path
+  umount         Lock the selected store again
   forget         Remove the stored vault password from the keyring
-  version        Show the CryFS backend version
+  version        Show status for the selected encryption backend
 
 Options:
-  -b, --binary PATH       CryFS executable (default: settings or $SAFESTORE_CRYFS)
+      --backend NAME      Select cryfs or zip (and save the selection)
+  -b, --binary PATH       Main executable for the selected backend
+      --unzip-binary PATH unzip executable for the ZIP backend
+      --shred              Best-effort overwrite of ZIP plaintext before removal
+      --shred-binary PATH shred-compatible executable
   -k, --keyring           Read the password from the system keyring; after a
                           successful interactive unlock, store it there
   -p, --password-stdin    Read the password from standard input (for scripts)
-  -i, --idle MINUTES      Auto-lock after this many idle minutes
-      --allow-exec        Allow direct execution of files inside the mount
+  -i, --idle MINUTES      CryFS: auto-lock after this many idle minutes
+      --allow-exec        CryFS: allow direct execution inside the mount
   -q, --quiet             Print errors only
   -h, --help              Show this help
 
@@ -39,6 +44,7 @@ in plain text; the optional keyring entry lives in the OS secret service.
         private bool allow_executable_files = false;
         private bool quiet = false;
         private int idle_minutes = -1;
+        private string? binary_override = null;
 
         public static int main (string[] args) {
             return new Cli ().run (args);
@@ -73,7 +79,27 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 case "-b":
                 case "--binary":
                     if (++i >= args.length) return usage_error ("--binary needs a path");
-                    settings.cryfs_binary = args[i];
+                    binary_override = args[i];
+                    break;
+                case "--backend":
+                    if (++i >= args.length) return usage_error ("--backend needs a name");
+                    try {
+                        Backends.select (settings, BackendKind.parse (args[i]));
+                    } catch (Error error) {
+                        return usage_error (error.message);
+                    }
+                    settings.save ();
+                    break;
+                case "--unzip-binary":
+                    if (++i >= args.length) return usage_error ("--unzip-binary needs a path");
+                    settings.unzip_binary = args[i];
+                    break;
+                case "--shred":
+                    settings.secure_delete = true;
+                    break;
+                case "--shred-binary":
+                    if (++i >= args.length) return usage_error ("--shred-binary needs a path");
+                    settings.shred_binary = args[i];
                     break;
                 case "-i":
                 case "--idle":
@@ -91,6 +117,13 @@ in plain text; the optional keyring entry lives in the OS secret service.
             }
 
             if (rest.length == 0) return usage_error ("Missing command");
+            if (binary_override != null) {
+                if (settings.backend == "zip") {
+                    settings.zip_binary = binary_override;
+                } else {
+                    settings.cryfs_binary = binary_override;
+                }
+            }
             string command = rest[0];
             if (rest.length > 1) {
                 return usage_error (
@@ -100,6 +133,9 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
             try {
                 switch (command) {
+                case "backends":
+                case "list-backends":
+                    return cmd_backends ();
                 case "check":
                     return cmd_check ();
                 case "status":
@@ -116,9 +152,7 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 case "forget":
                     return cmd_forget ();
                 case "version":
-                    stdout.printf ("%s\n",
-                        Vault.backend_version (settings.cryfs_binary));
-                    return 0;
+                    return cmd_version ();
                 default:
                     return usage_error ("Unknown command: " + command);
                 }
@@ -143,6 +177,20 @@ in plain text; the optional keyring entry lives in the OS secret service.
         }
 
         private int cmd_check () {
+            if (settings.backend == "zip") {
+                if (ZipBackend.is_encrypted (settings)) {
+                    bool unlocked = ZipBackend.is_unlocked (settings);
+                    report (unlocked
+                        ? "%s is a SafeStore ZIP vault with plaintext exposed at %s".printf (
+                            AccountsPath.zip_path (), settings.mount_path)
+                        : "%s is a locked SafeStore ZIP vault".printf (
+                            AccountsPath.zip_path ()));
+                    return unlocked ? 3 : 0;
+                }
+                report ("%s is not a SafeStore ZIP vault".printf (
+                    AccountsPath.zip_path ()));
+                return 1;
+            }
             string vault = PathPolicy.normalize (settings.vault_path);
             string mount = PathPolicy.normalize (settings.mount_path);
             var info = Vault.mount_info (mount);
@@ -167,14 +215,33 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return 1;
         }
 
-        private int cmd_status () {
+        private int cmd_status () throws Error {
+            BackendInfo selected = Backends.selected (settings);
+            report ("backend: %s (%s)".printf (
+                selected.name, selected.available ? "available" : "unavailable"));
+            report ("backend status: " + selected.status);
             string vault = PathPolicy.normalize (settings.vault_path);
             string mount = PathPolicy.normalize (settings.mount_path);
             report ("accounts: %s (from %s)".printf (
                 mount, AccountsPath.source ()));
-            bool encrypted = Vault.is_encrypted (vault);
+            bool encrypted = settings.backend == "zip"
+                ? ZipBackend.is_encrypted (settings) : Vault.is_encrypted (vault);
             report ("vault: %s (%s)".printf (
                 vault, encrypted ? "encrypted vault" : "not a vault"));
+
+            if (settings.backend == "zip") {
+                bool locked = encrypted
+                    && !ZipBackend.is_unlocked (settings);
+                report ("plaintext: %s (%s)".printf (
+                    mount, locked ? "locked placeholder only"
+                        : (encrypted ? "extracted while unlocked"
+                                     : "not managed by a ZIP vault")));
+                EraseInfo erase = PlaintextEraser.inspect (settings);
+                report ("overwrite removal: %s%s".printf (
+                    erase.status,
+                    settings.secure_delete ? "; selected" : "; not selected"));
+                return encrypted ? 0 : 1;
+            }
 
             var info = Vault.mount_info (mount);
             if (info == null) {
@@ -201,7 +268,10 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
             // Fail on a missing backend before bothering the user for a
             // password.
-            Vault.resolve_binary (settings.cryfs_binary);
+            BackendInfo backend = Backends.selected (settings);
+            if (!backend.available) {
+                throw new VaultError.BACKEND ("%s", backend.status);
+            }
 
             bool from_keyring = false;
             string? password = null;
@@ -216,16 +286,25 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 }
             }
             if (password == null) {
-                password = obtain_password (create);
+                password = obtain_password (create, create);
                 if (password == null) return 1;
             }
 
-            Vault.mount (
-                settings.cryfs_binary, vault, mount, password,
-                create, idle_minutes > 0 ? idle_minutes : 0,
-                allow_executable_files);
-            report ((create ? "Vault created and mounted at %s"
-                            : "Vault mounted at %s").printf (
+            if (settings.backend == "zip") {
+                if (create) EncryptedStore.create (settings, password);
+                else EncryptedStore.unlock (settings, password);
+            } else {
+                if (idle_minutes >= 0) settings.idle_minutes = idle_minutes;
+                if (create) {
+                    EncryptedStore.create (
+                        settings, password, allow_executable_files);
+                } else {
+                    EncryptedStore.unlock (
+                        settings, password, allow_executable_files);
+                }
+            }
+            report ((create ? "Vault created and unlocked at %s"
+                            : "Vault unlocked at %s").printf (
                 PathPolicy.normalize (mount)));
 
             if (use_keyring && !from_keyring && Keyring.available ()) {
@@ -237,10 +316,46 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
         private int cmd_umount () throws Error {
             string mount = settings.mount_path;
-            Vault.unmount (settings.cryfs_binary, mount);
-            report ("Vault locked; %s is no longer mounted.".printf (
-                PathPolicy.normalize (mount)));
+            if (settings.backend == "zip") {
+                string? password = use_keyring
+                    ? Keyring.lookup (settings.vault_path) : null;
+                // ZIP locking rewrites and re-encrypts the archive, so an
+                // interactive password must be entered twice to avoid making
+                // a typo the new (and only) vault password.
+                if (password == null) password = obtain_password (true, false);
+                if (password == null) return 1;
+                EncryptedStore.lock (settings, password);
+                password = "";
+                report ("ZIP vault locked; plaintext accounts were removed.");
+            } else {
+                EncryptedStore.lock (settings);
+                report ("Vault locked; %s is no longer mounted.".printf (
+                    PathPolicy.normalize (mount)));
+            }
             return 0;
+        }
+
+        private int cmd_backends () {
+            foreach (BackendInfo info in Backends.list (settings)) {
+                report ("%s%s — %s".printf (
+                    info.id,
+                    info.id == settings.backend ? " (selected)" : "",
+                    info.available ? "available" : "unavailable"));
+                report ("  %s".printf (info.status));
+                report ("  Protection: %s".printf (info.protection));
+                report ("  Operation: %s".printf (info.operation));
+                report ("  Vault: %s".printf (info.vault_path));
+            }
+            EraseInfo erase = PlaintextEraser.inspect (settings);
+            report ("shred — %s".printf (erase.status));
+            report ("  Warning: %s".printf (erase.warning));
+            return 0;
+        }
+
+        private int cmd_version () throws Error {
+            BackendInfo info = Backends.selected (settings);
+            stdout.printf ("%s: %s\n", info.name, info.status);
+            return info.available ? 0 : 1;
         }
 
         private int cmd_forget () throws Error {
@@ -253,18 +368,19 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return 1;
         }
 
-        private string? obtain_password (bool create) {
+        private string? obtain_password (bool confirm,
+                                         bool new_password) {
             if (password_stdin) {
                 string? line = stdin.read_line ();
-                return check_password (line, create);
+                return check_password (line, new_password);
             }
 
             string? password = prompt_password (
-                create ? "New vault password" : "Vault password");
-            password = check_password (password, create);
+                new_password ? "New vault password" : "Vault password");
+            password = check_password (password, new_password);
             if (password == null) return null;
 
-            if (create) {
+            if (confirm) {
                 string? repeated = prompt_password ("Confirm password");
                 if (repeated != password) {
                     stderr.printf ("safestore: the passwords do not match.\n");
@@ -274,7 +390,8 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return password;
         }
 
-        private string? check_password (string? password, bool create) {
+        private string? check_password (string? password,
+                                        bool new_password) {
             if (password == null || password.length == 0) {
                 stderr.printf ("safestore: the password cannot be empty.\n");
                 return null;
@@ -284,7 +401,17 @@ in plain text; the optional keyring entry lives in the OS secret service.
                     "safestore: passwords cannot contain line breaks.\n");
                 return null;
             }
-            if (create && password.char_count () < 12) {
+            if (settings.backend == "zip") {
+                for (int i = 0; i < password.length; i++) {
+                    uint8 byte = password.data[i];
+                    if (byte < 0x20 || byte == 0x7f) {
+                        stderr.printf (
+                            "safestore: ZIP passwords cannot contain control characters.\n");
+                        return null;
+                    }
+                }
+            }
+            if (new_password && password.char_count () < 12) {
                 stderr.printf (
                     "safestore: use at least 12 characters for a new vault "
                     + "password.\n");

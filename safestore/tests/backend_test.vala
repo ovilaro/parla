@@ -1,0 +1,161 @@
+private const string PASSWORD = "a-long-disposable-password";
+
+private SafeStore.BackendInfo find_backend (SafeStore.Settings settings,
+                                            string id) {
+    foreach (SafeStore.BackendInfo info in SafeStore.Backends.list (settings)) {
+        if (info.id == id) return info;
+    }
+    assert_not_reached ();
+}
+
+private void test_backend_listing () {
+    var settings = new SafeStore.Settings ();
+    var cryfs = find_backend (settings, "cryfs");
+    var zip = find_backend (settings, "zip");
+    assert_true (cryfs.name.length > 0);
+    assert_true (cryfs.protection.contains ("XChaCha20"));
+    assert_true (zip.name.contains ("ZIP"));
+    assert_true (zip.protection.contains ("Weak"));
+    assert_true (zip.operation.contains ("plaintext"));
+}
+
+private void test_selection () {
+    var settings = new SafeStore.Settings ();
+    SafeStore.Backends.select (settings, SafeStore.BackendKind.ZIP);
+    assert_true (settings.backend == "zip");
+    assert_true (settings.vault_path == SafeStore.AccountsPath.zip_path ());
+    try {
+        assert_true (
+            SafeStore.EncryptedStore.info (settings).id == "zip");
+    } catch (Error error) {
+        Test.fail_printf ("Could not inspect selected backend: %s",
+                          error.message);
+    }
+    try {
+        assert_true (
+            SafeStore.BackendKind.parse ("cryfs")
+                == SafeStore.BackendKind.CRYFS);
+    } catch (Error error) {
+        Test.fail_printf ("Could not parse backend: %s", error.message);
+    }
+}
+
+private void test_zip_roundtrip () {
+#if WINDOWS
+    Test.skip ("private pseudo-terminal is not available on Windows");
+#else
+    string? root = null;
+    try {
+        root = DirUtils.make_tmp ("safestore-zip-test-XXXXXX");
+        string accounts = Path.build_filename (root, "accounts");
+        Environment.set_variable ("DC_ACCOUNTS_PATH", accounts, true);
+        var settings = new SafeStore.Settings ();
+        settings.backend = "zip";
+        settings.secure_delete = false;
+        var info = find_backend (settings, "zip");
+        if (!info.available) {
+            Test.skip (info.status);
+            return;
+        }
+
+        SafeStore.ZipBackend.create (settings, PASSWORD);
+        string account = Path.build_filename (accounts, "account-id");
+        assert_true (DirUtils.create (account, 0700) == 0);
+        FileUtils.set_contents (
+            Path.build_filename (accounts, "accounts.toml"), "manifest\n");
+        FileUtils.set_contents (
+            Path.build_filename (account, "dc.db"), "database\n");
+
+        SafeStore.ZipBackend.lock (settings, PASSWORD);
+        assert_true (FileUtils.test (
+            SafeStore.AccountsPath.zip_path (), FileTest.IS_REGULAR));
+        Posix.Stat archive_info;
+        assert_true (Posix.lstat (
+            SafeStore.AccountsPath.zip_path (), out archive_info) == 0);
+        assert_true ((archive_info.st_mode & 0777) == 0600);
+        assert_true (FileUtils.test (
+            Path.build_filename (accounts, ".safestore-locked"),
+            FileTest.IS_REGULAR));
+        assert_true (!FileUtils.test (
+            Path.build_filename (account, "dc.db"), FileTest.EXISTS));
+
+        bool wrong_password_failed = false;
+        try {
+            SafeStore.ZipBackend.unlock (
+                settings, "a-different-wrong-password");
+        } catch (Error error) {
+            wrong_password_failed = true;
+        }
+        assert_true (wrong_password_failed);
+        assert_true (FileUtils.test (
+            Path.build_filename (accounts, ".safestore-locked"),
+            FileTest.IS_REGULAR));
+        assert_true (!FileUtils.test (
+            Path.build_filename (account, "dc.db"), FileTest.EXISTS));
+        var root_directory = Dir.open (root);
+        string? root_entry;
+        while ((root_entry = root_directory.read_name ()) != null) {
+            assert_true (!root_entry.has_prefix (".safestore-unlock-"));
+        }
+
+        SafeStore.ZipBackend.unlock (settings, PASSWORD);
+        string restored;
+        FileUtils.get_contents (
+            Path.build_filename (account, "dc.db"), out restored);
+        assert_true (restored == "database\n");
+
+        SafeStore.PlaintextEraser.erase_tree (accounts, settings);
+        FileUtils.unlink (SafeStore.AccountsPath.zip_path ());
+        assert_true (DirUtils.remove (root) == 0);
+    } catch (Error error) {
+        Test.fail_printf ("ZIP roundtrip failed: %s", error.message);
+    } finally {
+        Environment.unset_variable ("DC_ACCOUNTS_PATH");
+    }
+#endif
+}
+
+private void test_overwrite_removal () {
+#if WINDOWS
+    Test.skip ("shred backend is unavailable on Windows");
+#else
+    string? root = null;
+    try {
+        var settings = new SafeStore.Settings ();
+        settings.secure_delete = true;
+        if (!SafeStore.PlaintextEraser.inspect (settings).shred_available) {
+            Test.skip ("shred executable is unavailable");
+            return;
+        }
+        root = DirUtils.make_tmp ("safestore-shred-test-XXXXXX");
+        string secret = Path.build_filename (root, "secret");
+        string alias = Path.build_filename (root, "alias");
+        FileUtils.set_contents (secret, "disposable secret\n");
+        assert_true (Posix.link (secret, alias) == 0);
+
+        bool hardlink_rejected = false;
+        try {
+            SafeStore.PlaintextEraser.validate_tree (root, settings);
+        } catch (Error error) {
+            hardlink_rejected = true;
+        }
+        assert_true (hardlink_rejected);
+        assert_true (FileUtils.test (secret, FileTest.IS_REGULAR));
+        assert_true (FileUtils.unlink (alias) == 0);
+
+        SafeStore.PlaintextEraser.erase_tree (root, settings);
+        assert_true (!FileUtils.test (root, FileTest.EXISTS));
+    } catch (Error error) {
+        Test.fail_printf ("Overwrite-removal test failed: %s", error.message);
+    }
+#endif
+}
+
+int main (string[] args) {
+    Test.init (ref args);
+    Test.add_func ("/backends/listing", test_backend_listing);
+    Test.add_func ("/backends/selection", test_selection);
+    Test.add_func ("/backends/zip-roundtrip", test_zip_roundtrip);
+    Test.add_func ("/backends/overwrite-removal", test_overwrite_removal);
+    return Test.run ();
+}

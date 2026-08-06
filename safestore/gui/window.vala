@@ -8,6 +8,10 @@ namespace SafeStore {
         private Adw.ActionRow vault_row;
         private Adw.ActionRow mount_row;
         private Adw.EntryRow binary_row;
+        private Adw.EntryRow zip_binary_row;
+        private Adw.EntryRow unzip_binary_row;
+        private Adw.ComboRow backend_combo;
+        private Gtk.Switch shred_switch;
         private Adw.ActionRow backend_row;
         private Adw.ActionRow state_row;
         private Gtk.Image state_icon;
@@ -22,6 +26,8 @@ namespace SafeStore {
         private Adw.ToastOverlay toast_overlay;
         private bool backend_ready = false;
         private uint backend_check_generation = 0;
+        private bool zip_unlocked = false;
+        private bool zip_operation_active = false;
 
         public Window (Adw.Application application) {
             Object (
@@ -33,6 +39,8 @@ namespace SafeStore {
 
             settings = new Settings ();
             controller = new CryfsController ();
+            zip_unlocked = settings.backend == "zip"
+                && ZipBackend.is_unlocked (settings);
             build_ui ();
             connect_signals ();
             sync_controls (controller.state, controller.detail);
@@ -43,7 +51,7 @@ namespace SafeStore {
             var header = new Adw.HeaderBar ();
             var title = new Adw.WindowTitle (
                 "SafeStore",
-                "Experimental CryFS vault manager"
+                "Experimental encrypted account storage"
             );
             header.title_widget = title;
 
@@ -92,17 +100,31 @@ namespace SafeStore {
             status_group.add (state_row);
 
             backend_row = new Adw.ActionRow ();
-            backend_row.title = "CryFS backend";
+            backend_row.title = "Selected backend";
             backend_row.subtitle = "Checking…";
             var check_button = new Gtk.Button.from_icon_name (
                 "view-refresh-symbolic");
             check_button.valign = Gtk.Align.CENTER;
             check_button.add_css_class ("flat");
-            check_button.tooltip_text = "Check CryFS installation";
+            check_button.tooltip_text = "Check encryption backends";
             check_button.clicked.connect (() => { check_backend.begin (); });
             backend_row.add_suffix (check_button);
             status_group.add (backend_row);
             page.append (status_group);
+
+            var backend_group = new Adw.PreferencesGroup ();
+            backend_group.title = "Encryption backend";
+            backend_group.description =
+                "CryFS is strongly preferred. ZIP is a weaker compatibility "
+                + "option that exposes file names and extracts plaintext while unlocked.";
+            backend_combo = new Adw.ComboRow ();
+            backend_combo.title = "Backend";
+            backend_combo.model = new Gtk.StringList ({
+                "CryFS (recommended)", "ZIP archive (weaker)"
+            });
+            backend_combo.selected = settings.backend == "zip" ? 1 : 0;
+            backend_group.add (backend_combo);
+            page.append (backend_group);
 
             var location_group = new Adw.PreferencesGroup ();
             location_group.title = "Locations";
@@ -138,6 +160,27 @@ namespace SafeStore {
             });
             binary_row.add_suffix (binary_button);
             location_group.add (binary_row);
+
+            zip_binary_row = new Adw.EntryRow ();
+            zip_binary_row.title = "zip executable";
+            zip_binary_row.text = settings.zip_binary;
+            location_group.add (zip_binary_row);
+
+            unzip_binary_row = new Adw.EntryRow ();
+            unzip_binary_row.title = "unzip executable";
+            unzip_binary_row.text = settings.unzip_binary;
+            location_group.add (unzip_binary_row);
+
+            var shred_row = new Adw.ActionRow ();
+            shred_row.title = "Overwrite plaintext when locking";
+            shred_row.subtitle =
+                "Best effort only; SSDs, snapshots, journals, and backups may retain data";
+            shred_switch = new Gtk.Switch ();
+            shred_switch.valign = Gtk.Align.CENTER;
+            shred_switch.active = settings.secure_delete;
+            shred_row.add_suffix (shred_switch);
+            shred_row.activatable_widget = shred_switch;
+            location_group.add (shred_row);
 
             var idle_row = new Adw.ActionRow ();
             idle_row.title = "Idle auto-lock";
@@ -217,7 +260,8 @@ namespace SafeStore {
             page.append (log_group);
 
             append_log (
-                "SafeStore ready. Configure folders, then create or unlock a vault.");
+                "SafeStore ready. Select a backend, then create or unlock a vault.");
+            sync_backend_fields ();
         }
 
         private void connect_signals () {
@@ -231,8 +275,29 @@ namespace SafeStore {
                 backend_row.subtitle = "Press refresh to check this executable";
                 sync_controls (controller.state, controller.detail);
             });
+            zip_binary_row.changed.connect (() => {
+                backend_check_generation++;
+                backend_ready = false;
+                backend_row.subtitle = "Press refresh to check the ZIP tools";
+                sync_controls (controller.state, controller.detail);
+            });
+            unzip_binary_row.changed.connect (() => {
+                backend_check_generation++;
+                backend_ready = false;
+                backend_row.subtitle = "Press refresh to check the ZIP tools";
+                sync_controls (controller.state, controller.detail);
+            });
+            backend_combo.notify["selected"].connect (() => {
+                if (controller.process_active || zip_unlocked
+                        || zip_operation_active) return;
+                settings.backend = backend_combo.selected == 1 ? "zip" : "cryfs";
+                save_settings ();
+                sync_backend_fields ();
+                check_backend.begin ();
+            });
             close_request.connect (() => {
-                if (controller.process_active) {
+                if (controller.process_active || zip_unlocked
+                        || zip_operation_active) {
                     show_toast ("Lock the vault before closing SafeStore");
                     return true;
                 }
@@ -277,7 +342,7 @@ namespace SafeStore {
         private void show_unlock_dialog () {
             var dialog = password_dialog (
                 "Unlock encrypted vault",
-                "Enter the password for the selected CryFS vault.",
+                "Enter the password for the selected encrypted vault.",
                 false
             );
             dialog.present (this);
@@ -285,7 +350,8 @@ namespace SafeStore {
 
         private Adw.AlertDialog password_dialog (string title,
                                                  string body,
-                                                 bool create) {
+                                                 bool create,
+                                                 bool locking = false) {
             var dialog = new Adw.AlertDialog (title, body);
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
 
@@ -296,9 +362,10 @@ namespace SafeStore {
             box.append (password);
 
             Gtk.PasswordEntry? confirmation = null;
-            if (create) {
+            if (create || locking) {
                 confirmation = new Gtk.PasswordEntry ();
-                confirmation.placeholder_text = "Confirm password";
+                confirmation.placeholder_text = create
+                    ? "Confirm password" : "Confirm archive password";
                 confirmation.show_peek_icon = true;
                 confirmation.activates_default = true;
                 box.append (confirmation);
@@ -307,7 +374,8 @@ namespace SafeStore {
             dialog.extra_child = box;
             dialog.add_response ("cancel", "Cancel");
             dialog.add_response (
-                "continue", create ? "Create and Mount" : "Unlock");
+                "continue", create ? "Create and Unlock"
+                    : (locking ? "Lock" : "Unlock"));
             dialog.set_response_appearance (
                 "continue", Adw.ResponseAppearance.SUGGESTED);
             dialog.default_response = "continue";
@@ -333,16 +401,27 @@ namespace SafeStore {
                     show_error ("Passwords cannot contain line breaks.");
                     return;
                 }
+                if (settings.backend == "zip") {
+                    for (int i = 0; i < secret.length; i++) {
+                        uint8 byte = secret.data[i];
+                        if (byte < 0x20 || byte == 0x7f) {
+                            show_error (
+                                "ZIP passwords cannot contain control characters.");
+                            return;
+                        }
+                    }
+                }
                 if (create && secret.char_count () < 12) {
                     show_error (
                         "Use at least 12 characters for a new vault password.");
                     return;
                 }
-                if (create && secret != repeated) {
+                if ((create || locking) && secret != repeated) {
                     show_error ("The passwords do not match.");
                     return;
                 }
-                mount_vault (secret, create);
+                if (locking) lock_zip (secret);
+                else mount_vault (secret, create);
             });
             return dialog;
         }
@@ -350,14 +429,18 @@ namespace SafeStore {
         private void mount_vault (string password, bool create) {
             try {
                 save_settings ();
-                controller.mount (
-                    settings.cryfs_binary,
-                    settings.vault_path,
-                    settings.mount_path,
-                    password,
-                    settings.idle_minutes,
-                    create
-                );
+                if (settings.backend == "zip") {
+                    start_zip_unlock (password, create);
+                } else {
+                    controller.mount (
+                        settings.cryfs_binary,
+                        settings.vault_path,
+                        settings.mount_path,
+                        password,
+                        settings.idle_minutes,
+                        create
+                    );
+                }
             } catch (Error error) {
                 append_log ("Error: " + error.message);
                 show_error (error.message);
@@ -366,6 +449,16 @@ namespace SafeStore {
         }
 
         private async void lock_vault () {
+            if (settings.backend == "zip") {
+                var dialog = password_dialog (
+                    "Lock ZIP vault",
+                    "The accounts will be archived before plaintext is removed. "
+                    + "Close Parla first so all database writes are complete.",
+                    false,
+                    true);
+                dialog.present (this);
+                return;
+            }
             try {
                 yield controller.unmount (
                     settings.cryfs_binary,
@@ -377,27 +470,94 @@ namespace SafeStore {
             }
         }
 
+        private void lock_zip (string password) {
+            save_settings ();
+            zip_operation_active = true;
+            sync_controls (StoreState.STOPPING, "Archiving ZIP vault…");
+            string secret = password;
+            new Thread<void*> ("safestore-zip-lock", () => {
+                string? failure = null;
+                try {
+                    ZipBackend.lock (settings, secret);
+                } catch (Error error) {
+                    failure = error.message;
+                }
+                secret = "";
+                Idle.add (() => {
+                    zip_operation_active = false;
+                    if (failure == null) {
+                        zip_unlocked = false;
+                        append_log (
+                            "ZIP archive replaced successfully; plaintext accounts removed.");
+                        if (settings.secure_delete) {
+                            append_log (
+                                "Plaintext files received best-effort overwrite removal.");
+                        }
+                        sync_controls (StoreState.LOCKED, "ZIP vault is locked");
+                    } else {
+                        append_log ("Error: " + failure);
+                        sync_controls (StoreState.ERROR,
+                            "ZIP lock failed; plaintext may still be present");
+                        show_error (failure);
+                    }
+                    return Source.REMOVE;
+                });
+                return null;
+            });
+            password = "";
+        }
+
+        private void start_zip_unlock (string password, bool create) {
+            zip_operation_active = true;
+            sync_controls (StoreState.STARTING,
+                create ? "Creating ZIP vault…" : "Extracting ZIP vault…");
+            string secret = password;
+            new Thread<void*> ("safestore-zip-unlock", () => {
+                string? failure = null;
+                try {
+                    if (create) ZipBackend.create (settings, secret);
+                    else ZipBackend.unlock (settings, secret);
+                } catch (Error error) {
+                    failure = error.message;
+                }
+                secret = "";
+                Idle.add (() => {
+                    zip_operation_active = false;
+                    if (failure == null) {
+                        zip_unlocked = true;
+                        append_log (create
+                            ? "ZIP vault created; plaintext accounts are exposed while unlocked."
+                            : "ZIP vault extracted; plaintext accounts are exposed while unlocked.");
+                        sync_controls (StoreState.MOUNTED,
+                            "ZIP vault unlocked; plaintext is exposed");
+                    } else {
+                        append_log ("Error: " + failure);
+                        sync_controls (StoreState.ERROR,
+                            "ZIP operation failed; accounts remain locked");
+                        show_error (failure);
+                    }
+                    return Source.REMOVE;
+                });
+                return null;
+            });
+        }
+
         private async void check_backend () {
             save_settings ();
             uint generation = ++backend_check_generation;
-            string binary = settings.cryfs_binary;
             backend_row.subtitle = "Checking…";
             try {
-                string version = yield controller.backend_version (
-                    binary);
+                BackendInfo info = Backends.selected (settings);
                 if (generation != backend_check_generation) return;
-                backend_ready = is_supported_backend (version);
-                backend_row.subtitle = backend_ready
-                    ? version
-                    : "Unsupported: %s (stable CryFS 1.x required)".printf (
-                        version);
-                append_log ("Backend: " + version);
+                backend_ready = info.available;
+                backend_row.subtitle = info.status;
+                append_log ("Backend %s: %s".printf (info.id, info.status));
+                append_log ("Protection: " + info.protection);
             } catch (Error error) {
                 if (generation != backend_check_generation) return;
                 backend_ready = false;
-                backend_row.subtitle =
-                    "Unavailable — install CryFS or choose its executable";
-                append_log ("CryFS check failed: " + error.message);
+                backend_row.subtitle = "Unavailable — " + error.message;
+                append_log ("Backend check failed: " + error.message);
             }
             sync_controls (controller.state, controller.detail);
         }
@@ -415,15 +575,23 @@ namespace SafeStore {
 
         private void save_settings () {
             settings.cryfs_binary = binary_row.text.strip ();
+            settings.zip_binary = zip_binary_row.text.strip ();
+            settings.unzip_binary = unzip_binary_row.text.strip ();
+            settings.secure_delete = shred_switch.active;
             settings.idle_minutes = idle_spin.get_value_as_int ();
             settings.save ();
         }
 
         private void sync_controls (StoreState state, string detail) {
+            if (zip_unlocked && state == StoreState.LOCKED) {
+                state = StoreState.MOUNTED;
+                detail = "ZIP vault unlocked; plaintext is exposed";
+            }
             bool busy = state == StoreState.STARTING
                 || state == StoreState.STOPPING;
-            bool mounted = state == StoreState.MOUNTED;
-            bool active = controller.process_active;
+            bool mounted = state == StoreState.MOUNTED || zip_unlocked;
+            bool active = controller.process_active || zip_unlocked
+                || zip_operation_active;
 
             state_spinner.spinning = busy;
             state_spinner.visible = busy;
@@ -458,7 +626,27 @@ namespace SafeStore {
             open_button.sensitive = mounted;
             copy_button.sensitive = mounted;
             binary_row.sensitive = !busy && !active;
-            idle_spin.sensitive = !busy && !active;
+            zip_binary_row.sensitive = !busy && !active;
+            unzip_binary_row.sensitive = !busy && !active;
+            backend_combo.sensitive = !busy && !active;
+            shred_switch.sensitive = settings.backend == "zip" && !busy && !active;
+            idle_spin.sensitive = settings.backend != "zip"
+                && !busy && !active;
+        }
+
+        private void sync_backend_fields () {
+            bool zip = settings.backend == "zip";
+            vault_row.subtitle = settings.vault_path;
+            vault_row.title = zip ? "Encrypted ZIP archive"
+                                  : "Encrypted vault folder";
+            mount_row.title = zip ? "Plaintext accounts folder"
+                                  : "Decrypted accounts folder";
+            binary_row.visible = !zip;
+            zip_binary_row.visible = zip;
+            unzip_binary_row.visible = zip;
+            idle_spin.sensitive = !zip;
+            backend_row.title = zip ? "ZIP archive backend (weaker)"
+                                    : "CryFS backend";
         }
 
         private void append_log (string line) {
@@ -486,10 +674,5 @@ namespace SafeStore {
                 || error.matches (IOError.quark (), IOError.CANCELLED);
         }
 
-        private static bool is_supported_backend (string version) {
-            string clean = version.strip ();
-            return clean.contains ("CryFS Version 1.")
-                || clean.ascii_down ().has_prefix ("cryfs 1.");
-        }
     }
 }
