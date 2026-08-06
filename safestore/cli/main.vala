@@ -290,26 +290,33 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 if (password == null) return 1;
             }
 
-            if (settings.backend == "zip") {
-                if (create) EncryptedStore.create (settings, password);
-                else EncryptedStore.unlock (settings, password);
-            } else {
-                if (idle_minutes >= 0) settings.idle_minutes = idle_minutes;
-                if (create) {
-                    EncryptedStore.create (
-                        settings, password, allow_executable_files);
-                } else {
-                    EncryptedStore.unlock (
-                        settings, password, allow_executable_files);
-                }
-            }
-            report ((create ? "Vault created and unlocked at %s"
-                            : "Vault unlocked at %s").printf (
-                PathPolicy.normalize (mount)));
+            var secret = new SecretValue (password);
+            password = "";
 
-            if (use_keyring && !from_keyring && Keyring.available ()) {
-                Keyring.store (vault, password);
-                report ("Password stored in the system keyring.");
+            try {
+                if (settings.backend == "zip") {
+                    if (create) EncryptedStore.create (settings, secret.peek ());
+                    else EncryptedStore.unlock (settings, secret.peek ());
+                } else {
+                    if (idle_minutes >= 0) settings.idle_minutes = idle_minutes;
+                    if (create) {
+                        EncryptedStore.create (
+                            settings, secret.peek (), allow_executable_files);
+                    } else {
+                        EncryptedStore.unlock (
+                            settings, secret.peek (), allow_executable_files);
+                    }
+                }
+                report ((create ? "Vault created and unlocked at %s"
+                                : "Vault unlocked at %s").printf (
+                    PathPolicy.normalize (mount)));
+
+                if (use_keyring && !from_keyring && Keyring.available ()) {
+                    Keyring.store (vault, secret.peek ());
+                    report ("Password stored in the system keyring.");
+                }
+            } finally {
+                secret.clear ();
             }
             return 0;
         }
@@ -324,8 +331,13 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 // a typo the new (and only) vault password.
                 if (password == null) password = obtain_password (true, false);
                 if (password == null) return 1;
-                EncryptedStore.lock (settings, password);
+                var secret = new SecretValue (password);
                 password = "";
+                try {
+                    EncryptedStore.lock (settings, secret.peek ());
+                } finally {
+                    secret.clear ();
+                }
                 report ("ZIP vault locked; plaintext accounts were removed.");
             } else {
                 EncryptedStore.lock (settings);
@@ -422,8 +434,11 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
         private string? prompt_password (string label) {
 #if WINDOWS
-            stderr.printf ("%s: ", label);
-            return stdin.read_line ();
+            stderr.printf (
+                "safestore: secure interactive password input is not "
+                + "available on this platform; use --password-stdin "
+                + "or --keyring.\n");
+            return null;
 #else
             if (!Posix.isatty (Posix.STDIN_FILENO)) {
                 stderr.printf (
@@ -433,15 +448,27 @@ in plain text; the optional keyring entry lives in the OS secret service.
             }
             stderr.printf ("%s: ", label);
             Posix.termios saved;
-            bool hidden = Posix.tcgetattr (Posix.STDIN_FILENO, out saved) == 0;
-            if (hidden) {
-                Posix.termios silent = saved;
-                silent.c_lflag &= ~Posix.ECHO;
-                Posix.tcsetattr (Posix.STDIN_FILENO, Posix.TCSAFLUSH, silent);
+            if (Posix.tcgetattr (Posix.STDIN_FILENO, out saved) != 0) {
+                stderr.printf (
+                    "safestore: cannot read terminal settings; refusing "
+                    + "an unsafe password prompt.\n");
+                return null;
+            }
+            Posix.termios silent = saved;
+            silent.c_lflag &= ~Posix.ECHO;
+            if (Posix.tcsetattr (
+                    Posix.STDIN_FILENO, Posix.TCSAFLUSH, silent) != 0) {
+                stderr.printf (
+                    "safestore: cannot disable terminal echo; refusing "
+                    + "an unsafe password prompt.\n");
+                return null;
             }
             string? line = stdin.read_line ();
-            if (hidden) {
-                Posix.tcsetattr (Posix.STDIN_FILENO, Posix.TCSAFLUSH, saved);
+            if (Posix.tcsetattr (
+                    Posix.STDIN_FILENO, Posix.TCSAFLUSH, saved) != 0) {
+                stderr.printf (
+                    "\nsafestore: warning: failed to restore terminal echo.\n");
+                return null;
             }
             stderr.printf ("\n");
             return line;

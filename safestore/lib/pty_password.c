@@ -1,6 +1,7 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <string.h>
+#include "pty_password.h"
 
 #ifndef G_OS_WIN32
 #include <errno.h>
@@ -8,6 +9,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <termios.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -18,6 +20,69 @@
 #include <pty.h>
 #endif
 #endif
+
+struct _SafeStoreSecretMemory {
+    gint references;
+    gchar *value;
+    gsize allocation_size;
+    gboolean memory_locked;
+};
+
+SafeStoreSecretMemory *
+safestore_secret_memory_new (const gchar *value)
+{
+    SafeStoreSecretMemory *self = g_new0 (SafeStoreSecretMemory, 1);
+    self->references = 1;
+    gsize length = strlen (value);
+    self->allocation_size = length + 1;
+    self->value = g_malloc (self->allocation_size);
+    memcpy (self->value, value, self->allocation_size);
+#ifndef G_OS_WIN32
+    self->memory_locked = mlock (self->value, self->allocation_size) == 0;
+#endif
+    return self;
+}
+
+SafeStoreSecretMemory *
+safestore_secret_memory_ref (SafeStoreSecretMemory *self)
+{
+    g_atomic_int_inc (&self->references);
+    return self;
+}
+
+void
+safestore_secret_memory_unref (SafeStoreSecretMemory *self)
+{
+    if (g_atomic_int_dec_and_test (&self->references)) {
+        safestore_secret_memory_clear (self);
+        g_free (self);
+    }
+}
+
+const gchar *
+safestore_secret_memory_peek (SafeStoreSecretMemory *self)
+{
+    g_return_val_if_fail (self != NULL, "");
+    return self->value != NULL ? self->value : "";
+}
+
+void
+safestore_secret_memory_clear (SafeStoreSecretMemory *self)
+{
+    g_return_if_fail (self != NULL);
+    if (self->value == NULL) return;
+    volatile guint8 *cursor = (volatile guint8 *) self->value;
+    for (gsize index = 0; index < self->allocation_size; index++) {
+        cursor[index] = 0;
+    }
+#ifndef G_OS_WIN32
+    if (self->memory_locked) munlock (self->value, self->allocation_size);
+#endif
+    g_free (self->value);
+    self->value = NULL;
+    self->allocation_size = 0;
+    self->memory_locked = FALSE;
+}
 
 int
 safestore_acquire_accounts_guard (const gchar *lock_path,

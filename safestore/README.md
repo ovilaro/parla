@@ -158,6 +158,21 @@ Passwords are never accepted as command-line arguments. The sources are:
   keyring, `safestore mount` needs no interaction at all, which is the
   intended path toward automatic unlocking from Parla.
 
+Password prompting is deliberately a frontend responsibility. The GTK-free
+library never opens a terminal, displays a dialog, or invokes the SafeStore CLI:
+
+- the CLI reads from its own terminal with echo disabled (or from its explicit
+  stdin/keyring modes);
+- GUI callers use a native masked password widget. `safestore-gui` uses
+  `Gtk.PasswordEntry`, reads its unowned text view, and clears the widget
+  immediately;
+- both hand the value to the library through `SecretValue`, whose mutable
+  allocation is locked against swapping when supported and explicitly wiped
+  after use;
+- the library then passes it to CryFS over a private stdin pipe or to Info-ZIP
+  over the private pseudo-terminal. It never places it in argv or the
+  environment.
+
 Unlike the GUI, the CLI lets CryFS daemonize itself, so mounts survive the CLI
 exiting. ZIP has no mount process: while unlocked, both its prior encrypted
 snapshot and a full plaintext accounts tree exist. ZIP `umount` rewrites the
@@ -175,6 +190,8 @@ know tool-specific paths:
   `Settings.save()` persists it.
 - `EncryptedStore.info/exists/unlocked/create/unlock/lock` provide the
   backend-neutral one-shot lifecycle used by the CLI and available to Parla.
+- `SecretValue` provides a short-lived, wipeable handoff container for GUI and
+  CLI frontends; it does not itself prompt the user.
 - `PlaintextEraser.inspect(settings)` reports whether overwrite removal is
   available and its limitations.
 

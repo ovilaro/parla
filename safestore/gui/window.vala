@@ -387,56 +387,65 @@ namespace SafeStore {
                     return;
                 }
 
-                string secret = password.text;
-                string repeated = confirmation != null
-                    ? confirmation.text : secret;
-                password.text = "";
-                if (confirmation != null) confirmation.text = "";
+                // Gtk.PasswordEntry keeps its input in protected storage when
+                // the platform supports it. Avoid the owned `text` property,
+                // copy once into SafeStore's wipeable handoff buffer, and
+                // clear both widgets immediately afterwards.
+                unowned string entered = password.get_text ();
+                unowned string repeated = confirmation != null
+                    ? confirmation.get_text () : entered;
+                string? validation_error = null;
 
-                if (secret.length == 0) {
-                    show_error ("Password cannot be empty.");
-                    return;
-                }
-                if (secret.contains ("\n") || secret.contains ("\r")) {
-                    show_error ("Passwords cannot contain line breaks.");
-                    return;
+                if (entered.length == 0) {
+                    validation_error = "Password cannot be empty.";
+                } else if (entered.contains ("\n")
+                        || entered.contains ("\r")) {
+                    validation_error = "Passwords cannot contain line breaks.";
                 }
                 if (settings.backend == "zip") {
-                    for (int i = 0; i < secret.length; i++) {
-                        uint8 byte = secret.data[i];
+                    for (int i = 0; i < entered.length; i++) {
+                        uint8 byte = entered.data[i];
                         if (byte < 0x20 || byte == 0x7f) {
-                            show_error (
-                                "ZIP passwords cannot contain control characters.");
-                            return;
+                            validation_error =
+                                "ZIP passwords cannot contain control characters.";
+                            break;
                         }
                     }
                 }
-                if (create && secret.char_count () < 12) {
-                    show_error (
-                        "Use at least 12 characters for a new vault password.");
+                if (create && entered.char_count () < 12) {
+                    validation_error =
+                        "Use at least 12 characters for a new vault password.";
+                }
+                if ((create || locking) && entered != repeated) {
+                    validation_error = "The passwords do not match.";
+                }
+                if (validation_error != null) {
+                    password.set_text ("");
+                    if (confirmation != null) confirmation.set_text ("");
+                    show_error (validation_error);
                     return;
                 }
-                if ((create || locking) && secret != repeated) {
-                    show_error ("The passwords do not match.");
-                    return;
-                }
+
+                var secret = new SecretValue (entered);
+                password.set_text ("");
+                if (confirmation != null) confirmation.set_text ("");
                 if (locking) lock_zip (secret);
                 else mount_vault (secret, create);
             });
             return dialog;
         }
 
-        private void mount_vault (string password, bool create) {
+        private void mount_vault (SecretValue secret, bool create) {
             try {
                 save_settings ();
                 if (settings.backend == "zip") {
-                    start_zip_unlock (password, create);
+                    start_zip_unlock (secret, create);
                 } else {
                     controller.mount (
                         settings.cryfs_binary,
                         settings.vault_path,
                         settings.mount_path,
-                        password,
+                        secret.peek (),
                         settings.idle_minutes,
                         create
                     );
@@ -444,8 +453,9 @@ namespace SafeStore {
             } catch (Error error) {
                 append_log ("Error: " + error.message);
                 show_error (error.message);
+            } finally {
+                if (settings.backend != "zip") secret.clear ();
             }
-            password = "";
         }
 
         private async void lock_vault () {
@@ -470,19 +480,18 @@ namespace SafeStore {
             }
         }
 
-        private void lock_zip (string password) {
+        private void lock_zip (SecretValue secret) {
             save_settings ();
             zip_operation_active = true;
             sync_controls (StoreState.STOPPING, "Archiving ZIP vault…");
-            string secret = password;
             new Thread<void*> ("safestore-zip-lock", () => {
                 string? failure = null;
                 try {
-                    ZipBackend.lock (settings, secret);
+                    ZipBackend.lock (settings, secret.peek ());
                 } catch (Error error) {
                     failure = error.message;
                 }
-                secret = "";
+                secret.clear ();
                 Idle.add (() => {
                     zip_operation_active = false;
                     if (failure == null) {
@@ -504,23 +513,21 @@ namespace SafeStore {
                 });
                 return null;
             });
-            password = "";
         }
 
-        private void start_zip_unlock (string password, bool create) {
+        private void start_zip_unlock (SecretValue secret, bool create) {
             zip_operation_active = true;
             sync_controls (StoreState.STARTING,
                 create ? "Creating ZIP vault…" : "Extracting ZIP vault…");
-            string secret = password;
             new Thread<void*> ("safestore-zip-unlock", () => {
                 string? failure = null;
                 try {
-                    if (create) ZipBackend.create (settings, secret);
-                    else ZipBackend.unlock (settings, secret);
+                    if (create) ZipBackend.create (settings, secret.peek ());
+                    else ZipBackend.unlock (settings, secret.peek ());
                 } catch (Error error) {
                     failure = error.message;
                 }
-                secret = "";
+                secret.clear ();
                 Idle.add (() => {
                     zip_operation_active = false;
                     if (failure == null) {

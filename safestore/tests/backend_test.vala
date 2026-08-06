@@ -40,6 +40,15 @@ private void test_selection () {
     }
 }
 
+private void test_secret_value () {
+    var secret = new SafeStore.SecretValue (PASSWORD);
+    assert_true (secret.peek () == PASSWORD);
+    secret.clear ();
+    assert_true (secret.peek ().length == 0);
+    // Repeated clearing must be harmless.
+    secret.clear ();
+}
+
 private void test_zip_roundtrip () {
 #if WINDOWS
     Test.skip ("private pseudo-terminal is not available on Windows");
@@ -155,6 +164,7 @@ int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/backends/listing", test_backend_listing);
     Test.add_func ("/backends/selection", test_selection);
+    Test.add_func ("/backends/secret-value", test_secret_value);
     Test.add_func ("/backends/zip-roundtrip", test_zip_roundtrip);
     Test.add_func ("/backends/overwrite-removal", test_overwrite_removal);
     return Test.run ();

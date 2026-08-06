@@ -151,6 +151,8 @@ namespace SafeStore {
 
     /**
      * Backend-neutral one-shot API for CLI use and Parla integration.
+     * Password acquisition belongs to the calling frontend: this API never
+     * opens a terminal, displays a dialog, or invokes the SafeStore CLI.
      * GUI callers may use CryfsController when they need foreground process
      * monitoring, but backend selection and lifecycle semantics stay here.
      */

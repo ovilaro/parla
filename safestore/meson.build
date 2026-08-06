@@ -58,6 +58,8 @@ core_sources = files(
   'lib/path_policy.vala',
   'lib/settings.vala',
   'lib/backend.vala',
+  'lib/secret_memory.vapi',
+  'lib/secret_value.vala',
   'lib/zip_backend.vala',
   'lib/plaintext_eraser.vala',
   'lib/mount_check.vala',
