@@ -17,6 +17,7 @@ namespace Dc {
         private bool is_group = false;
         private Gtk.ListBox? members_list = null;
         private Gtk.Box content;
+        private ImageViewer viewer;
         private string chat_name = "";
         private int[] member_contact_ids = {};
         private Contact? dm_contact = null;
@@ -102,7 +103,35 @@ namespace Dc {
             scroll.child = content;
             box.append (scroll);
 
-            this.child = box;
+            /* Same fullscreen viewer the conversation uses, overlaid on the
+               dialog (the window-level one would be hidden behind it). */
+            viewer = new ImageViewer ();
+            viewer.set_window (window);
+
+            var overlay = new Gtk.Overlay ();
+            overlay.child = box;
+            overlay.add_overlay (viewer.widget);
+            this.child = overlay;
+
+            /* Route keys to the viewer while it is open, so Escape closes
+               the viewer, not the dialog. */
+            var kc = new Gtk.EventControllerKey ();
+            kc.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+            kc.key_pressed.connect ((kv, code, state) => {
+                if (viewer.visible) return viewer.handle_key (kv);
+                return false;
+            });
+            ((Gtk.Widget) this).add_controller (kc);
+
+            /* Adw.Dialog handles Escape itself before the controller above —
+               block it while the viewer is up and dismiss the viewer from
+               close_attempt. */
+            viewer.widget.notify["visible"].connect (() => {
+                can_close = !viewer.visible;
+            });
+            close_attempt.connect (() => {
+                if (viewer.visible) viewer.hide ();
+            });
 
             load_info.begin (spinner);
         }
@@ -136,8 +165,24 @@ namespace Dc {
 
                 var avatar = new Adw.Avatar (80, name, true);
                 avatar.custom_image = load_avatar (profile_image);
-                avatar.halign = Gtk.Align.CENTER;
-                content.append (avatar);
+                if (profile_image != null && profile_image.length > 0) {
+                    /* A real button so the fullscreen preview is also
+                       reachable with the keyboard. */
+                    string img = profile_image;
+                    var avatar_btn = new Gtk.Button ();
+                    avatar_btn.child = avatar;
+                    avatar_btn.add_css_class ("flat");
+                    avatar_btn.add_css_class ("circular");
+                    avatar_btn.halign = Gtk.Align.CENTER;
+                    avatar_btn.tooltip_text = "View image";
+                    avatar_btn.clicked.connect (() => {
+                        viewer.show_list ({ img }, 0);
+                    });
+                    content.append (avatar_btn);
+                } else {
+                    avatar.halign = Gtk.Align.CENTER;
+                    content.append (avatar);
+                }
 
                 if (is_group) {
                     var change_avatar_btn = flat_button ("Change Avatar",
