@@ -7,12 +7,11 @@ namespace SafeStore {
     // fstype stay empty there.
     public class MountInfo : Object {
 
-        public string mount_point { get; construct; }
         public string source { get; construct; }
         public string fstype { get; construct; }
 
-        public MountInfo (string mount_point, string source, string fstype) {
-            Object (mount_point: mount_point, source: source, fstype: fstype);
+        internal MountInfo (string source, string fstype) {
+            Object (source: source, fstype: fstype);
         }
 
         public bool is_cryfs () {
@@ -27,7 +26,7 @@ namespace SafeStore {
         }
     }
 
-    public class MountCheck : Object {
+    internal class MountCheck : Object {
 
         public static bool is_active (string mount_path) {
             return find (mount_path) != null;
@@ -37,7 +36,7 @@ namespace SafeStore {
 #if WINDOWS
             string wanted = PathPolicy.normalize (mount_path);
             if (FileUtils.test (wanted + "\\", FileTest.IS_DIR)) {
-                return new MountInfo (wanted, "", "");
+                return new MountInfo ("", "");
             }
             return null;
 #elif LINUX
@@ -66,7 +65,7 @@ namespace SafeStore {
                     }
                     break;
                 }
-                return new MountInfo (wanted, source, fstype);
+                return new MountInfo (source, fstype);
             }
             return null;
 #else
@@ -92,7 +91,7 @@ namespace SafeStore {
                     if (end < 0) end = rest.index_of_char (')');
                     string fstype = end > 0
                         ? rest[0:end].strip () : rest.strip ();
-                    return new MountInfo (wanted, source, fstype);
+                    return new MountInfo (source, fstype);
                 }
             } catch (Error error) {
                 return null;

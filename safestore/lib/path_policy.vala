@@ -20,8 +20,8 @@ namespace SafeStore {
             return Filename.canonicalize (clean);
         }
 
-        public static bool same_or_nested (string candidate,
-                                           string parent) {
+        private static bool same_or_nested (string candidate,
+                                            string parent) {
             if (candidate.length == 0 || parent.length == 0) return false;
             var child_file = File.new_for_path (
                 resolved_for_comparison (candidate));

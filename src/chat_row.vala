@@ -1,14 +1,5 @@
 namespace Dc {
 
-    /* Mute presets shared by the sidebar context menu and the chat info
-       dialog; seconds < 0 means forever (matches the official app's set). */
-    public const string[] MUTE_DURATION_LABELS = {
-        "For 1 hour", "For 8 hours", "For 1 day", "For 7 days", "Forever"
-    };
-    public const int[] MUTE_DURATION_SECONDS = {
-        3600, 28800, 86400, 604800, -1
-    };
-
     /**
      * A single row in the chat list sidebar.
      * Shows avatar placeholder, chat name, last message preview, time, and unread badge.
@@ -251,12 +242,10 @@ namespace Dc {
         public void show (int chat_id, double x, double y, Gtk.Widget parent) {
             bool is_pinned = false;
             bool has_unread = false;
-            bool is_muted = false;
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) {
                 is_pinned = entry.is_pinned;
                 has_unread = entry.unread_count > 0;
-                is_muted = entry.is_muted;
             }
 
             var popover = new Gtk.Popover ();
@@ -269,24 +258,6 @@ namespace Dc {
 
             append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
                 () => { toggle_pin.begin (chat_id, is_pinned); });
-            if (is_muted) {
-                append_menu_button (box, popover, "Unmute",
-                    () => { set_mute.begin (chat_id, 0); });
-            } else {
-                /* "Mute" opens a second popover with the duration list,
-                   mirroring the submenu of the official app. A fresh
-                   popover is used because a mapped one never shrinks to
-                   a smaller child, and it is opened only after the first
-                   one has finished closing: popping it up while the old
-                   grab is still being torn down gets it dismissed. */
-                append_menu_button (box, popover, "Mute ▸",
-                    () => {
-                        GLib.Timeout.add (200, () => {
-                            show_mute_menu (chat_id, x, y, parent);
-                            return GLib.Source.REMOVE;
-                        });
-                    });
-            }
             append_menu_button (box, popover,
                 has_unread ? "Mark as read" : "Mark as unread",
                 () => { set_unread_state.begin (chat_id, !has_unread); },
@@ -336,37 +307,6 @@ namespace Dc {
                 yield window.load_chats ();
             } catch (Error e) {
                 window.show_toast ("Failed to update pin: " + e.message);
-            }
-        }
-
-        private void show_mute_menu (int chat_id, double x, double y,
-                                     Gtk.Widget parent) {
-            var popover = new Gtk.Popover ();
-            popover.has_arrow = false;
-            popover.set_parent (parent);
-            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
-
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.add_css_class ("menu");
-            for (int i = 0; i < MUTE_DURATION_SECONDS.length; i++) {
-                int secs = MUTE_DURATION_SECONDS[i];
-                append_menu_button (box, popover, MUTE_DURATION_LABELS[i],
-                    () => { set_mute.begin (chat_id, secs); });
-            }
-
-            popover.child = box;
-            popover.closed.connect (() => { popover.unparent (); });
-            popover.popup ();
-        }
-
-        private async void set_mute (int chat_id, int seconds) {
-            try {
-                yield rpc.set_chat_mute_duration (chat_id, seconds);
-                window.request_reload_chats ();
-                window.show_toast (seconds == 0
-                    ? "Notifications unmuted" : "Notifications muted");
-            } catch (Error e) {
-                window.show_toast ("Failed to update mute: " + e.message);
             }
         }
 

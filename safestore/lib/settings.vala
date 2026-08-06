@@ -17,7 +17,7 @@ namespace SafeStore {
             load ();
         }
 
-        public static string config_path () {
+        private static string config_path () {
             return Path.build_filename (
                 Environment.get_user_config_dir (),
                 "safestore",
@@ -25,7 +25,7 @@ namespace SafeStore {
             );
         }
 
-        public void load () {
+        private void load () {
             var keyfile = new KeyFile ();
             try {
                 keyfile.load_from_file (config_path (), KeyFileFlags.NONE);

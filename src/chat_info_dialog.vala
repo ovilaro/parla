@@ -1,5 +1,14 @@
 namespace Dc {
 
+    /* Mute presets; seconds < 0 means forever (matches the official
+       app's set). */
+    public const string[] MUTE_DURATION_LABELS = {
+        "For 1 hour", "For 8 hours", "For 1 day", "For 7 days", "Forever"
+    };
+    public const int[] MUTE_DURATION_SECONDS = {
+        3600, 28800, 86400, 604800, -1
+    };
+
     public class ChatInfoDialog : Adw.Dialog {
 
         private unowned Window app_window;

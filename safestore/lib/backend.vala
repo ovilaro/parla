@@ -1,6 +1,6 @@
 namespace SafeStore {
 
-    public class CryfsBackend : Object {
+    internal class CryfsBackend : Object {
 
         public static string exit_message (int status) {
             switch (status) {

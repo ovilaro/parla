@@ -21,10 +21,6 @@ namespace SafeStore {
             return FileUtils.test (config, FileTest.IS_REGULAR);
         }
 
-        public static bool is_mounted (string mount_path) {
-            return MountCheck.is_active (mount_path);
-        }
-
         public static MountInfo? mount_info (string mount_path) {
             return MountCheck.find (mount_path);
         }
@@ -180,7 +176,7 @@ namespace SafeStore {
                 "Unmount reported success, but %s is still mounted", mount);
         }
 
-        public static void ensure_directory (string path) throws Error {
+        private static void ensure_directory (string path) throws Error {
             if (DirUtils.create_with_parents (path, 0700) != 0
                     && !FileUtils.test (path, FileTest.IS_DIR)) {
                 throw new IOError.FAILED (
