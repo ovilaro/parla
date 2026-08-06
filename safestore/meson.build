@@ -47,6 +47,7 @@ if host_machine.system() != 'darwin' and host_machine.system() != 'windows'
 endif
 
 core_sources = files(
+  'lib/accounts_path.vala',
   'lib/path_policy.vala',
   'lib/settings.vala',
   'lib/backend.vala',
@@ -106,3 +107,12 @@ path_policy_test = executable(
 )
 
 test('path-policy', path_policy_test)
+
+accounts_path_test = executable(
+  'accounts-path-test',
+  files('tests/accounts_path_test.vala'),
+  dependencies: core_dep,
+  install: false,
+)
+
+test('accounts-path', accounts_path_test)

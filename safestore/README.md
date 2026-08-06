@@ -1,9 +1,18 @@
 # SafeStore
 
-SafeStore manages local encrypted [CryFS](https://www.cryfs.org/) vaults. It
-was built to exercise the encrypted-storage workflow before integrating it
-into Parla: the mounted plaintext path is what Parla will later hand to
-`deltachat-rpc-server` as `DC_ACCOUNTS_PATH`.
+SafeStore manages the local encrypted [CryFS](https://www.cryfs.org/) vault
+holding the Delta Chat accounts. It works only on the `DC_ACCOUNTS_PATH`
+location, so the paths are fully predictable and shared with Parla:
+
+1. `$DC_ACCOUNTS_PATH`, when set and non-empty;
+2. otherwise the `accounts_path` key in Parla's `settings.ini`;
+3. otherwise Parla's default accounts directory (the same fallback chain
+   Parla uses when launching `deltachat-rpc-server`).
+
+The resolved accounts path **is** the plaintext mount point — the decrypted
+view is exactly what the JSON-RPC server reads — and the encrypted vault
+always sits beside it as `<accounts>.vault`. Neither location is
+configurable; `safestore status` prints both and where they came from.
 
 It is split into three parts:
 
@@ -31,11 +40,14 @@ It is split into three parts:
 - Verifies that the mount actually appears instead of trusting console
   text, and locks with the strict `cryfs-unmount --immediate` path.
 - Supports CryFS idle unmounting.
+- Mounts the decrypted view with `noexec` by default; Vala callers can opt in
+  with `allow_executable_files`, and the CLI exposes `--allow-exec`.
 - Rejects nested vault/mount paths and non-empty mount directories.
 - On Unix, requires the encrypted vault, plaintext mountpoint, and CryFS
   integrity-state directory to belong to the invoking user, rejects symlinks,
   and enforces mode `0700` before mounting.
-- Stores only paths and the idle-lock preference.
+- Stores only the CryFS executable and the idle-lock preference; the vault
+  and mount locations are always derived from the accounts path.
 
 ## Requirements
 
@@ -91,21 +103,22 @@ must also contain `cryfs-unmount`.
 
 ## Command line
 
-The `safestore` tool covers the whole lifecycle without the GUI:
+The `safestore` tool covers the whole lifecycle without the GUI. Commands
+take no path arguments — everything follows the accounts path:
 
 ```sh
-safestore check ~/.vault            # encrypted vault, decrypted mount, or neither?
-safestore status ~/.vault ~/plain   # vault + mount state
-safestore create ~/.vault ~/plain   # new vault, prompts for a password twice
-safestore mount ~/.vault ~/plain    # unlock; prompts without echoing
-safestore umount ~/plain            # lock again
+safestore status         # resolved paths + vault and mount state
+safestore check          # encrypted vault, decrypted mount, or neither?
+safestore create         # new vault, prompts for a password twice
+safestore mount          # unlock; prompts without echoing
+safestore --allow-exec mount   # permit direct execution inside the mount
+safestore umount         # lock again
+DC_ACCOUNTS_PATH=/elsewhere/accounts safestore mount   # alternate store
 ```
 
 Exit codes are script-friendly: `0` yes/success, `1` no/failure, `2` usage
-error; `check` additionally returns `3` when the path is the decrypted view
-of a mounted CryFS vault. Paths omitted on the command line default to the
-settings file shared with the GUI, so a configured setup reduces to
-`safestore mount` and `safestore umount`.
+error; `check` additionally returns `3` when the accounts path is the
+decrypted view of a mounted CryFS vault.
 
 Passwords are never accepted as command-line arguments. The sources are:
 
@@ -123,13 +136,14 @@ locks the vault.
 
 ## Using the GUI
 
-1. Choose an **encrypted vault folder**. This is the on-disk ciphertext.
-2. Choose a separate **plaintext mount folder**. It must be empty. On
-   Windows, enter an unused drive letter such as `G:`.
-3. For a new empty vault, press **Create** and enter the password twice.
-4. For a vault containing `cryfs.config`, press **Unlock**.
-5. Work only through the mounted path.
-6. Close every application using the mount and press **Lock** before
+The Locations group shows the derived vault and mount folders; they cannot
+be edited. To operate on a different store, launch the GUI with
+`DC_ACCOUNTS_PATH` set.
+
+1. For a new empty vault, press **Create** and enter the password twice.
+2. For a vault containing `cryfs.config`, press **Unlock**.
+3. Work only through the mounted path.
+4. Close every application using the mount and press **Lock** before
    exiting.
 
 The GUI runs CryFS in the foreground, watches the process, and deliberately
@@ -139,9 +153,11 @@ mounted path for manual `DC_ACCOUNTS_PATH` experiments.
 
 ## Stored state
 
-Non-secret preferences go to `$XDG_CONFIG_HOME/safestore/settings.ini` (or
-the platform's GLib equivalent). CryFS rollback/integrity state is kept
-under `safestore/cryfs-state/` in the GLib user-data directory.
+Non-secret preferences (the CryFS executable and the idle-lock minutes; the
+vault and mount locations are derived, never stored) go to
+`$XDG_CONFIG_HOME/safestore/settings.ini` (or the platform's GLib
+equivalent). CryFS rollback/integrity state is kept under
+`safestore/cryfs-state/` in the GLib user-data directory.
 
 The password is not saved to disk by SafeStore itself. With `--keyring` it
 is handed to the operating system's secret store, which keeps it encrypted
@@ -171,6 +187,11 @@ controls are not a security boundary against a hostile system administrator:
 root can impersonate the user, inspect process memory, or change the running
 system. Run SafeStore as the desktop user, not through `sudo`.
 
+The decrypted mount uses FUSE's `noexec` option by default. This prevents
+direct execution of programs from the vault, but does not prevent an
+interpreter from reading a script stored there. Callers must explicitly set
+`allow_executable_files` (or pass CLI option `--allow-exec`) to opt out.
+
 Rules that must hold in any integration:
 
 - Passwords never enter argv, environment variables, settings, or logs.
@@ -199,7 +220,8 @@ Rules that must hold in any integration:
 
 The integration point is before `deltachat-rpc-server` starts:
 
-1. Resolve the configured vault and mount locations.
+1. Resolve the accounts path (and with it the vault and mount locations)
+   through the shared `DC_ACCOUNTS_PATH` chain.
 2. Detect whether the expected CryFS filesystem is already mounted (mount
    identity, not directory existence).
 3. Unlock via keyring, or prompt only in an interactive session.

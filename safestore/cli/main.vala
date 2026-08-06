@@ -2,17 +2,22 @@ namespace SafeStore {
 
     public class Cli : Object {
 
-        private const string USAGE = """Usage: safestore [options] <command> [paths…]
+        private const string USAGE = """Usage: safestore [options] <command>
+
+SafeStore always works on the Delta Chat accounts location: the plaintext
+mount point is $DC_ACCOUNTS_PATH when set, otherwise the accounts path the
+Parla JSON-RPC server will use, and the encrypted vault sits beside it as
+"<accounts>.vault". Run "safestore status" to see the resolved paths.
 
 Commands:
-  check  [path]            Classify a folder: encrypted vault (exit 0),
-                           decrypted vault mount (exit 3), or neither (exit 1)
-  status [vault] [mount]   Show the vault and mount state
-  create [vault] [mount]   Create a new encrypted vault and mount it
-  mount  [vault] [mount]   Unlock an encrypted vault into the mount folder
-  umount [mount]           Lock a mounted vault again
-  forget [vault]           Remove a stored vault password from the keyring
-  version                  Show the CryFS backend version
+  check          Classify the accounts location: encrypted vault (exit 0),
+                 decrypted vault mount (exit 3), or neither (exit 1)
+  status         Show the resolved paths and the vault and mount state
+  create         Create the encrypted vault and mount it
+  mount          Unlock the encrypted vault onto the accounts path
+  umount         Lock the mounted vault again
+  forget         Remove the stored vault password from the keyring
+  version        Show the CryFS backend version
 
 Options:
   -b, --binary PATH       CryFS executable (default: settings or $SAFESTORE_CRYFS)
@@ -20,10 +25,10 @@ Options:
                           successful interactive unlock, store it there
   -p, --password-stdin    Read the password from standard input (for scripts)
   -i, --idle MINUTES      Auto-lock after this many idle minutes
+      --allow-exec        Allow direct execution of files inside the mount
   -q, --quiet             Print errors only
   -h, --help              Show this help
 
-Omitted paths default to the SafeStore settings, shared with the GUI.
 Passwords are never accepted on the command line and never written to disk
 in plain text; the optional keyring entry lives in the OS secret service.
 """;
@@ -31,6 +36,7 @@ in plain text; the optional keyring entry lives in the OS secret service.
         private Settings settings;
         private bool use_keyring = false;
         private bool password_stdin = false;
+        private bool allow_executable_files = false;
         private bool quiet = false;
         private int idle_minutes = -1;
 
@@ -56,6 +62,9 @@ in plain text; the optional keyring entry lives in the OS secret service.
                 case "-p":
                 case "--password-stdin":
                     password_stdin = true;
+                    break;
+                case "--allow-exec":
+                    allow_executable_files = true;
                     break;
                 case "-q":
                 case "--quiet":
@@ -83,25 +92,29 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
             if (rest.length == 0) return usage_error ("Missing command");
             string command = rest[0];
-            string[] paths = rest[1:rest.length];
+            if (rest.length > 1) {
+                return usage_error (
+                    "Commands take no path arguments; the vault and mount "
+                    + "locations follow DC_ACCOUNTS_PATH");
+            }
 
             try {
                 switch (command) {
                 case "check":
-                    return cmd_check (paths);
+                    return cmd_check ();
                 case "status":
-                    return cmd_status (paths);
+                    return cmd_status ();
                 case "create":
-                    return cmd_mount (paths, true);
+                    return cmd_mount (true);
                 case "mount":
                 case "unlock":
-                    return cmd_mount (paths, false);
+                    return cmd_mount (false);
                 case "umount":
                 case "unmount":
                 case "lock":
-                    return cmd_umount (paths);
+                    return cmd_umount ();
                 case "forget":
-                    return cmd_forget (paths);
+                    return cmd_forget ();
                 case "version":
                     stdout.printf ("%s\n",
                         Vault.backend_version (settings.cryfs_binary));
@@ -125,45 +138,40 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return 2;
         }
 
-        private string vault_arg (string[] paths) {
-            return paths.length > 0 ? paths[0] : settings.vault_path;
-        }
-
-        private string mount_arg (string[] paths, int index) {
-            return paths.length > index ? paths[index] : settings.mount_path;
-        }
-
         private void report (string message) {
             if (!quiet) stdout.printf ("%s\n", message);
         }
 
-        private int cmd_check (string[] paths) {
-            string path = PathPolicy.normalize (vault_arg (paths));
-            var info = Vault.mount_info (path);
+        private int cmd_check () {
+            string vault = PathPolicy.normalize (settings.vault_path);
+            string mount = PathPolicy.normalize (settings.mount_path);
+            var info = Vault.mount_info (mount);
             if (info != null && info.is_cryfs ()) {
                 string? source = info.vault_source ();
                 report ("%s is a decrypted CryFS vault%s".printf (
-                    path,
+                    mount,
                     source != null
                         ? " (encrypted at %s)".printf (source) : ""));
                 return 3;
             }
-            if (Vault.is_encrypted (path)) {
-                report ("%s is an encrypted CryFS vault".printf (path));
+            if (Vault.is_encrypted (vault)) {
+                report ("%s is an encrypted CryFS vault".printf (vault));
                 return 0;
             }
             if (info != null) {
                 report ("%s is a mountpoint (%s), not a CryFS vault".printf (
-                    path, info.fstype.length > 0 ? info.fstype : "unknown"));
+                    mount, info.fstype.length > 0 ? info.fstype : "unknown"));
             } else {
-                report ("%s is not an encrypted vault".printf (path));
+                report ("%s is not an encrypted vault".printf (vault));
             }
             return 1;
         }
 
-        private int cmd_status (string[] paths) {
-            string vault = PathPolicy.normalize (vault_arg (paths));
-            string mount = PathPolicy.normalize (mount_arg (paths, 1));
+        private int cmd_status () {
+            string vault = PathPolicy.normalize (settings.vault_path);
+            string mount = PathPolicy.normalize (settings.mount_path);
+            report ("accounts: %s (from %s)".printf (
+                mount, AccountsPath.source ()));
             bool encrypted = Vault.is_encrypted (vault);
             report ("vault: %s (%s)".printf (
                 vault, encrypted ? "encrypted vault" : "not a vault"));
@@ -187,9 +195,9 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return encrypted ? 0 : 1;
         }
 
-        private int cmd_mount (string[] paths, bool create) throws Error {
-            string vault = vault_arg (paths);
-            string mount = mount_arg (paths, 1);
+        private int cmd_mount (bool create) throws Error {
+            string vault = settings.vault_path;
+            string mount = settings.mount_path;
 
             // Fail on a missing backend before bothering the user for a
             // password.
@@ -214,7 +222,8 @@ in plain text; the optional keyring entry lives in the OS secret service.
 
             Vault.mount (
                 settings.cryfs_binary, vault, mount, password,
-                create, idle_minutes > 0 ? idle_minutes : 0);
+                create, idle_minutes > 0 ? idle_minutes : 0,
+                allow_executable_files);
             report ((create ? "Vault created and mounted at %s"
                             : "Vault mounted at %s").printf (
                 PathPolicy.normalize (mount)));
@@ -226,16 +235,16 @@ in plain text; the optional keyring entry lives in the OS secret service.
             return 0;
         }
 
-        private int cmd_umount (string[] paths) throws Error {
-            string mount = paths.length > 0 ? paths[0] : settings.mount_path;
+        private int cmd_umount () throws Error {
+            string mount = settings.mount_path;
             Vault.unmount (settings.cryfs_binary, mount);
             report ("Vault locked; %s is no longer mounted.".printf (
                 PathPolicy.normalize (mount)));
             return 0;
         }
 
-        private int cmd_forget (string[] paths) throws Error {
-            string vault = vault_arg (paths);
+        private int cmd_forget () throws Error {
+            string vault = settings.vault_path;
             if (Keyring.forget (vault)) {
                 report ("Stored password removed from the keyring.");
                 return 0;

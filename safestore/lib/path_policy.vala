@@ -149,7 +149,8 @@ namespace SafeStore {
                 throw new PathPolicyError.INVALID (
                     "Private folder is not owned by the current user: %s", path);
             }
-            if (Posix.fchmod (descriptor, PRIVATE_MODE) != 0) {
+            if ((info.st_mode & 07777) != PRIVATE_MODE
+                    && Posix.fchmod (descriptor, PRIVATE_MODE) != 0) {
                 Posix.close (descriptor);
                 throw new IOError.PERMISSION_DENIED (
                     "Could not restrict private folder permissions: %s", path);

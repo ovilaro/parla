@@ -5,8 +5,8 @@ namespace SafeStore {
         private Settings settings;
         private CryfsController controller;
 
-        private Adw.EntryRow vault_row;
-        private Adw.EntryRow mount_row;
+        private Adw.ActionRow vault_row;
+        private Adw.ActionRow mount_row;
         private Adw.EntryRow binary_row;
         private Adw.ActionRow backend_row;
         private Adw.ActionRow state_row;
@@ -71,8 +71,8 @@ namespace SafeStore {
             toast_overlay.child = scroller;
 
             var intro = new Gtk.Label (
-                "Create or unlock a local encrypted directory. SafeStore " +
-                "never stores the vault password and is not connected to Parla."
+                "Create or unlock the encrypted Delta Chat accounts vault. " +
+                "SafeStore never stores the vault password."
             );
             intro.wrap = true;
             intro.xalign = 0;
@@ -106,19 +106,23 @@ namespace SafeStore {
 
             var location_group = new Adw.PreferencesGroup ();
             location_group.title = "Locations";
-            location_group.description =
-                "The encrypted vault and plaintext mount must be separate folders.";
+            location_group.description = (
+                "Fixed by the Delta Chat accounts path (%s): the decrypted "
+                + "view mounts on the accounts folder and the vault sits "
+                + "beside it.").printf (AccountsPath.source ());
 
-            vault_row = new Adw.EntryRow ();
+            vault_row = new Adw.ActionRow ();
             vault_row.title = "Encrypted vault folder";
-            vault_row.text = settings.vault_path;
-            add_folder_button (vault_row, true);
+            vault_row.subtitle = settings.vault_path;
+            vault_row.subtitle_selectable = true;
+            vault_row.add_css_class ("property");
             location_group.add (vault_row);
 
-            mount_row = new Adw.EntryRow ();
-            mount_row.title = "Plaintext mount folder";
-            mount_row.text = settings.mount_path;
-            add_folder_button (mount_row, false);
+            mount_row = new Adw.ActionRow ();
+            mount_row.title = "Decrypted accounts folder";
+            mount_row.subtitle = settings.mount_path;
+            mount_row.subtitle_selectable = true;
+            mount_row.add_css_class ("property");
             location_group.add (mount_row);
 
             binary_row = new Adw.EntryRow ();
@@ -182,7 +186,7 @@ namespace SafeStore {
                 "Copy the value to use for DC_ACCOUNTS_PATH";
             copy_button.clicked.connect (() => {
                 get_clipboard ().set_text (
-                    PathPolicy.normalize (mount_row.text));
+                    PathPolicy.normalize (settings.mount_path));
                 show_toast ("Mounted accounts path copied");
             });
             utility_box.append (copy_button);
@@ -234,43 +238,6 @@ namespace SafeStore {
                 }
                 return false;
             });
-        }
-
-        private void add_folder_button (Adw.EntryRow row, bool vault) {
-            var button = new Gtk.Button.from_icon_name (
-                "folder-open-symbolic");
-            button.valign = Gtk.Align.CENTER;
-            button.add_css_class ("flat");
-            button.tooltip_text = "Choose folder";
-            button.clicked.connect (() => {
-                choose_folder.begin (row, vault);
-            });
-            row.add_suffix (button);
-        }
-
-        private async void choose_folder (Adw.EntryRow row, bool vault) {
-            var dialog = new Gtk.FileDialog ();
-            dialog.title = vault
-                ? "Choose encrypted vault folder"
-                : "Choose plaintext mount folder";
-            dialog.modal = true;
-
-            string current = PathPolicy.normalize (row.text);
-            string initial = current;
-            if (!FileUtils.test (initial, FileTest.IS_DIR)) {
-                initial = Path.get_dirname (initial);
-            }
-            if (FileUtils.test (initial, FileTest.IS_DIR)) {
-                dialog.initial_folder = File.new_for_path (initial);
-            }
-
-            try {
-                File? folder = yield dialog.select_folder (this, null);
-                string? path = folder != null ? folder.get_path () : null;
-                if (path != null) row.text = path;
-            } catch (Error error) {
-                if (!is_dialog_dismissal (error)) show_error (error.message);
-            }
         }
 
         private async void choose_binary () {
@@ -447,8 +414,6 @@ namespace SafeStore {
         }
 
         private void save_settings () {
-            settings.vault_path = PathPolicy.normalize (vault_row.text);
-            settings.mount_path = PathPolicy.normalize (mount_row.text);
             settings.cryfs_binary = binary_row.text.strip ();
             settings.idle_minutes = idle_spin.get_value_as_int ();
             settings.save ();
@@ -492,8 +457,6 @@ namespace SafeStore {
             lock_button.sensitive = active && !busy;
             open_button.sensitive = mounted;
             copy_button.sensitive = mounted;
-            vault_row.sensitive = !busy && !active;
-            mount_row.sensitive = !busy && !active;
             binary_row.sensitive = !busy && !active;
             idle_spin.sensitive = !busy && !active;
         }

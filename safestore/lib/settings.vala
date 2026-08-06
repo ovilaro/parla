@@ -2,16 +2,19 @@ namespace SafeStore {
 
     public class Settings : Object {
 
-        public string vault_path { get; set; }
-        public string mount_path { get; set; }
+        /* The vault and mount locations are not configurable: they always
+           follow the Delta Chat accounts path so that SafeStore, Parla, and
+           deltachat-rpc-server agree on where the data lives. */
+        public string vault_path {
+            owned get { return AccountsPath.vault_path (); }
+        }
+        public string mount_path {
+            owned get { return AccountsPath.mount_path (); }
+        }
         public string cryfs_binary { get; set; }
         public int idle_minutes { get; set; }
 
         public Settings () {
-            string base_dir = Path.build_filename (
-                Environment.get_user_data_dir (), "safestore");
-            vault_path = Path.build_filename (base_dir, "vault");
-            mount_path = Path.build_filename (base_dir, "mount");
             cryfs_binary = Environment.get_variable ("SAFESTORE_CRYFS") ?? "cryfs";
             idle_minutes = 0;
             load ();
@@ -33,8 +36,6 @@ namespace SafeStore {
                 return;
             }
 
-            vault_path = read_string (keyfile, "vault_path", vault_path);
-            mount_path = read_string (keyfile, "mount_path", mount_path);
             cryfs_binary = read_string (
                 keyfile, "cryfs_binary", cryfs_binary);
             idle_minutes = read_integer (
@@ -45,8 +46,6 @@ namespace SafeStore {
 
         public void save () {
             var keyfile = new KeyFile ();
-            keyfile.set_string ("SafeStore", "vault_path", vault_path);
-            keyfile.set_string ("SafeStore", "mount_path", mount_path);
             keyfile.set_string ("SafeStore", "cryfs_binary", cryfs_binary);
             keyfile.set_integer ("SafeStore", "idle_minutes", idle_minutes);
 

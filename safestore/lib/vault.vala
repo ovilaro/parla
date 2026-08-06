@@ -67,7 +67,9 @@ namespace SafeStore {
                                   string mount_path,
                                   string password,
                                   bool create,
-                                  int idle_minutes = 0) throws Error {
+                                  int idle_minutes = 0,
+                                  bool allow_executable_files = false)
+                                  throws Error {
             string cryfs = resolve_binary (binary);
             PathPolicy.validate_layout (vault_path, mount_path);
             if (create) {
@@ -98,6 +100,12 @@ namespace SafeStore {
                 argv += "--unmount-idle";
                 argv += idle_minutes.to_string ();
             }
+#if !WINDOWS
+            if (!allow_executable_files) {
+                argv += "-o";
+                argv += "noexec";
+            }
+#endif
             argv += vault;
             argv += mount;
 

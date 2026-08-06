@@ -46,7 +46,8 @@ namespace SafeStore {
                            string mount_path,
                            string password,
                            int idle_minutes,
-                           bool create) throws Error {
+                           bool create,
+                           bool allow_executable_files = false) throws Error {
             if (cryfs_process != null
                     || state == StoreState.STARTING
                     || state == StoreState.MOUNTED
@@ -92,6 +93,12 @@ namespace SafeStore {
                 argv += "--unmount-idle";
                 argv += idle_minutes.to_string ();
             }
+#if !WINDOWS
+            if (!allow_executable_files) {
+                argv += "-o";
+                argv += "noexec";
+            }
+#endif
             argv += vault;
             argv += mount;
 
