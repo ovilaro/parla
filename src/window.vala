@@ -168,7 +168,11 @@ namespace Dc {
            before a profile was connected; opened once try_connect finishes. */
         private string? pending_invite_uri = null;
 
+#if MACOS
+        private MacosTray? tray = null;
+#else
         private TrayIcon? tray = null;
+#endif
         private bool held_in_background = false;
         private bool quit_requested = false;
         private NativeFileDropTarget? native_file_drop_target;
@@ -287,10 +291,7 @@ namespace Dc {
         private bool on_close_request () {
             if (quit_requested) return false;
 
-            /* No tray on macOS (see sync_tray) — hiding the window with the
-               app held would leave it running with no way back and crashes
-               the GTK macOS backend, so always do a normal close there. */
-            if (!Platform.is_macos () && ensure_tray_visible ()) {
+            if (ensure_tray_visible ()) {
                 minimize_to_tray ();
                 return true;
             }
@@ -347,10 +348,6 @@ namespace Dc {
         /* Single source of truth for the tray icon: create it on first need,
            then show/hide it to track the setting. */
         private void sync_tray () {
-            /* StatusNotifierItem is a freedesktop/D-Bus protocol with no
-               watcher on macOS — the icon can never show up there. */
-            if (Platform.is_macos ()) return;
-
             if (!settings.minimize_to_tray) {
                 if (tray != null) tray.hide ();
                 /* In background/service mode the hidden window is
@@ -366,12 +363,16 @@ namespace Dc {
         }
 
         private bool ensure_tray_visible () {
-            if (Platform.is_macos () || !settings.minimize_to_tray) return false;
+            if (!settings.minimize_to_tray) return false;
 
             if (tray == null) {
+#if MACOS
+                tray = new MacosTray ();
+#else
                 var conn = this.application.get_dbus_connection ();
                 if (conn == null) return false;
                 tray = new TrayIcon (conn);
+#endif
                 tray.show_on_current_desktop_requested.connect (
                     show_from_tray_on_current_desktop);
                 tray.window_toggle_requested.connect (
@@ -392,10 +393,20 @@ namespace Dc {
         private void minimize_to_tray () {
             close_active_modal ();
             this.set_visible (false);
+            set_macos_app_hidden (true);
             if (!held_in_background) {
                 this.application.hold ();
                 held_in_background = true;
             }
+        }
+
+        /* On macOS "in the tray" also means out of the Dock and Cmd-Tab
+           (see tray_macos.h); a no-op everywhere else. Restoring must run
+           before present () so the window can take focus again. */
+        private static void set_macos_app_hidden (bool hidden) {
+#if MACOS
+            MacosTray.set_app_hidden (hidden);
+#endif
         }
 
         private void close_active_modal () {
@@ -406,6 +417,7 @@ namespace Dc {
         }
 
         public void restore_from_tray () {
+            set_macos_app_hidden (false);
             release_background_hold ();
             this.present ();
         }
@@ -422,6 +434,7 @@ namespace Dc {
 
         private void show_from_tray_on_current_desktop (
                 string? activation_token) {
+            set_macos_app_hidden (false);
             release_background_hold ();
             if (activation_token != null && activation_token.length > 0 &&
                 request_activation_on_current_desktop (activation_token)) {

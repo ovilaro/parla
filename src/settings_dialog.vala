@@ -783,21 +783,24 @@ namespace Dc {
                 app_window.settings.save_system_audio_player (audio_switch.active);
             });
 
-            /* The tray is a StatusNotifierItem exported over the session
-               D-Bus with no watcher on macOS, so the option is Linux-only. */
-            if (!Platform.is_macos ()) {
-                var tray_row = action_row (
-                    "Minimize to status bar",
-                    "Closing the window keeps Parla running in the status bar; "
-                    + "notifications still appear");
-                var tray_switch = row_switch (
-                    tray_row, app_window.settings.minimize_to_tray);
-                tray_switch.notify["active"].connect (() => {
-                    app_window.set_minimize_to_tray (tray_switch.active);
-                });
+            /* Backed by the StatusNotifierItem on freedesktop systems and
+               by the NSStatusItem shim on macOS (tray_macos.m). */
+            var tray_row = action_row (
+                Platform.is_macos ()
+                    ? "Minimize to menu bar"
+                    : "Minimize to status bar",
+                Platform.is_macos ()
+                    ? "Closing the window keeps Parla running as a menu bar "
+                    + "icon, out of the Dock; notifications still appear"
+                    : "Closing the window keeps Parla running in the status "
+                    + "bar; notifications still appear");
+            var tray_switch = row_switch (
+                tray_row, app_window.settings.minimize_to_tray);
+            tray_switch.notify["active"].connect (() => {
+                app_window.set_minimize_to_tray (tray_switch.active);
+            });
 
-                behavior_list.append (tray_row);
-            }
+            behavior_list.append (tray_row);
 
             var notifications_list = settings_list ("Notifications");
             var notif_row = action_row (

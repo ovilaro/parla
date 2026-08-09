@@ -70,3 +70,17 @@ stays alive while either a window exists, the "minimize to status bar"
 tray hold is active, or the permanent background-mode hold taken by
 `--background` is in place. Quitting (Ctrl+Q or the tray menu's Quit)
 always terminates the process regardless of those holds.
+
+## The tray on macOS
+
+The freedesktop StatusNotifierItem has no watcher on macOS, so there the
+"minimize to menu bar" option is backed by a native `NSStatusItem`
+(`src/tray_macos.m`, compiled only on macOS; the SNI implementation in
+`src/tray_icon.vala` is compiled only elsewhere). The menu mirrors the
+GNOME one: Show/Hide, Notifications, Quit. While hidden, the app also
+switches to the *accessory* activation policy — it leaves the Dock and
+the Cmd-Tab switcher and exists only as the menu-bar icon, matching how
+a closed window on GNOME lives only in the tray. Re-launching Parla
+from the Dock, Launchpad, or Spotlight is routed to the running
+instance and restores the window (LaunchServices reopen semantics stand
+in for the D-Bus single-instance activation used on Linux).

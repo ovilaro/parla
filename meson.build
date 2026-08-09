@@ -114,7 +114,6 @@ sources = files(
   'src/contact_picker_dialog.vala',
   'src/new_group_dialog.vala',
   'src/settings_dialog.vala',
-  'src/tray_icon.vala',
   'src/storage_quota.vala',
   'src/profile_dialog.vala',
   'src/qr_code_view.vala',
@@ -129,10 +128,21 @@ sources = files(
   'src/relay_picker.vala',
 )
 
+# Each platform ships only its own tray backend: the freedesktop
+# StatusNotifierItem (tray_icon.vala) everywhere except macOS, where an
+# NSStatusItem shim replaces it (tray_macos.*, selected in window.vala
+# through the MACOS Vala define).
 if host_machine.system() == 'darwin'
   add_languages('objc', native: false)
-  sources += files('src/platform_macos.m')
+  add_project_arguments(['--define=MACOS'], language: 'vala')
+  sources += files(
+    'src/platform_macos.m',
+    'src/tray_macos.m',
+    'src/tray_macos.vala',
+  )
   deps += dependency('appleframeworks', modules: ['Cocoa'])
+else
+  sources += files('src/tray_icon.vala')
 endif
 
 if host_machine.system() == 'windows'
