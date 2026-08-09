@@ -29,6 +29,16 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.7.6" date="2026-07-09">
+      <description>
+        <ul>
+          <li>Experimental webxdc support</li>
+          <li>Minimize to Tray support for macOS</li>
+          <li>View larger avatars when clicked</li>
+          <li>Start in background for boot items</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.4" date="2026-07-05">
       <description>
         <ul>
