@@ -24,6 +24,12 @@ meson setup builddir -Dwebxdc=true
 A plain `make` (or `-Dwebxdc=false`) reverts to the default build, which
 links no web engine at all.
 
+CI builds it in for macOS (system framework), the plain Linux build, the
+.deb (depends on `libwebkitgtk-6.0-4`) and the Flatpak (WebKitGTK comes
+with the GNOME runtime). The AppImage still ships the stub: bundling
+WebKitGTK's helper processes into an AppImage is its own project. Users
+can always turn apps off at runtime in Settings → Advanced.
+
 ## How it works
 
 The feature is isolated at file level: `src/webxdc.vala` holds the

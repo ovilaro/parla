@@ -26,10 +26,11 @@ jobs:
             libglib2.0-dev \
             libgtk-4-dev \
             libadwaita-1-dev \
-            libjson-glib-dev
+            libjson-glib-dev \
+            libwebkitgtk-6.0-dev
 
       - name: Setup
-        run: meson setup builddir
+        run: meson setup builddir -Dwebxdc=true
 
       - name: Build
         run: meson compile -C builddir
@@ -50,14 +51,15 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             libjson-glib-dev \
+            libwebkitgtk-6.0-dev \
             make \
             dpkg-dev
 
       - name: Build
-        run: make
+        run: make WITH_WEBXDC=1
 
       - name: Package .deb
-        run: make deb
+        run: make deb WITH_WEBXDC=1
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v7
@@ -162,7 +164,7 @@ jobs:
             adwaita-icon-theme
 
       - name: Build
-        run: make BUILDTYPE=release
+        run: make BUILDTYPE=release WITH_WEBXDC=1
 
       - name: Package ZIP
         id: zip
