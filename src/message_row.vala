@@ -736,9 +736,35 @@ namespace Dc {
                 box.append (widget);
                 return;
             }
+            /* Without webxdc support the app falls through to the plain
+               file indicator. */
+            if (msg.is_webxdc () && Webxdc.AVAILABLE) {
+                var card = build_webxdc_card (msg);
+                if (irc) card.halign = Gtk.Align.START;
+                box.append (card);
+                return;
+            }
             var fi = build_file_indicator (msg);
             if (irc) fi.halign = Gtk.Align.START;
             box.append (fi);
+        }
+
+        /** Webxdc apps show as a start button like in the official client;
+            conversation_view routes the action to Webxdc.open. */
+        private Gtk.Widget build_webxdc_card (Message msg) {
+            var btn = new Gtk.Button ();
+            btn.add_css_class ("message-attachment");
+            btn.tooltip_text = "Start app";
+            var inner = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            inner.append (new Gtk.Image.from_icon_name (
+                "media-playback-start-symbolic"));
+            var fname = new Gtk.Label (msg.display_file_name ("app"));
+            fname.ellipsize = Pango.EllipsizeMode.MIDDLE;
+            fname.max_width_chars = 28;
+            inner.append (fname);
+            btn.child = inner;
+            btn.clicked.connect (() => { action_requested ("webxdc", btn); });
+            return btn;
         }
 
         private static bool should_show_bubble_avatar (

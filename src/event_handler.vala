@@ -188,6 +188,14 @@ namespace Dc {
                 schedule_chats_reload ();
                 break;
 
+            case "WebxdcStatusUpdate":
+                Webxdc.status_update ((int) event.get_int_member ("msgId"));
+                break;
+
+            case "WebxdcInstanceDeleted":
+                Webxdc.instance_deleted ((int) event.get_int_member ("msgId"));
+                break;
+
             default:
                 break;
             }

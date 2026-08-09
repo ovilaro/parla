@@ -478,6 +478,11 @@ namespace Dc {
                 || path_has_suffix (STICKER_EXTENSIONS);
         }
 
+        /** Webxdc mini-app attachment (runnable when built with -Dwebxdc). */
+        public bool is_webxdc () {
+            return view_type_is ("webxdc");
+        }
+
         public bool is_video_sticker_file () {
             return has_mime ("video/webm")
                 || path_has_suffix ({ ".webm" });

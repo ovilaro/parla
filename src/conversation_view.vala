@@ -607,6 +607,11 @@ namespace Dc {
             case "pin":
                 pinned.toggle_pin (msg_id);
                 break;
+            case "webxdc":
+                var msg = find_message (message_store, msg_id);
+                if (msg != null && msg.has_local_file)
+                    Webxdc.open (window, rpc, msg);
+                break;
             default:
                 msg_actions.show_context_menu (msg_id, is_outgoing,
                                                ax, ay, message_listview);

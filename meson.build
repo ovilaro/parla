@@ -128,6 +128,16 @@ sources = files(
   'src/relay_picker.vala',
 )
 
+# Experimental Webxdc runner (docs/webxdc.md). Off by default because it
+# pulls in WebKitGTK; the stub keeps every call site compiling and linking
+# without it, so only this one file swaps.
+if get_option('webxdc')
+  deps += dependency('webkitgtk-6.0')
+  sources += files('src/webxdc.vala')
+else
+  sources += files('src/webxdc_stub.vala')
+endif
+
 # Each platform ships only its own tray backend: the freedesktop
 # StatusNotifierItem (tray_icon.vala) everywhere except macOS, where an
 # NSStatusItem shim replaces it (tray_macos.*, selected in window.vala

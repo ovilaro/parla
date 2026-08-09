@@ -8,6 +8,10 @@ UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
 MACOS_APP_DIR?=dist/macos/Parla.app
 MESON_OPTIONS?=
+# Experimental Webxdc support (docs/webxdc.md): `make run WITH_WEBXDC=1`
+# builds with the webkitgtk-6.0 dependency; a plain `make` reverts to the
+# stub because the option is passed explicitly on every reconfigure.
+MESON_OPTIONS+=-Dwebxdc=$(if $(filter 1,$(WITH_WEBXDC)),true,false)
 SANITIZER_DEBUG_OPTIONS=-Dstrip=false -Dvala_args=--debug -Dc_args=-g
 
 .PHONY: all asan tsan run clean install uninstall deb app macos appimage
