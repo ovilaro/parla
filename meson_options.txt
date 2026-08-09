@@ -1,7 +1,7 @@
 option('webxdc',
   type: 'boolean',
   value: false,
-  description: 'Experimental: run Webxdc (Delta Chat mini-app) attachments in an embedded WebKitGTK view. Adds a webkitgtk-6.0 dependency; see docs/webxdc.md.')
+  description: 'Experimental: run Webxdc (Delta Chat mini-app) attachments in an embedded web view. Uses the system WebKit.framework on macOS and webkitgtk-6.0 elsewhere; see docs/webxdc.md.')
 option('rpc_server_path',
   type: 'string',
   value: '',

@@ -128,16 +128,6 @@ sources = files(
   'src/relay_picker.vala',
 )
 
-# Experimental Webxdc runner (docs/webxdc.md). Off by default because it
-# pulls in WebKitGTK; the stub keeps every call site compiling and linking
-# without it, so only this one file swaps.
-if get_option('webxdc')
-  deps += dependency('webkitgtk-6.0')
-  sources += files('src/webxdc.vala')
-else
-  sources += files('src/webxdc_stub.vala')
-endif
-
 # Each platform ships only its own tray backend: the freedesktop
 # StatusNotifierItem (tray_icon.vala) everywhere except macOS, where an
 # NSStatusItem shim replaces it (tray_macos.*, selected in window.vala
@@ -153,6 +143,23 @@ if host_machine.system() == 'darwin'
   deps += dependency('appleframeworks', modules: ['Cocoa'])
 else
   sources += files('src/tray_icon.vala')
+endif
+
+# Experimental Webxdc runner (docs/webxdc.md), off by default. macOS uses
+# the system WebKit.framework through the shim in webxdc_macos.m; everywhere
+# else the view is WebKitGTK. The shared logic sits in webxdc.vala (#if
+# MACOS selects the view layer) and the stub keeps every call site compiling
+# and linking when the option is disabled.
+if get_option('webxdc')
+  sources += files('src/webxdc.vala')
+  if host_machine.system() == 'darwin'
+    sources += files('src/webxdc_macos.m')
+    deps += dependency('appleframeworks', modules: ['WebKit'])
+  else
+    deps += dependency('webkitgtk-6.0')
+  endif
+else
+  sources += files('src/webxdc_stub.vala')
 endif
 
 if host_machine.system() == 'windows'

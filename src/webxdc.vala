@@ -1,99 +1,58 @@
 /* Experimental Webxdc runner: hosts a Delta Chat mini-app (.xdc archive)
- * inside a WebKitGTK view. Compiled only with -Dwebxdc=true; otherwise
+ * in a web view. Compiled only with -Dwebxdc=true; otherwise
  * webxdc_stub.vala provides the same entry points as no-ops so no other
- * file needs conditional compilation. See docs/webxdc.md for the security
- * boundaries and the exact JS API exposed to apps. */
+ * file needs conditional compilation. The jsonrpc plumbing and the JS
+ * bridge below are platform-independent; only the view layer splits:
+ * WebKitGTK on GNOME, the system WebKit.framework through the shim in
+ * webxdc_macos.m on macOS (where WebKitGTK is not available). See
+ * docs/webxdc.md for the security boundaries and the JS API. */
 namespace Dc.Webxdc {
 
     public const bool AVAILABLE = true;
 
-    private HashTable<int, unowned AppWindow>? windows = null;
+    private HashTable<int, Instance>? windows = null;
 
     public void open (Gtk.Window? parent, RpcClient rpc, Message msg) {
         if (windows == null) {
-            windows = new HashTable<int, unowned AppWindow> (
-                direct_hash, direct_equal);
+            windows = new HashTable<int, Instance> (direct_hash, direct_equal);
         }
         var existing = windows.lookup (msg.id);
         if (existing != null) {
             existing.present ();
             return;
         }
-        var win = new AppWindow (rpc, msg);
-        windows.insert (msg.id, win);
-        int id = msg.id;
-        win.close_request.connect (() => {
-            windows.remove (id);
-            return false;
-        });
-        win.present ();
+        windows.insert (msg.id, new Instance (rpc, msg));
     }
 
     /** Routed from the WebxdcStatusUpdate core event. */
     public void status_update (int msg_id) {
-        var win = windows == null ? null : windows.lookup (msg_id);
-        if (win != null) win.pull_updates.begin ();
+        var app = windows == null ? null : windows.lookup (msg_id);
+        if (app != null) app.pull_updates.begin ();
     }
 
     /** Routed from the WebxdcInstanceDeleted core event. */
     public void instance_deleted (int msg_id) {
-        var win = windows == null ? null : windows.lookup (msg_id);
-        if (win != null) win.close ();
+        var app = windows == null ? null : windows.lookup (msg_id);
+        if (app != null) app.close_view ();
     }
 
-    private class AppWindow : Adw.Window {
+    private class Instance : Object {
         /* Strong ref on purpose: switching accounts replaces the shared
            RpcClient, and a still-open app must keep talking to the account
            it was started from (account_id is captured for the same reason). */
         private RpcClient rpc;
         private int account_id;
         private int msg_id;
-        private WebKit.WebView view;
         private int64 last_serial = 0;
         private string self_addr = "unknown";
         private string self_name = "me";
 
-        public AppWindow (RpcClient rpc, Message msg) {
+        public Instance (RpcClient rpc, Message msg) {
             this.rpc = rpc;
             this.account_id = rpc.account_id;
             this.msg_id = msg.id;
-            title = msg.display_file_name ("Webxdc");
-            default_width = 420;
-            default_height = 640;
-
-            var ucm = new WebKit.UserContentManager ();
-            ucm.register_script_message_handler ("webxdc", (string) null);
-            ucm.script_message_received["webxdc"].connect (on_script_message);
-
-            var ctx = new WebKit.WebContext ();
-            ctx.register_uri_scheme ("webxdc", serve_request);
-            var sec = ctx.get_security_manager ();
-            sec.register_uri_scheme_as_secure ("webxdc");
-            sec.register_uri_scheme_as_local ("webxdc");
-
-            /* No cookies/cache on disk, and a blackhole proxy so any
-               http(s) request an app may attempt dies before reaching the
-               network. webxdc: URIs are served in-process and unaffected. */
-            var session = new WebKit.NetworkSession.ephemeral ();
-            session.set_proxy_settings (WebKit.NetworkProxyMode.CUSTOM,
-                new WebKit.NetworkProxySettings ("socks5://127.0.0.1:1", null));
-
-            view = (WebKit.WebView) GLib.Object.new (typeof (WebKit.WebView),
-                "web-context", ctx,
-                "network-session", session,
-                "user-content-manager", ucm);
-            var s = view.get_settings ();
-            s.enable_developer_extras = false;
-            s.allow_modal_dialogs = false;
-            s.javascript_can_open_windows_automatically = false;
-            view.decide_policy.connect (on_decide_policy);
-            view.vexpand = true;
-
-            var toolbar = new Adw.ToolbarView ();
-            toolbar.add_top_bar (new Adw.HeaderBar ());
-            toolbar.content = view;
-            content = toolbar;
-
+            create_view (msg.display_file_name ("Webxdc"));
+            present ();
             start.begin ();
         }
 
@@ -101,9 +60,9 @@ namespace Dc.Webxdc {
             try {
                 var info = yield rpc.call ("get_webxdc_info", Params.begin ()
                     .add_int (account_id).add_int (msg_id).build ());
-                var obj = info.get_object ();
-                var name = obj.get_string_member_with_default ("name", "");
-                if (name.length > 0) title = name;
+                var name = info.get_object ()
+                    .get_string_member_with_default ("name", "");
+                if (name.length > 0) set_view_title (name);
             } catch (Error e) {
                 warning ("webxdc info: %s", e.message);
             }
@@ -115,60 +74,37 @@ namespace Dc.Webxdc {
             } catch (Error e) {
                 warning ("webxdc config: %s", e.message);
             }
-            view.load_uri ("webxdc://app/index.html");
+            load_view ("webxdc://app/index.html");
         }
 
         /* Everything the page loads is pulled out of the .xdc archive by
            deltachat core (get_webxdc_blob); nothing is read from disk or
            the network. webxdc.js itself is the one synthetic file. */
-        private void serve_request (WebKit.URISchemeRequest req) {
-            string path = req.get_path () ?? "";
-            if (path.has_prefix ("/")) path = path.substring (1);
-            if (path.length == 0) path = "index.html";
-            if (Path.get_basename (path) == "webxdc.js") {
-                var js = bridge_js ();
-                var stream = new MemoryInputStream.from_bytes (
-                    new Bytes (js.data));
-                req.finish (stream, js.length, "text/javascript");
+#if MACOS
+        private async void serve (string path, void* token) {
+#else
+        private async void serve (string path, WebKit.URISchemeRequest token) {
+#endif
+            string p = path.has_prefix ("/") ? path.substring (1) : path;
+            if (p.length == 0) p = "index.html";
+            if (Path.get_basename (p) == "webxdc.js") {
+                deliver (token, bridge_js ().data, "text/javascript");
                 return;
             }
-            serve_blob.begin (req, path);
-        }
-
-        private async void serve_blob (WebKit.URISchemeRequest req,
-                                       string path) {
             try {
                 var res = yield rpc.call ("get_webxdc_blob", Params.begin ()
                     .add_int (account_id).add_int (msg_id)
-                    .add_string (path).build ());
+                    .add_string (p).build ());
                 var data = Base64.decode (res.get_string ());
                 bool uncertain;
-                string ctype = ContentType.guess (path, data, out uncertain);
+                string ctype = ContentType.guess (p, data, out uncertain);
                 string mime = ContentType.get_mime_type (ctype)
                     ?? "application/octet-stream";
-                var stream = new MemoryInputStream.from_bytes (
-                    new Bytes ((owned) data));
-                req.finish (stream, -1, mime);
+                deliver (token, data, mime);
             } catch (Error e) {
-                req.finish_error (new IOError.NOT_FOUND (
-                    "webxdc blob '%s': %s", path, e.message));
+                warning ("webxdc blob '%s': %s", path, e.message);
+                fail (token);
             }
-        }
-
-        /* The app may only navigate inside its own scheme; anything else
-           (http links, window.open) is refused. */
-        private bool on_decide_policy (WebKit.PolicyDecision decision,
-                                       WebKit.PolicyDecisionType type) {
-            if (type == WebKit.PolicyDecisionType.NAVIGATION_ACTION
-                || type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION) {
-                var nav = (WebKit.NavigationPolicyDecision) decision;
-                var uri = nav.navigation_action.get_request ().get_uri ();
-                if (!uri.has_prefix ("webxdc:")) {
-                    decision.ignore ();
-                    return true;
-                }
-            }
-            return false;
         }
 
         private static string js_str (string s) {
@@ -212,10 +148,10 @@ namespace Dc.Webxdc {
 """.printf (js_str (self_addr), js_str (self_name));
         }
 
-        private void on_script_message (JSC.Value value) {
+        private void on_message (string json) {
             try {
                 var parser = new Json.Parser ();
-                parser.load_from_data (value.to_string ());
+                parser.load_from_data (json);
                 var obj = parser.get_root ().get_object ();
                 switch (obj.get_string_member_with_default ("type", "")) {
                 case "send":
@@ -258,9 +194,222 @@ namespace Dc.Webxdc {
                 warning ("webxdc updates: %s", e.message);
                 return;
             }
-            view.evaluate_javascript.begin (
-                "window.__webxdc_deliver(%s)".printf (updates), -1,
-                null, null, null);
+            eval_js ("window.__webxdc_deliver(%s)".printf (updates));
         }
+
+        private void on_view_closed () {
+            if (windows != null) windows.remove (msg_id);
+        }
+
+#if MACOS
+        /* ============================================================
+         *  View layer, macOS: NSWindow + WKWebView via webxdc_macos.m.
+         *  The shim owns all AppKit state behind an opaque handle and
+         *  re-queues every callback through g_idle_add, so this code
+         *  always runs in normal GTK main-loop iterations.
+         * ============================================================ */
+
+        [CCode (has_target = false)]
+        private delegate void RawBlobFn (string path, void* task,
+                                         void* user_data);
+        [CCode (has_target = false)]
+        private delegate void RawMsgFn (string json, void* user_data);
+        [CCode (has_target = false)]
+        private delegate void RawClosedFn (void* user_data);
+
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_open")]
+        private static extern void* shim_open (string title, RawBlobFn blob,
+                                               RawMsgFn message,
+                                               RawClosedFn closed,
+                                               void* user_data);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_load")]
+        private static extern void shim_load (void* handle, string uri);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_finish_task")]
+        private static extern void shim_finish_task (void* handle, void* task,
+                                                     uint8[] data,
+                                                     string mime);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_fail_task")]
+        private static extern void shim_fail_task (void* handle, void* task);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_eval_js")]
+        private static extern void shim_eval_js (void* handle, string js);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_set_title")]
+        private static extern void shim_set_title (void* handle, string title);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_present")]
+        private static extern void shim_present (void* handle);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_close")]
+        private static extern void shim_close (void* handle);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_free")]
+        private static extern void shim_free (void* handle);
+
+        private void* handle = null;
+
+        /* The shim callbacks carry no closure; user_data is this instance,
+           kept alive by the windows table until on_view_closed. */
+        private static void on_raw_blob (string path, void* task,
+                                         void* user_data) {
+            unowned Instance self = (Instance) user_data;
+            self.serve.begin (path, task);
+        }
+
+        private static void on_raw_message (string json, void* user_data) {
+            unowned Instance self = (Instance) user_data;
+            self.on_message (json);
+        }
+
+        private static void on_raw_closed (void* user_data) {
+            unowned Instance self = (Instance) user_data;
+            var h = self.handle;
+            self.handle = null;
+            if (h != null) shim_free (h);
+            self.on_view_closed ();
+        }
+
+        private void create_view (string title) {
+            handle = shim_open (title, on_raw_blob, on_raw_message,
+                                on_raw_closed, this);
+        }
+
+        public void present () {
+            if (handle != null) shim_present (handle);
+        }
+
+        private void load_view (string uri) {
+            if (handle != null) shim_load (handle, uri);
+        }
+
+        private void set_view_title (string title) {
+            if (handle != null) shim_set_title (handle, title);
+        }
+
+        private void eval_js (string js) {
+            if (handle != null) shim_eval_js (handle, js);
+        }
+
+        /* A blob fetch may complete after the window is gone; the null
+           handle drops it (the shim released the task on teardown). */
+        private void deliver (void* token, uint8[] data, string mime) {
+            if (handle != null) shim_finish_task (handle, token, data, mime);
+        }
+
+        private void fail (void* token) {
+            if (handle != null) shim_fail_task (handle, token);
+        }
+
+        public void close_view () {
+            if (handle != null) shim_close (handle);
+        }
+#else
+        /* ============================================================
+         *  View layer, GNOME: Adw.Window + WebKitGTK.
+         * ============================================================ */
+
+        private Adw.Window? win = null;
+        private WebKit.WebView view;
+
+        private void create_view (string title) {
+            win = new Adw.Window ();
+            win.title = title;
+            win.default_width = 420;
+            win.default_height = 640;
+
+            var ucm = new WebKit.UserContentManager ();
+            ucm.register_script_message_handler ("webxdc", (string) null);
+            ucm.script_message_received["webxdc"].connect ((value) => {
+                on_message (value.to_string ());
+            });
+
+            var ctx = new WebKit.WebContext ();
+            ctx.register_uri_scheme ("webxdc", (req) => {
+                serve.begin (req.get_path () ?? "", req);
+            });
+            var sec = ctx.get_security_manager ();
+            sec.register_uri_scheme_as_secure ("webxdc");
+            sec.register_uri_scheme_as_local ("webxdc");
+
+            /* No cookies/cache on disk, and a blackhole proxy so any
+               http(s) request an app may attempt dies before reaching the
+               network. webxdc: URIs are served in-process and unaffected. */
+            var session = new WebKit.NetworkSession.ephemeral ();
+            session.set_proxy_settings (WebKit.NetworkProxyMode.CUSTOM,
+                new WebKit.NetworkProxySettings ("socks5://127.0.0.1:1",
+                                                 null));
+
+            view = (WebKit.WebView) GLib.Object.new (typeof (WebKit.WebView),
+                "web-context", ctx,
+                "network-session", session,
+                "user-content-manager", ucm);
+            var s = view.get_settings ();
+            s.enable_developer_extras = false;
+            s.allow_modal_dialogs = false;
+            s.javascript_can_open_windows_automatically = false;
+            view.decide_policy.connect (on_decide_policy);
+            view.vexpand = true;
+
+            var toolbar = new Adw.ToolbarView ();
+            toolbar.add_top_bar (new Adw.HeaderBar ());
+            toolbar.content = view;
+            win.content = toolbar;
+            win.close_request.connect (() => {
+                win = null;
+                on_view_closed ();
+                return false;
+            });
+        }
+
+        /* The app may only navigate inside its own scheme; anything else
+           (http links, window.open) is refused. */
+        private bool on_decide_policy (WebKit.PolicyDecision decision,
+                                       WebKit.PolicyDecisionType type) {
+            if (type == WebKit.PolicyDecisionType.NAVIGATION_ACTION
+                || type == WebKit.PolicyDecisionType.NEW_WINDOW_ACTION) {
+                var nav = (WebKit.NavigationPolicyDecision) decision;
+                var uri = nav.navigation_action.get_request ().get_uri ();
+                if (!uri.has_prefix ("webxdc:")) {
+                    decision.ignore ();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void present () {
+            if (win != null) win.present ();
+        }
+
+        private void load_view (string uri) {
+            view.load_uri (uri);
+        }
+
+        private void set_view_title (string title) {
+            if (win != null) win.title = title;
+        }
+
+        private void eval_js (string js) {
+            view.evaluate_javascript.begin (js, -1, null, null, null);
+        }
+
+        private void deliver (WebKit.URISchemeRequest token, uint8[] data,
+                              string mime) {
+            var stream = new MemoryInputStream.from_bytes (new Bytes (data));
+            token.finish (stream, data.length, mime);
+        }
+
+        private void fail (WebKit.URISchemeRequest token) {
+            token.finish_error (new IOError.NOT_FOUND ("webxdc blob"));
+        }
+
+        public void close_view () {
+            if (win != null) win.close ();
+        }
+#endif
     }
 }

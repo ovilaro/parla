@@ -2,32 +2,40 @@
 
 [Webxdc](https://webxdc.org/) apps are tiny offline web apps (`.xdc` zip
 archives) shared as Delta Chat attachments. Parla can run them in an
-embedded [WebKitGTK](https://webkitgtk.org/) view, but the feature is **off
-by default**: it adds WebKitGTK — a large dependency and a browser-sized
-attack surface — so it will only be enabled once it has seen enough
-testing.
+embedded WebKit view, but the feature is **off by default**: a web engine
+is a browser-sized attack surface (and on Linux a large extra dependency),
+so it will only be enabled once it has seen enough testing.
+
+Two view backends share the same core:
+
+- **GNOME/Linux**: [WebKitGTK](https://webkitgtk.org/) (`webkitgtk-6.0`).
+- **macOS**: the system `WebKit.framework` (WKWebView) through a small
+  ObjC shim — no WebKitGTK, no extra dependency, nothing to bundle.
 
 ## Building
 
 ```sh
-make run WITH_WEBXDC=1     # mac and linux; needs webkitgtk-6.0 pkg-config
+make run WITH_WEBXDC=1     # macOS: works out of the box
+                           # linux: needs webkitgtk-6.0 pkg-config
 # or directly:
 meson setup builddir -Dwebxdc=true
 ```
 
 A plain `make` (or `-Dwebxdc=false`) reverts to the default build, which
-does not link WebKitGTK at all.
+links no web engine at all.
 
 ## How it works
 
-The whole feature lives in one file, `src/webxdc.vala`, compiled only when
-the option is on; `src/webxdc_stub.vala` provides the same `Dc.Webxdc`
-entry points as no-ops otherwise, so no other file needs conditional
-compilation and linking stays trivial.
+The feature is isolated at file level: `src/webxdc.vala` holds the
+jsonrpc plumbing and the JS bridge plus both view layers (an `#if MACOS`
+picks NSWindow/WKWebView via `src/webxdc_macos.m`, otherwise
+Adw.Window/WebKitGTK). When the option is off, `src/webxdc_stub.vala`
+provides the same `Dc.Webxdc` entry points as no-ops, so no other file
+needs conditional compilation and linking stays trivial.
 
 - Apps appear in the chat as a start button and in the media gallery under
   **Apps**; both call `Webxdc.open ()`, one window per app instance.
-- Every window gets its own `WebKit.WebContext` with a custom `webxdc:`
+- Every window gets its own isolated web context with a custom `webxdc:`
   URI scheme. Files are extracted from the `.xdc` archive by deltachat
   core (`get_webxdc_blob` over jsonrpc) — Parla never unzips anything
   itself and serves nothing from disk.
@@ -41,14 +49,19 @@ compilation and linking stays trivial.
 ## Security boundaries
 
 Webxdc's contract is that apps run **offline and sandboxed**; Parla
-enforces it with GNOME/WebKit primitives:
+enforces it inside the engine on both backends:
 
-- **No network.** The `WebKit.NetworkSession` is ephemeral (no cookies or
-  cache on disk) and configured with a blackhole SOCKS proxy, so any
-  `http(s)` request an app attempts dies before reaching the network.
-  `webxdc:` content is served in-process and is unaffected.
-- **No navigation escape.** `decide-policy` refuses any navigation or
-  `window.open` outside the `webxdc:` scheme.
+- **No network.** WebKitGTK: the `WebKit.NetworkSession` is ephemeral (no
+  cookies or cache on disk) and configured with a blackhole SOCKS proxy,
+  so any `http(s)` request an app attempts dies before reaching the
+  network. macOS: a compiled `WKContentRuleList` blocks every load and
+  then exempts only the `webxdc:` scheme, which covers subresource
+  fetches too, with a non-persistent website data store. `webxdc:`
+  content is served in-process and is unaffected either way.
+- **No navigation escape.** The navigation policy delegate refuses any
+  navigation or `window.open` outside the `webxdc:` scheme on both
+  backends (macOS fails closed: if the rule list cannot compile, the web
+  view is never created).
 - **No filesystem.** All content comes from the archive via jsonrpc.
 - **No persistence.** Ephemeral session: `localStorage` survives only as
   long as the window (a deliberate, safer deviation from the official
