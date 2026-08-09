@@ -80,6 +80,8 @@ namespace Dc {
         public bool minimize_to_tray { get; set; default = false; }
         public bool system_audio_player { get; set; default = false; }
         public bool animate_stickers { get; set; default = true; }
+        /* Only honored in builds with -Dwebxdc=true (Webxdc.AVAILABLE). */
+        public bool webxdc_apps { get; set; default = true; }
         public int auto_download_limit { get; set; default = AUTO_DOWNLOAD_DEFAULT; }
         public string rpc_server_path { get; set; default = ""; }
         /* An empty value deliberately means the standard Parla account store. */
@@ -175,6 +177,7 @@ namespace Dc {
             system_audio_player = kf_bool (kf, "system_audio_player", false);
             AudioPlayer.prefer_system = system_audio_player;
             animate_stickers = kf_bool (kf, "animate_stickers", true);
+            webxdc_apps = kf_bool (kf, "webxdc_apps", true);
             auto_download_limit = normalize_auto_download_limit (
                 kf_int (kf, "auto_download_limit", AUTO_DOWNLOAD_DEFAULT));
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
@@ -297,6 +300,11 @@ namespace Dc {
             animate_stickers = v;
             save_bool ("animate_stickers", v);
             appearance_changed ();
+        }
+
+        public void save_webxdc_apps (bool v) {
+            webxdc_apps = v;
+            save_bool ("webxdc_apps", v);
         }
 
         public void save_auto_download_limit (int bytes) {
@@ -868,6 +876,20 @@ namespace Dc {
                     sticker_switch.active);
             });
 
+            Adw.ActionRow? webxdc_row = null;
+            if (Webxdc.AVAILABLE) {
+                webxdc_row = action_row (
+                    "Webxdc apps",
+                    "Run Delta Chat mini-apps shared in chats "
+                    + "(experimental)");
+                var webxdc_switch = row_switch (
+                    webxdc_row, app_window.settings.webxdc_apps);
+                webxdc_switch.notify["active"].connect (() => {
+                    app_window.settings.save_webxdc_apps (
+                        webxdc_switch.active);
+                });
+            }
+
             var download_row = action_row (
                 "Auto-download attachments",
                 "Larger attachments wait for approval; applies to all profiles");
@@ -900,6 +922,7 @@ namespace Dc {
             advanced_list.append (audio_row);
             advanced_list.append (transcription_row);
             advanced_list.append (sticker_row);
+            if (webxdc_row != null) advanced_list.append (webxdc_row);
             advanced_list.append (download_row);
 
             var chatmail_list = settings_list ("Chatmail");

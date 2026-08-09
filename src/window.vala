@@ -857,6 +857,7 @@ namespace Dc {
 
             /* Create event handler and message actions now that rpc is ready */
             events = new EventHandler (rpc);
+            Webxdc.setup (rpc, settings);
             events.set_app (this.application);
             events.chats_reload_fired.connect (() => {
                 load_chats.begin ();

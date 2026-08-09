@@ -1095,6 +1095,10 @@ namespace Dc {
                            + "(rebuild with WITH_WEBXDC=1)");
                     break;
                 }
+                if (!Webxdc.enabled ()) {
+                    toast ("Webxdc apps are disabled in Settings");
+                    break;
+                }
                 if (ensure_local_file (m)) Webxdc.open (app_window, rpc, m);
                 break;
             }

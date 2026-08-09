@@ -12,6 +12,75 @@ namespace Dc.Webxdc {
 
     private HashTable<int, Instance>? windows = null;
 
+    /* Client used for chat-card lookups (window title/icon before an app
+       is started); set from window.vala whenever the RpcClient changes.
+       Strong ref so a lookup racing an account switch stays valid. */
+    private RpcClient? client = null;
+    private unowned SettingsManager? config = null;
+
+    public void setup (RpcClient rpc, SettingsManager settings) {
+        client = rpc;
+        config = settings;
+        cards = null;   /* msg ids are per-account */
+    }
+
+    /** Compile-time support plus the runtime settings toggle. */
+    public bool enabled () {
+        return config == null || config.webxdc_apps;
+    }
+
+    public delegate void CardInfoFn (string? name, Gdk.Texture? icon);
+
+    private class CardInfo {
+        public string? name;
+        public Gdk.Texture? icon;
+    }
+
+    private HashTable<int, CardInfo>? cards = null;
+
+    /** App name and icon for the chat/gallery card, cached per message.
+        The callback fires once, possibly synchronously on a cache hit. */
+    public void card_info (int msg_id, owned CardInfoFn cb) {
+        if (cards == null) {
+            cards = new HashTable<int, CardInfo> (direct_hash, direct_equal);
+        }
+        var hit = cards.lookup (msg_id);
+        if (hit != null) {
+            cb (hit.name, hit.icon);
+            return;
+        }
+        fetch_card_info.begin (msg_id, (owned) cb);
+    }
+
+    private async void fetch_card_info (int msg_id, owned CardInfoFn cb) {
+        var info = new CardInfo ();
+        var rpc = client;
+        if (rpc == null) {
+            cb (null, null);
+            return;
+        }
+        int acct = rpc.account_id;
+        try {
+            var res = yield rpc.call ("get_webxdc_info", Params.begin ()
+                .add_int (acct).add_int (msg_id).build ());
+            var obj = res.get_object ();
+            var name = obj.get_string_member_with_default ("name", "");
+            if (name.length > 0) info.name = name;
+            var icon = obj.get_string_member_with_default ("icon", "");
+            if (icon.length > 0) {
+                var blob = yield rpc.call ("get_webxdc_blob", Params.begin ()
+                    .add_int (acct).add_int (msg_id)
+                    .add_string (icon).build ());
+                info.icon = Gdk.Texture.from_bytes (
+                    new Bytes (Base64.decode (blob.get_string ())));
+            }
+        } catch (Error e) {
+            debug ("webxdc card info: %s", e.message);
+        }
+        cards.replace (msg_id, info);
+        cb (info.name, info.icon);
+    }
+
     public void open (Gtk.Window? parent, RpcClient rpc, Message msg) {
         if (windows == null) {
             windows = new HashTable<int, Instance> (direct_hash, direct_equal);

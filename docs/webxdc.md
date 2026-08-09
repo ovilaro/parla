@@ -33,8 +33,18 @@ Adw.Window/WebKitGTK). When the option is off, `src/webxdc_stub.vala`
 provides the same `Dc.Webxdc` entry points as no-ops, so no other file
 needs conditional compilation and linking stays trivial.
 
-- Apps appear in the chat as a start button and in the media gallery under
-  **Apps**; both call `Webxdc.open ()`, one window per app instance.
+- Apps appear in the chat as an accent-colored card and in the media
+  gallery under **Apps**; both call `Webxdc.open ()`, one window per app
+  instance. Nothing is automatic: the card first offers to download the
+  `.xdc` archive (attachments beyond the auto-download limit stay on the
+  server until then), then shows the app's real name and icon read from
+  the archive, and starts it only on another explicit click.
+- Besides the compile-time option there is a runtime switch: **Settings →
+  Advanced → Webxdc apps** (`webxdc_apps` in `settings.ini`). Disabled,
+  apps degrade to plain file attachments and the gallery refuses to
+  launch them.
+- Sending an `.xdc` file from Parla announces it with the `Webxdc`
+  viewtype, so other clients show it as an app too.
 - Every window gets its own isolated web context with a custom `webxdc:`
   URI scheme. Files are extracted from the `.xdc` archive by deltachat
   core (`get_webxdc_blob` over jsonrpc) — Parla never unzips anything

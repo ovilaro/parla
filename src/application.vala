@@ -498,6 +498,21 @@ namespace Dc {
                 padding: 2px 5px;
             }
             .message-attachment { padding: 4px 0; }
+            .webxdc-card {
+                background: alpha(@accent_bg_color, 0.12);
+                border: 1px solid alpha(@accent_bg_color, 0.4);
+                border-radius: 12px;
+                padding: 10px 14px;
+            }
+            .webxdc-card:hover {
+                background: alpha(@accent_bg_color, 0.22);
+            }
+            .webxdc-card-icon {
+                border-radius: 10px;
+                color: @accent_bg_color;
+            }
+            .webxdc-card-title { font-weight: bold; font-size: 1.05em; }
+            .webxdc-card-subtitle { font-size: 0.85em; opacity: 0.75; }
             .message-transcription {
                 /* Relative so it tracks the conversation font-size setting;
                    absolute keywords like "small" ignore the inherited size. */

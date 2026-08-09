@@ -612,6 +612,9 @@ namespace Dc {
                 if (msg != null && msg.has_local_file)
                     Webxdc.open (window, rpc, msg);
                 break;
+            case "webxdc-download":
+                rpc.download_full_message.begin (msg_id);
+                break;
             default:
                 msg_actions.show_context_menu (msg_id, is_outgoing,
                                                ax, ay, message_listview);

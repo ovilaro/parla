@@ -736,11 +736,11 @@ namespace Dc {
                 box.append (widget);
                 return;
             }
-            /* Without webxdc support the app falls through to the plain
-               file indicator. */
-            if (msg.is_webxdc () && Webxdc.AVAILABLE) {
+            /* With webxdc disabled (build- or settings-wise) the app falls
+               through to the plain file indicator. */
+            if (msg.is_webxdc () && Webxdc.enabled ()) {
                 var card = build_webxdc_card (msg);
-                if (irc) card.halign = Gtk.Align.START;
+                card.halign = Gtk.Align.START;
                 box.append (card);
                 return;
             }
@@ -749,21 +749,60 @@ namespace Dc {
             box.append (fi);
         }
 
-        /** Webxdc apps show as a start button like in the official client;
-            conversation_view routes the action to Webxdc.open. */
+        /** Webxdc apps show as an accent-colored card with the app's icon
+            and name (once the .xdc is downloaded) like in the official
+            client. Apps never start or download by themselves: the card
+            first asks to download the archive, then to start it;
+            conversation_view routes both actions. */
         private Gtk.Widget build_webxdc_card (Message msg) {
+            bool ready = msg.has_local_file;
             var btn = new Gtk.Button ();
-            btn.add_css_class ("message-attachment");
-            btn.tooltip_text = "Start app";
-            var inner = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-            inner.append (new Gtk.Image.from_icon_name (
-                "media-playback-start-symbolic"));
-            var fname = new Gtk.Label (msg.display_file_name ("app"));
-            fname.ellipsize = Pango.EllipsizeMode.MIDDLE;
-            fname.max_width_chars = 28;
-            inner.append (fname);
+            btn.add_css_class ("webxdc-card");
+            btn.focus_on_click = false;
+            btn.tooltip_text = ready ? "Start app" : "Download app";
+
+            var inner = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
+            var icon = new Gtk.Image.from_icon_name (
+                ready ? "application-x-executable-symbolic"
+                      : "folder-download-symbolic");
+            icon.pixel_size = 48;
+            icon.add_css_class ("webxdc-card-icon");
+            inner.append (icon);
+
+            var text = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+            text.valign = Gtk.Align.CENTER;
+            string fallback = msg.display_file_name ("app");
+            if (fallback.down ().has_suffix (".xdc")) {
+                fallback = fallback.substring (0, fallback.length - 4);
+            }
+            var name = new Gtk.Label (fallback);
+            name.add_css_class ("webxdc-card-title");
+            name.halign = Gtk.Align.START;
+            name.xalign = 0;
+            name.ellipsize = Pango.EllipsizeMode.END;
+            name.max_width_chars = 24;
+            text.append (name);
+            var subtitle = new Gtk.Label (
+                ready ? "Webxdc app · tap to start"
+                      : "Webxdc app · tap to download");
+            subtitle.add_css_class ("webxdc-card-subtitle");
+            subtitle.halign = Gtk.Align.START;
+            subtitle.xalign = 0;
+            text.append (subtitle);
+            inner.append (text);
             btn.child = inner;
-            btn.clicked.connect (() => { action_requested ("webxdc", btn); });
+
+            /* Icon and real name only exist inside the archive, so this
+               stays generic until the app is downloaded. */
+            if (ready) {
+                Webxdc.card_info (msg.id, (app_name, app_icon) => {
+                    if (app_name != null) name.label = app_name;
+                    if (app_icon != null) icon.paintable = app_icon;
+                });
+            }
+            btn.clicked.connect (() => {
+                action_requested (ready ? "webxdc" : "webxdc-download", btn);
+            });
             return btn;
         }
 

@@ -14,7 +14,15 @@ namespace Dc {
                 || has_sticker_extension (file_name)) {
                 return "Sticker";
             }
+            if (has_xdc_extension (file_path)
+                || has_xdc_extension (file_name)) {
+                return "Webxdc";
+            }
             return null;
+        }
+
+        private static bool has_xdc_extension (string? value) {
+            return value != null && value.down ().has_suffix (".xdc");
         }
 
         private static bool has_sticker_extension (string? value) {
