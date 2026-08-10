@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+profile=/etc/apparmor.d/parla
+
+case "$1" in
+    remove|deconfigure)
+        if [ -f "$profile" ] \
+                && command -v aa-enabled >/dev/null 2>&1 \
+                && aa-enabled --quiet 2>/dev/null; then
+            apparmor_parser --remove "$profile" 2>/dev/null || true
+        fi
+        ;;
+esac
+
+exit 0

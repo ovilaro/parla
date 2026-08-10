@@ -1,0 +1,9 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# WebKitGTK uses bubblewrap user namespaces for its web-process sandbox.
+profile parla "@PARLA_BINARY@" flags=(unconfined) {
+  userns,
+
+  include if exists <local/parla>
+}

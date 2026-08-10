@@ -24,6 +24,15 @@ meson setup builddir -Dwebxdc=true
 A plain `make` (or `-Dwebxdc=false`) reverts to the default build, which
 links no web engine at all.
 
+On native Linux installs, `sudo make install WITH_WEBXDC=1` also installs
+and loads an AppArmor profile when AppArmor is active. This is needed on
+Ubuntu 24.04 and newer, where the default user-namespace restriction can
+otherwise prevent WebKitGTK's bubblewrap sandbox from starting. Systems
+without AppArmor need no profile, staged package installs include it without
+loading it on the build host, and Flatpak uses its own sandbox. See the
+[README](../README.md#webxdc-apps-experimental) for platform support and
+source-build caveats.
+
 CI builds it in for macOS (system framework), the plain Linux build, the
 .deb (depends on `libwebkitgtk-6.0-4`) and the Flatpak (WebKitGTK comes
 with the GNOME runtime). The AppImage still ships the stub: bundling

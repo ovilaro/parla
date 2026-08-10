@@ -46,6 +46,11 @@ install: all
 	DESTDIR="$(DESTDIR)" meson install -C "$(BUILD_DIR)"
 
 uninstall:
+	@if [ -z "$(DESTDIR)" ] && [ -f /etc/apparmor.d/parla ] \
+		&& command -v apparmor_parser >/dev/null 2>&1; then \
+		apparmor_parser --remove /etc/apparmor.d/parla 2>/dev/null || true; \
+	fi
+	rm -f "$(DESTDIR)/etc/apparmor.d/parla"
 	rm -f "$(DESTDIR)$(BINDIR)/parla"
 	rm -f "$(DESTDIR)$(DATADIR)/applications/io.github.trufae.Parla.desktop"
 	rm -f "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/io.github.trufae.Parla.svg"
@@ -55,6 +60,7 @@ uninstall:
 	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
 
+deb: PREFIX=/usr
 deb: all
 	$(MAKE) -C dist/debian
 

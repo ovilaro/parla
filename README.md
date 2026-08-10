@@ -88,6 +88,9 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 # Install dependencies (Ubuntu)
 sudo apt install valac meson libgtk-4-dev libadwaita-1-dev libjson-glib-dev
 
+# Webxdc builds additionally need WebKitGTK (Ubuntu)
+sudo apt install libwebkitgtk-6.0-dev
+
 # Install the RPC backend for source builds
 pip install deltachat-rpc-server
 # Or: cargo install --git https://github.com/chatmail/core/ deltachat-rpc-server
@@ -152,6 +155,63 @@ release.
 
 See [docs/rpc-server.md](docs/rpc-server.md) for how Parla finds the JSON-RPC
 server and how to package it for Flatpak or distro packages.
+
+## Webxdc apps (experimental)
+
+[Webxdc](https://webxdc.org/) apps are small offline web apps attached to
+Delta Chat messages. Support is experimental and disabled at build time by
+default because embedding a browser engine adds a large dependency and a
+significant attack surface. It can also be disabled at runtime under
+**Settings → Advanced → Webxdc apps**.
+
+Platform support currently is:
+
+- **Linux:** WebKitGTK 6.0. Supported by native and Flatpak builds. The
+  AppImage does not bundle WebKitGTK and therefore has no Webxdc support.
+- **macOS:** the system WebKit framework; no extra web-engine package is
+  needed.
+- **Windows:** not supported yet; Windows builds use the Webxdc stub.
+
+To build and run it from the source tree:
+
+```sh
+# Ubuntu/Debian build dependency
+sudo apt install libwebkitgtk-6.0-dev
+
+make run WITH_WEBXDC=1
+# Or with Meson directly:
+meson setup builddir -Dwebxdc=true
+meson compile -C builddir
+```
+
+Webxdc attachments contain untrusted JavaScript, so Parla deliberately does
+not fall back to running them without the web-engine sandbox. On Linux,
+WebKitGTK uses bubblewrap and unprivileged user namespaces for that sandbox.
+Ubuntu 24.04 and newer may restrict those namespaces through AppArmor; without
+an application policy WebKitGTK can fail with `bwrap: setting up uid map:
+Permission denied`.
+
+A native Webxdc install handles this automatically. The generated policy is
+attached to the actual installed binary path, is installed only when AppArmor
+is active, and is loaded as part of the install:
+
+```sh
+sudo make install WITH_WEBXDC=1
+```
+
+Staged native package installs include the profile without loading it on the
+build host; package lifecycle scripts load it only where the Ubuntu
+restriction is active. Direct installs on systems without that restriction do
+not install the policy.
+Running `make run WITH_WEBXDC=1` directly from a build directory is not covered
+by the installed-binary policy on restricted Ubuntu systems; install the
+binary first and run the installed `parla` executable. Parla detects this
+specific unsafe host state and refuses to launch the app with an error instead
+of disabling the WebKit sandbox or allowing WebKitGTK to abort. Flatpak uses
+its own sandbox and does not install a host AppArmor profile.
+
+See [docs/webxdc.md](docs/webxdc.md) for the implementation, security
+boundaries, and currently exposed JavaScript API.
 
 Parla is single-instance and can run as a background service on Linux:
 `parla --background` starts it without a window (e.g. for session

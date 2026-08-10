@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+profile=/etc/apparmor.d/parla
+
+if [ "$1" = configure ] && [ -f "$profile" ] \
+        && [ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] \
+        && grep -q '^1' \
+            /proc/sys/kernel/apparmor_restrict_unprivileged_userns \
+        && command -v aa-enabled >/dev/null 2>&1 \
+        && aa-enabled --quiet 2>/dev/null; then
+    apparmor_parser --replace "$profile" || true
+fi
+
+exit 0

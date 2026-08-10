@@ -162,6 +162,30 @@ else
   sources += files('src/webxdc_stub.vala')
 endif
 
+# Ubuntu 24.04 and newer can restrict unprivileged user namespaces with
+# AppArmor. WebKitGTK's bubblewrap sandbox needs those namespaces, so native
+# Linux installs carry a narrowly attached profile for the installed Parla
+# executable. Flatpak has its own outer sandbox and must not install host
+# policy below /app.
+if get_option('webxdc') \
+    and host_machine.system() == 'linux' \
+    and get_option('prefix') != '/app'
+  apparmor_conf = configuration_data()
+  apparmor_conf.set(
+    'PARLA_BINARY',
+    get_option('prefix') / get_option('bindir') / 'parla',
+  )
+  apparmor_profile = configure_file(
+    input: 'data/apparmor/parla.in',
+    output: 'parla.apparmor',
+    configuration: apparmor_conf,
+  )
+  meson.add_install_script(
+    'build-aux/install-apparmor-profile.sh',
+    apparmor_profile,
+  )
+endif
+
 if host_machine.system() == 'windows'
   sources += files('src/platform_win32.c')
   deps += dependency('gio-windows-2.0')

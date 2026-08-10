@@ -73,6 +73,14 @@ namespace Dc.Webxdc {
     }
 
     public void open (Gtk.Window? parent, RpcClient rpc, Message msg) {
+#if !MACOS
+        string sandbox_error;
+        if (!linux_sandbox_available (out sandbox_error)) {
+            if (parent != null) show_error (parent, sandbox_error);
+            else warning ("%s", sandbox_error);
+            return;
+        }
+#endif
         if (windows == null) {
             windows = new HashTable<int, Instance> (direct_hash, direct_equal);
         }
@@ -83,6 +91,36 @@ namespace Dc.Webxdc {
         }
         windows.insert (msg.id, new Instance (rpc, msg));
     }
+
+#if !MACOS
+    /* Ubuntu's AppArmor userns restriction moves an unprofiled process into
+       the unprivileged_userns profile when WebKit starts bubblewrap. That
+       profile cannot write bubblewrap's uid_map, and WebKit treats the helper
+       failure as fatal. Detect this exact host state before creating a web
+       process so an unpackaged build fails closed with an actionable error. */
+    private bool linux_sandbox_available (out string message) {
+        message = "";
+        string restricted;
+        string label;
+        try {
+            FileUtils.get_contents (
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+                out restricted);
+            FileUtils.get_contents ("/proc/self/attr/current", out label);
+        } catch (FileError e) {
+            /* Kernels without Ubuntu's AppArmor knob need no Parla policy. */
+            return true;
+        }
+        if (restricted.strip () != "1" || label.strip () != "unconfined") {
+            return true;
+        }
+        message = "Ubuntu AppArmor is blocking the user namespace required "
+            + "by WebKitGTK's sandbox. Install this Webxdc build with "
+            + "‘sudo make install WITH_WEBXDC=1’, then restart Parla. "
+            + "Webxdc will not run without its web-engine sandbox.";
+        return false;
+    }
+#endif
 
     /** Routed from the WebxdcStatusUpdate core event. */
     public void status_update (int msg_id) {
