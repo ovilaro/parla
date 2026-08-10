@@ -2,6 +2,33 @@ namespace Dc {
 
     public enum DeleteChoice { CANCEL, FOR_ME, FOR_EVERYONE }
 
+    /** Flat, left-aligned button for hand-built popover menus. It closes
+        its popover before emitting selected from an idle. */
+    public class PopoverButton : Gtk.Button {
+        public signal void selected ();
+
+        public PopoverButton (Gtk.Popover popover, string label,
+                              bool destructive = false,
+                              bool hexpand = false) {
+            Object (label: label, hexpand: hexpand);
+            add_css_class ("flat");
+            if (destructive) add_css_class ("menu-destructive");
+            var label_widget = child as Gtk.Label;
+            if (label_widget != null) {
+                label_widget.xalign = 0;
+                label_widget.halign = Gtk.Align.START;
+            }
+            clicked.connect (() => {
+                sensitive = false;
+                popover.popdown ();
+                Idle.add (() => {
+                    selected ();
+                    return Source.REMOVE;
+                });
+            });
+        }
+    }
+
     public static void show_error (Gtk.Widget parent, string message) {
         var d = new Adw.AlertDialog ("Error", message);
         d.add_response ("ok", "OK");
@@ -46,33 +73,9 @@ namespace Dc {
         return DeleteChoice.CANCEL;
     }
 
-    /** Flat, left-aligned button for hand-built popover menus. Disables
-        itself on click and runs the action from an idle so the popover
-        can close first. Shared by the message context menu, the gallery
-        dialog and friends. */
-    public static Gtk.Button popover_menu_button (Gtk.Popover popover,
-                                                  string label,
-                                                  bool destructive = false,
-                                                  bool hexpand = false) {
-        var btn = new Gtk.Button.with_label (label);
-        btn.add_css_class ("flat");
-        if (destructive) btn.add_css_class ("menu-destructive");
-        var child = btn.child as Gtk.Label;
-        if (child != null) {
-            child.xalign = 0;
-            child.halign = Gtk.Align.START;
-        }
-        btn.hexpand = hexpand;
-        btn.clicked.connect (() => {
-            btn.sensitive = false;
-            popover.popdown ();
-        });
-        return btn;
-    }
-
     /** Skeleton for hand-built popover menus: a no-arrow popover pointing
         at (x, y) in parent whose child is a vertical "menu" box ready for
-        popover_menu_button rows. Unparents itself after closing. */
+        PopoverButton rows. Unparents itself after closing. */
     public static Gtk.Popover popover_menu (Gtk.Widget parent,
                                             double x, double y,
                                             out Gtk.Box vbox) {

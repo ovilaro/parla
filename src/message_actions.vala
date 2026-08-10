@@ -41,63 +41,33 @@ namespace Dc {
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            var reply_btn = popover_menu_button (popover, "Reply");
-            reply_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    start_replying (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            var reply_btn = new PopoverButton (popover, "Reply");
+            reply_btn.selected.connect (() => start_replying (msg_id));
             vbox.append (reply_btn);
 
-            var forward_btn = popover_menu_button (popover, "Forward\u2026");
-            forward_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    start_forwarding (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            var forward_btn = new PopoverButton (popover, "Forward\u2026");
+            forward_btn.selected.connect (() => start_forwarding (msg_id));
             vbox.append (forward_btn);
 
             bool msg_is_pinned = msg != null
                 ? msg.is_pinned : pinned.is_pinned (msg_id);
-            var pin_btn = popover_menu_button (popover,
+            var pin_btn = new PopoverButton (popover,
                 msg_is_pinned ? "Unpin" : "Pin");
-            pin_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    pinned.toggle_pin.begin (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            pin_btn.selected.connect (() => pinned.toggle_pin.begin (msg_id));
             vbox.append (pin_btn);
 
             if (msg != null && msg.can_edit_text) {
-                var edit_btn = popover_menu_button (popover, "Edit");
-                edit_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        start_editing (msg_id);
-                        return Source.REMOVE;
-                    });
-                });
+                var edit_btn = new PopoverButton (popover, "Edit");
+                edit_btn.selected.connect (() => start_editing (msg_id));
                 vbox.append (edit_btn);
             }
 
-            var select_btn = popover_menu_button (popover, "Select...");
-            select_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    select_requested (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            var select_btn = new PopoverButton (popover, "Select...");
+            select_btn.selected.connect (() => select_requested (msg_id));
             vbox.append (select_btn);
 
-            var details_btn = popover_menu_button (popover, "Details...");
-            details_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    show_details (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            var details_btn = new PopoverButton (popover, "Details...");
+            details_btn.selected.connect (() => show_details (msg_id));
             vbox.append (details_btn);
 
             /* Save file (for messages with attachments) */
@@ -105,13 +75,9 @@ namespace Dc {
                 msg.file_path.length > 0) {
                 string fpath = msg.file_path;
                 string? fname = msg.file_name;
-                var save_btn = popover_menu_button (popover, "Save file");
-                save_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        window.save_attachment.begin (fpath, fname);
-                        return Source.REMOVE;
-                    });
-                });
+                var save_btn = new PopoverButton (popover, "Save file");
+                save_btn.selected.connect (() =>
+                    window.save_attachment.begin (fpath, fname));
                 vbox.append (save_btn);
             }
 
@@ -119,38 +85,26 @@ namespace Dc {
             if (msg != null && msg.is_audio_file () && msg.has_local_file
                 && Transcriber.available ()) {
                 string apath = msg.file_path;
-                var transcribe_btn = popover_menu_button (popover, "Transcribe");
-                transcribe_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        Transcriber.shared ().transcribe (apath);
-                        return Source.REMOVE;
-                    });
-                });
+                var transcribe_btn = new PopoverButton (popover, "Transcribe");
+                transcribe_btn.selected.connect (() =>
+                    Transcriber.shared ().transcribe (apath));
                 vbox.append (transcribe_btn);
             }
 
             /* Collect sticker attachments into a local pack */
             if (msg != null && msg.is_sticker_file () && msg.has_local_file) {
                 string spath = msg.file_path;
-                var sticker_btn = popover_menu_button (popover, "Add Sticker…");
-                sticker_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        StickerManagerDialog.prompt_add_sticker (window, spath);
-                        return Source.REMOVE;
-                    });
-                });
+                var sticker_btn = new PopoverButton (popover, "Add Sticker…");
+                sticker_btn.selected.connect (() =>
+                    StickerManagerDialog.prompt_add_sticker (window, spath));
                 vbox.append (sticker_btn);
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            var delete_btn = popover_menu_button (popover, "Delete…", true);
-            delete_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    confirm_delete_message.begin (msg_id, is_outgoing);
-                    return Source.REMOVE;
-                });
-            });
+            var delete_btn = new PopoverButton (popover, "Delete…", true);
+            delete_btn.selected.connect (() =>
+                confirm_delete_message.begin (msg_id, is_outgoing));
             vbox.append (delete_btn);
 
             preserve_scroll_until_closed (popover);

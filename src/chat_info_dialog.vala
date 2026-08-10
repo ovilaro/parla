@@ -180,9 +180,7 @@ namespace Dc {
 
                 if (is_group) {
                     var change_avatar_btn = flat_button ("Change Avatar");
-                    change_avatar_btn.clicked.connect (() => {
-                        pick_avatar.begin ();
-                    });
+                    change_avatar_btn.clicked.connect (() => pick_avatar.begin ());
                     change_avatar_btn.halign = Gtk.Align.CENTER;
                     content.append (change_avatar_btn);
                 }
@@ -199,16 +197,14 @@ namespace Dc {
                 if (is_dm_chat && dm_contact_id > 1) {
                     var edit_contact_btn = flat_icon_button (
                         "document-edit-symbolic", "Edit contact name");
-                    edit_contact_btn.clicked.connect (() => {
-                        show_edit_contact_name_dialog (dm_contact_id, name_lbl);
-                    });
+                    edit_contact_btn.clicked.connect (() =>
+                        show_edit_contact_name_dialog (dm_contact_id, name_lbl));
                     name_box.append (edit_contact_btn);
                 } else if (is_group) {
                     var edit_group_btn = flat_icon_button (
                         "document-edit-symbolic", "Edit group name");
-                    edit_group_btn.clicked.connect (() => {
-                        show_edit_group_name_dialog (name_lbl);
-                    });
+                    edit_group_btn.clicked.connect (() =>
+                        show_edit_group_name_dialog (name_lbl));
                     name_box.append (edit_group_btn);
                 }
 
@@ -321,9 +317,8 @@ namespace Dc {
                     if (is_group) {
                         var add_member_btn = flat_icon_button (
                             "list-add-symbolic", "Add member");
-                        add_member_btn.clicked.connect (() => {
-                            add_member_dialog.begin ();
-                        });
+                        add_member_btn.clicked.connect (() =>
+                            add_member_dialog.begin ());
                         header_box.append (add_member_btn);
                     }
 
@@ -357,33 +352,28 @@ namespace Dc {
                 var clear_row = action_row ("Clear Chat",
                     "Remove messages from this device",
                     "edit-clear-symbolic");
-                clear_row.activated.connect (() => {
-                    confirm_clear_history.begin (false);
-                });
+                clear_row.activated.connect (() =>
+                    confirm_clear_history.begin (false));
                 actions_list.append (clear_row);
 
                 var clear_sent_row = action_row (
                     "Clear Sent Messages for Everyone",
                     "Delete messages you sent for all participants",
                     "edit-delete-symbolic");
-                clear_sent_row.activated.connect (() => {
-                    confirm_clear_history.begin (true);
-                });
+                clear_sent_row.activated.connect (() =>
+                    confirm_clear_history.begin (true));
                 actions_list.append (clear_sent_row);
 
                 if (is_group) {
                     var leave_row = action_row ("Leave Group",
                         "Stop receiving messages", "system-log-out-symbolic");
-                    leave_row.activated.connect (() => {
-                        confirm_leave_group.begin ();
-                    });
+                    leave_row.activated.connect (() => confirm_leave_group.begin ());
                     actions_list.append (leave_row);
                     var disband_row = action_row ("Disband Group",
                         "Remove all members and delete messages",
                         "edit-delete-symbolic");
-                    disband_row.activated.connect (() => {
-                        confirm_disband_group.begin ();
-                    });
+                    disband_row.activated.connect (() =>
+                        confirm_disband_group.begin ());
                     actions_list.append (disband_row);
                 }
 
@@ -393,9 +383,7 @@ namespace Dc {
 
                 var delete_row = action_row ("Delete for Me",
                     "Remove from your chat list", "user-trash-symbolic");
-                delete_row.activated.connect (() => {
-                    confirm_delete_chat.begin ();
-                });
+                delete_row.activated.connect (() => confirm_delete_chat.begin ());
                 actions_list.append (delete_row);
 
                 content.append (actions_list);
@@ -425,10 +413,8 @@ namespace Dc {
                 string addr = contact.address;
                 var copy_btn = flat_icon_button (
                     "edit-copy-symbolic", "Copy email address");
-                copy_btn.clicked.connect (() => {
-                    var clipboard = this.get_clipboard ();
-                    clipboard.set_text (addr);
-                });
+                copy_btn.clicked.connect (() =>
+                    this.get_clipboard ().set_text (addr));
                 row.add_suffix (copy_btn);
             }
 
@@ -436,9 +422,7 @@ namespace Dc {
                 int cid = contact.id;
                 var remove_btn = flat_icon_button (
                     "user-trash-symbolic", "Remove from group", true);
-                remove_btn.clicked.connect (() => {
-                    remove_member.begin (cid, row);
-                });
+                remove_btn.clicked.connect (() => remove_member.begin (cid, row));
                 row.add_suffix (remove_btn);
             }
 

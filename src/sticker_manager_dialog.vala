@@ -319,26 +319,14 @@ namespace Dc {
         private void show_sticker_menu (Sticker sticker,
                                         Gtk.Widget parent,
                                         double x, double y) {
-            var popover = new Gtk.Popover ();
-            popover.has_arrow = false;
-            popover.set_parent (parent);
-            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+            Gtk.Box vbox;
+            var popover = popover_menu (parent, x, y, out vbox);
 
-            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
-            vbox.add_css_class ("menu");
-            vbox.margin_start = 8;
-            vbox.margin_end = 8;
-            vbox.margin_top = 8;
-            vbox.margin_bottom = 8;
-
-            var copy_btn = popover_button (popover, "Copy File Path");
-            copy_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    this.get_clipboard ().set_text (
-                        StickerStore.sticker_path (sticker.file_name));
-                    app_window.show_toast ("File path copied");
-                    return Source.REMOVE;
-                });
+            var copy_btn = new PopoverButton (popover, "Copy File Path");
+            copy_btn.selected.connect (() => {
+                this.get_clipboard ().set_text (
+                    StickerStore.sticker_path (sticker.file_name));
+                app_window.show_toast ("File path copied");
             });
             vbox.append (copy_btn);
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -348,22 +336,19 @@ namespace Dc {
                 if (other == sticker.pack) continue;
                 has_move_targets = true;
                 string dest = other;
-                var move_btn = popover_button (popover,
+                var move_btn = new PopoverButton (popover,
                     "Move to \"%s\"".printf (dest));
-                move_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        try {
-                            app_window.show_toast (
-                                StickerStore.move_sticker (sticker, dest)
-                                    ? "Sticker moved to \"%s\"".printf (dest)
-                                    : "Sticker is already in \"%s\"".printf (dest));
-                        } catch (Error e) {
-                            show_error (this,
-                                "Could not move sticker: " + e.message);
-                        }
-                        reload_stickers ();
-                        return Source.REMOVE;
-                    });
+                move_btn.selected.connect (() => {
+                    try {
+                        app_window.show_toast (
+                            StickerStore.move_sticker (sticker, dest)
+                                ? "Sticker moved to \"%s\"".printf (dest)
+                                : "Sticker is already in \"%s\"".printf (dest));
+                    } catch (Error e) {
+                        show_error (this,
+                            "Could not move sticker: " + e.message);
+                    }
+                    reload_stickers ();
                 });
                 vbox.append (move_btn);
             }
@@ -371,22 +356,11 @@ namespace Dc {
                 vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
             }
 
-            var delete_btn = popover_button (popover, "Delete…", true);
-            delete_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    confirm_delete_sticker.begin (sticker);
-                    return Source.REMOVE;
-                });
-            });
+            var delete_btn = new PopoverButton (popover, "Delete…", true);
+            delete_btn.selected.connect (() =>
+                confirm_delete_sticker.begin (sticker));
             vbox.append (delete_btn);
 
-            popover.child = vbox;
-            popover.closed.connect (() => {
-                Idle.add (() => {
-                    popover.unparent ();
-                    return Source.REMOVE;
-                });
-            });
             popover.popup ();
         }
 
@@ -398,23 +372,6 @@ namespace Dc {
                 StickerStore.delete_sticker (sticker);
                 reload_stickers ();
             }
-        }
-
-        private static Gtk.Button popover_button (Gtk.Popover popover,
-                                                  string label,
-                                                  bool destructive = false) {
-            var btn = new Gtk.Button.with_label (label);
-            btn.add_css_class ("flat");
-            if (destructive) btn.add_css_class ("menu-destructive");
-            var child = btn.child as Gtk.Label;
-            if (child != null) {
-                child.xalign = 0;
-                child.halign = Gtk.Align.START;
-            }
-            btn.clicked.connect (() => {
-                popover.popdown ();
-            });
-            return btn;
         }
 
         private void on_rename_pack () {

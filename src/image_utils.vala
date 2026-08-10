@@ -1,43 +1,28 @@
 namespace Dc {
 
+    [CCode (lower_case_cprefix = "parla_pixbuf_animation_",
+            cheader_filename = "pixbuf_animation_compat.h")]
     namespace PixbufAnimationCompat {
-        [CCode (cname = "parla_pixbuf_animation_load",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern Gdk.PixbufAnimation load (string path) throws Error;
-
-        [CCode (cname = "parla_pixbuf_animation_get_static_image",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern unowned Gdk.Pixbuf get_static_image (
             Gdk.PixbufAnimation animation);
-
-        [CCode (cname = "parla_pixbuf_animation_get_iter",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern Gdk.PixbufAnimationIter get_iter (
             Gdk.PixbufAnimation animation);
-
-        [CCode (cname = "parla_pixbuf_animation_iter_get_pixbuf",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern unowned Gdk.Pixbuf iter_get_pixbuf (
             Gdk.PixbufAnimationIter iter);
-
-        [CCode (cname = "parla_pixbuf_animation_iter_get_delay_time",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern int iter_get_delay_time (Gdk.PixbufAnimationIter iter);
-
-        [CCode (cname = "parla_pixbuf_animation_iter_advance",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern bool iter_advance (Gdk.PixbufAnimationIter iter);
-
-        [CCode (cname = "parla_pixbuf_animation_is_static_image",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern bool is_static_image (Gdk.PixbufAnimation animation);
-
-        [CCode (cname = "parla_pixbuf_animation_get_width",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern int get_width (Gdk.PixbufAnimation animation);
-
-        [CCode (cname = "parla_pixbuf_animation_get_height",
-                cheader_filename = "pixbuf_animation_compat.h")]
+        [CCode (cheader_filename = "pixbuf_animation_compat.h")]
         internal extern int get_height (Gdk.PixbufAnimation animation);
     }
 

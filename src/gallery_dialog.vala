@@ -1194,88 +1194,64 @@ namespace Dc {
             if (m.has_local_file) {
                 string fpath = m.file_path;
                 string? fname = m.file_name;
-                var save_btn = popover_menu_button (popover, "Save As…");
-                save_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        app_window.save_attachment.begin (fpath, fname);
-                        return Source.REMOVE;
-                    });
-                });
+                var save_btn = new PopoverButton (popover, "Save As…");
+                save_btn.selected.connect (() =>
+                    app_window.save_attachment.begin (fpath, fname));
                 vbox.append (save_btn);
             }
 
             int msg_id = m.id;
-            var forward_btn = popover_menu_button (popover, "Forward…");
-            forward_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    MessageActions.forward_with_picker (app_window, rpc,
-                                                        new int[] { msg_id });
-                    return Source.REMOVE;
-                });
-            });
+            var forward_btn = new PopoverButton (popover, "Forward…");
+            forward_btn.selected.connect (() =>
+                MessageActions.forward_with_picker (
+                    app_window, rpc, new int[] { msg_id }));
             vbox.append (forward_btn);
 
-            var select_btn = popover_menu_button (popover, "Select…");
-            select_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    enter_selection_mode (msg_id);
-                    return Source.REMOVE;
-                });
-            });
+            var select_btn = new PopoverButton (popover, "Select…");
+            select_btn.selected.connect (() => enter_selection_mode (msg_id));
             vbox.append (select_btn);
 
-            var view_btn = popover_menu_button (
+            var view_btn = new PopoverButton (
                 popover, "View in Conversation");
-            view_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    /* Each closing dialog restores the window focus it saved
-                       when presented, and such a focus shift can scroll the
-                       chat. Close the stack bottom-up through the closed
-                       signals and jump only once the last one is gone, so
-                       nothing runs after the jump to drag the viewport away. */
-                    int target_chat = chat_id;
-                    var presenter = presenter_dialog;
-                    closed.connect (() => {
-                        if (presenter != null) {
-                            presenter.closed.connect (() => {
-                                app_window.open_conversation_message (
-                                    target_chat, msg_id);
-                            });
-                            presenter.close ();
-                        } else {
+            view_btn.selected.connect (() => {
+                /* Each closing dialog restores the window focus it saved
+                   when presented, and such a focus shift can scroll the
+                   chat. Close the stack bottom-up through the closed
+                   signals and jump only once the last one is gone, so
+                   nothing runs after the jump to drag the viewport away. */
+                int target_chat = chat_id;
+                var presenter = presenter_dialog;
+                closed.connect (() => {
+                    if (presenter != null) {
+                        presenter.closed.connect (() => {
                             app_window.open_conversation_message (
                                 target_chat, msg_id);
-                        }
-                    });
-                    close ();
-                    return Source.REMOVE;
+                        });
+                        presenter.close ();
+                    } else {
+                        app_window.open_conversation_message (
+                            target_chat, msg_id);
+                    }
                 });
+                close ();
             });
             vbox.append (view_btn);
 
             /* Collect sticker attachments into a local pack */
             if (m.is_sticker_file () && m.has_local_file) {
                 string spath = m.file_path;
-                var sticker_btn = popover_menu_button (popover, "Add Sticker…");
-                sticker_btn.clicked.connect (() => {
-                    Idle.add (() => {
-                        StickerManagerDialog.prompt_add_sticker (app_window, spath);
-                        return Source.REMOVE;
-                    });
-                });
+                var sticker_btn = new PopoverButton (popover, "Add Sticker…");
+                sticker_btn.selected.connect (() =>
+                    StickerManagerDialog.prompt_add_sticker (app_window, spath));
                 vbox.append (sticker_btn);
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
             bool is_outgoing = m.is_outgoing;
-            var delete_btn = popover_menu_button (popover, "Delete…", true);
-            delete_btn.clicked.connect (() => {
-                Idle.add (() => {
-                    confirm_delete_ids.begin ({ msg_id }, is_outgoing);
-                    return Source.REMOVE;
-                });
-            });
+            var delete_btn = new PopoverButton (popover, "Delete…", true);
+            delete_btn.selected.connect (() =>
+                confirm_delete_ids.begin ({ msg_id }, is_outgoing));
             vbox.append (delete_btn);
 
             popover.popup ();

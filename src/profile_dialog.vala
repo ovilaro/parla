@@ -152,10 +152,8 @@ namespace Dc {
 
             content.append (fields_grid);
 
-            Gtk.Button invite_button;
-            content.append (build_profile_action_row ("Invite Code",
-                "Show a contact invite QR code", "Share your contact",
-                out invite_button));
+            var invite_button = append_profile_action_row (content, "Invite Code",
+                "Show a contact invite QR code", "Share your contact");
             invite_button.clicked.connect (show_invite_code_dialog);
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -168,26 +166,22 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            Gtk.Button relays_button;
-            content.append (build_profile_action_row ("Relays...",
-                "Manage chatmail relays for this profile", "Manage transports",
-                out relays_button));
+            var relays_button = append_profile_action_row (content, "Relays...",
+                "Manage chatmail relays for this profile", "Manage transports");
             relays_button.clicked.connect (show_relays_dialog);
-            Gtk.Button second_device_button;
-            content.append (build_profile_action_row ("Add Second Device",
+            var second_device_button = append_profile_action_row (
+                content, "Add Second Device",
                 "Show a setup QR code for another device",
-                "Transfer to another device", out second_device_button));
+                "Transfer to another device");
             second_device_button.clicked.connect (show_second_device_dialog);
 
             content.append (build_default_account_row ());
 
-            Gtk.Button delete_button;
-            content.append (build_profile_action_row ("Delete Profile",
+            var delete_button = append_profile_action_row (content,
+                "Delete Profile",
                 "Delete local profile data", "Delete local profile data",
-                out delete_button, "destructive-action"));
-            delete_button.clicked.connect (() => {
-                confirm_delete_account.begin ();
-            });
+                "destructive-action");
+            delete_button.clicked.connect (() => confirm_delete_account.begin ());
 
             var scroll = new Gtk.ScrolledWindow ();
             scroll.vexpand = true;
@@ -202,11 +196,11 @@ namespace Dc {
             load_connectivity_summary.begin ();
         }
 
-        private Gtk.Widget build_profile_action_row (string button_label,
-                                                     string tooltip,
-                                                     string caption_text,
-                                                     out Gtk.Button button,
-                                                     string? css_class = null) {
+        private Gtk.Button append_profile_action_row (Gtk.Box content,
+                                                      string button_label,
+                                                      string tooltip,
+                                                      string caption_text,
+                                                      string? css_class = null) {
             var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             box.margin_top = 4;
 
@@ -214,13 +208,14 @@ namespace Dc {
             caption.valign = Gtk.Align.CENTER;
             box.append (caption);
 
-            button = new Gtk.Button.with_label (button_label);
+            var button = new Gtk.Button.with_label (button_label);
             button.halign = Gtk.Align.END;
             if (css_class != null) button.add_css_class (css_class);
             button.tooltip_text = tooltip;
             box.append (button);
+            content.append (box);
 
-            return box;
+            return button;
         }
 
         private Gtk.Widget build_default_account_row () {
