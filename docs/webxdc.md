@@ -40,15 +40,16 @@ provides the same `Dc.Webxdc` entry points as no-ops, so no other file
 needs conditional compilation and linking stays trivial.
 
 - Apps appear in the chat as an accent-colored card and in the media
-  gallery under **Apps**; both call `Webxdc.open ()`, one window per app
-  instance. Nothing is automatic: the card first offers to download the
-  `.xdc` archive (attachments beyond the auto-download limit stay on the
-  server until then), then shows the app's real name and icon read from
-  the archive, and starts it only on another explicit click.
+  gallery under **Apps**. Clicking either opens the same dialog with
+  **Start App**, **Download File**, and **Cancel**; starting or saving first
+  fetches an archive that is beyond the auto-download limit. A downloaded
+  card shows the app's real name and icon read from the archive. Running
+  instances are still limited to one window per app.
 - Besides the compile-time option there is a runtime switch: **Settings →
   Advanced → Webxdc apps** (`webxdc_apps` in `settings.ini`). Disabled,
-  apps degrade to plain file attachments and the gallery refuses to
-  launch them.
+  the app card stays recognizable and the dialog explains why it cannot
+  start the app, offering only **Download File** and **Cancel**. Builds
+  compiled without Webxdc support use the same download-only flow.
 - Sending an `.xdc` file from Parla announces it with the `Webxdc`
   viewtype, so other clients show it as an app too.
 - Every window gets its own isolated web context with a custom `webxdc:`

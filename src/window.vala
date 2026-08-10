@@ -1526,6 +1526,90 @@ namespace Dc {
             }
         }
 
+        /** One entry point for Webxdc attachments in conversations and the
+            gallery. Unsupported builds and disabled settings deliberately
+            omit Start App instead of offering an action that cannot work. */
+        public async void prompt_webxdc_app (Gtk.Widget parent,
+                                             RpcClient app_rpc,
+                                             Message msg) {
+            bool can_start = Webxdc.AVAILABLE && Webxdc.enabled ();
+            string app_name = msg.display_file_name ("App");
+            if (app_name.down ().has_suffix (".xdc")) {
+                app_name = app_name.substring (0, app_name.length - 4);
+            }
+
+            string title;
+            string body;
+            if (!Webxdc.AVAILABLE) {
+                title = "Cannot Start Webxdc App";
+                body = ("This version of Parla was built without Webxdc "
+                    + "support, so it cannot start “%s”. You can still "
+                    + "download the .xdc file.").printf (app_name);
+            } else if (!Webxdc.enabled ()) {
+                title = "Webxdc Apps Are Disabled";
+                body = ("Webxdc apps are turned off in Settings, so Parla "
+                    + "cannot start “%s”. You can still download the .xdc "
+                    + "file.").printf (app_name);
+            } else {
+                title = "Open Webxdc App?";
+                body = ("Start “%s” in Parla, or download its .xdc file "
+                    + "without opening it.").printf (app_name);
+            }
+
+            var dialog = new Adw.AlertDialog (title, body);
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("download", "Download File");
+            if (can_start) {
+                dialog.add_response ("start", "Start App");
+                dialog.set_response_appearance (
+                    "start", Adw.ResponseAppearance.SUGGESTED);
+                dialog.default_response = "start";
+            } else {
+                dialog.set_response_appearance (
+                    "download", Adw.ResponseAppearance.SUGGESTED);
+                dialog.default_response = "download";
+            }
+            dialog.close_response = "cancel";
+
+            string response = yield dialog.choose (parent, null);
+            if (response == "cancel") return;
+
+            var local_msg = yield ensure_webxdc_file (app_rpc, msg);
+            if (local_msg == null) return;
+            if (response == "start") {
+                Webxdc.open (this, app_rpc, local_msg);
+            } else if (response == "download") {
+                yield save_attachment (local_msg.file_path,
+                                       local_msg.file_name);
+            }
+        }
+
+        private async Message? ensure_webxdc_file (RpcClient app_rpc,
+                                                    Message msg) {
+            if (msg.has_local_file) return msg;
+            if (msg.is_downloading_full_message) {
+                show_toast ("The app file is still downloading");
+                return null;
+            }
+            if (!msg.can_download_full_message) {
+                show_toast ("The app file is not available for download");
+                return null;
+            }
+
+            try {
+                show_toast ("Downloading app…");
+                yield app_rpc.download_full_message (msg.id);
+                var downloaded = yield app_rpc.fetch_message (msg.id);
+                if (downloaded != null && downloaded.has_local_file) {
+                    return downloaded;
+                }
+                show_toast ("The app file has not finished downloading");
+            } catch (Error e) {
+                show_toast ("App download failed: " + e.message);
+            }
+            return null;
+        }
+
         /* ================================================================
          *  Event Loop (delegates to EventHandler)
          * ================================================================ */

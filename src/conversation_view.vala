@@ -336,7 +336,8 @@ namespace Dc {
                 /* These are real buttons, not message-row activation areas.
                    Deny the capture gesture for this pointer sequence so the
                    first click reaches the button unambiguously. */
-                if (pointer_on_css (x, y, { "message-full-text-button" })) {
+                if (pointer_on_css (x, y, { "message-full-text-button",
+                                            "webxdc-card" })) {
                     dc.set_state (Gtk.EventSequenceState.DENIED);
                     dc_last_id = -1;
                     dc_last_time = 0;
@@ -612,11 +613,8 @@ namespace Dc {
                 break;
             case "webxdc":
                 var msg = find_message (message_store, msg_id);
-                if (msg != null && msg.has_local_file)
-                    Webxdc.open (window, rpc, msg);
-                break;
-            case "webxdc-download":
-                rpc.download_full_message.begin (msg_id);
+                if (msg != null)
+                    window.prompt_webxdc_app.begin (window, rpc, msg);
                 break;
             default:
                 msg_actions.show_context_menu (msg_id, is_outgoing,
@@ -2132,6 +2130,10 @@ namespace Dc {
 
         private void on_message_activated (Message msg) {
             if (!msg.has_file) return;
+            if (msg.is_webxdc ()) {
+                window.prompt_webxdc_app.begin (window, rpc, msg);
+                return;
+            }
             if (!msg.has_local_file) {
                 window.show_toast ("File not available");
                 return;

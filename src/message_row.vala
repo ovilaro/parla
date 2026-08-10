@@ -738,9 +738,10 @@ namespace Dc {
                 box.append (widget);
                 return;
             }
-            /* With webxdc disabled (build- or settings-wise) the app falls
-               through to the plain file indicator. */
-            if (msg.is_webxdc () && Webxdc.enabled ()) {
+            /* Keep Webxdc attachments recognizable even when this build
+               cannot run them. The shared options dialog explains the
+               available actions for the current build and settings. */
+            if (msg.is_webxdc ()) {
                 var card = build_webxdc_card (msg);
                 card.halign = Gtk.Align.START;
                 box.append (card);
@@ -751,22 +752,18 @@ namespace Dc {
             box.append (fi);
         }
 
-        /** Webxdc apps show as an accent-colored card with the app's icon
-            and name (once the .xdc is downloaded) like in the official
-            client. Apps never start or download by themselves: the card
-            first asks to download the archive, then to start it;
-            conversation_view routes both actions. */
+        /** Webxdc apps show as one accent-colored control. Both the icon
+            and name open the same capability-aware options dialog. */
         private Gtk.Widget build_webxdc_card (Message msg) {
             bool ready = msg.has_local_file;
             var btn = new Gtk.Button ();
             btn.add_css_class ("webxdc-card");
             btn.focus_on_click = false;
-            btn.tooltip_text = ready ? "Start app" : "Download app";
+            btn.tooltip_text = "Webxdc app options";
 
             var inner = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
             var icon = new Gtk.Image.from_icon_name (
-                ready ? "application-x-executable-symbolic"
-                      : "folder-download-symbolic");
+                "application-x-executable-symbolic");
             icon.pixel_size = 48;
             icon.add_css_class ("webxdc-card-icon");
             inner.append (icon);
@@ -784,19 +781,24 @@ namespace Dc {
             name.ellipsize = Pango.EllipsizeMode.END;
             name.max_width_chars = 24;
             text.append (name);
-            var subtitle = new Gtk.Label (
-                ready ? "Webxdc app · tap to start"
-                      : "Webxdc app · tap to download");
+            string status = !Webxdc.AVAILABLE
+                ? "Webxdc app · download only"
+                : !Webxdc.enabled ()
+                ? "Webxdc app · disabled in Settings"
+                : "Webxdc app · choose an action";
+            var subtitle = new Gtk.Label (status);
             subtitle.add_css_class ("webxdc-card-subtitle");
             subtitle.halign = Gtk.Align.START;
             subtitle.xalign = 0;
+            subtitle.ellipsize = Pango.EllipsizeMode.END;
+            subtitle.max_width_chars = 30;
             text.append (subtitle);
             inner.append (text);
             btn.child = inner;
 
             /* Icon and real name only exist inside the archive, so this
                stays generic until the app is downloaded. */
-            if (ready) {
+            if (ready && Webxdc.AVAILABLE) {
                 Webxdc.card_info.begin (msg.id, (obj, res) => {
                     var info = Webxdc.card_info.end (res);
                     if (info.name != null) name.label = info.name;
@@ -804,7 +806,7 @@ namespace Dc {
                 });
             }
             btn.clicked.connect (() => {
-                action_requested (ready ? "webxdc" : "webxdc-download", btn);
+                action_requested ("webxdc", btn);
             });
             return btn;
         }
