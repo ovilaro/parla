@@ -26,8 +26,12 @@ if command -v cygpath >/dev/null; then
     dist_prefix="$(cygpath -m "$DIST")"
 fi
 
-if [ ! -d "$BUILD_DIR" ]; then
-    meson setup "$BUILD_DIR" "$ROOT" --buildtype="$BUILDTYPE" --prefix="$dist_prefix"
+if [ -f "$BUILD_DIR/build.ninja" ]; then
+    meson setup --reconfigure "$BUILD_DIR" "$ROOT" \
+        --buildtype="$BUILDTYPE" --prefix="$dist_prefix" -Dwerror=true
+else
+    meson setup "$BUILD_DIR" "$ROOT" \
+        --buildtype="$BUILDTYPE" --prefix="$dist_prefix" -Dwerror=true
 fi
 meson compile -C "$BUILD_DIR"
 meson install -C "$BUILD_DIR"

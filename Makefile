@@ -4,6 +4,7 @@ BINDIR?=$(PREFIX)/bin
 DATADIR?=$(PREFIX)/share
 BUILD_DIR?=builddir
 BUILDTYPE?=debug
+WERROR?=true
 UNAME_S := $(shell uname -s)
 RUN_ENV := $(if $(filter Darwin,$(UNAME_S)),. ./scripts/macos/env.sh &&,)
 MACOS_APP_DIR?=dist/macos/Parla.app
@@ -17,7 +18,7 @@ SANITIZER_DEBUG_OPTIONS=-Dstrip=false -Dvala_args=--debug -Dc_args=-g
 .PHONY: all asan tsan run clean install uninstall deb app macos appimage
 
 all:
-	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" $(MESON_OPTIONS); fi
+	$(RUN_ENV) if [ -f "$(BUILD_DIR)/build.ninja" ]; then meson setup --reconfigure "$(BUILD_DIR)" --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" -Dwerror="$(WERROR)" $(MESON_OPTIONS); else meson setup "$(BUILD_DIR)" . --buildtype="$(BUILDTYPE)" --prefix="$(PREFIX)" -Dwerror="$(WERROR)" $(MESON_OPTIONS); fi
 	$(RUN_ENV) meson compile -C "$(BUILD_DIR)"
 
 asan: BUILD_DIR=builddir-asan
