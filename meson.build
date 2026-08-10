@@ -120,6 +120,7 @@ sources = files(
   'src/qr_code_view.vala',
   'src/pinned_messages_manager.vala',
   'src/webxdc_bar.vala',
+  'src/webxdc_manager_dialog.vala',
   'src/quick_switch_dialog.vala',
   'src/event_handler.vala',
   'src/message_details_dialog.vala',

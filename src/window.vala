@@ -1595,6 +1595,28 @@ namespace Dc {
             }
         }
 
+        /** Start (or re-present) a Webxdc instance from the Apps manager.
+            The instance may live in another profile; switch first so the
+            app window talks to the account its chat belongs to. */
+        public async bool run_webxdc_instance (int acct_id, Message msg) {
+            if (!Webxdc.AVAILABLE) {
+                show_toast ("This build of Parla has no Webxdc support");
+                return false;
+            }
+            if (!Webxdc.enabled ()) {
+                show_toast ("Webxdc apps are disabled in Settings");
+                return false;
+            }
+            if (acct_id != rpc.account_id
+                    && !(yield switch_account (acct_id))) {
+                return false;
+            }
+            var local_msg = yield ensure_webxdc_file (rpc, msg);
+            if (local_msg == null) return false;
+            Webxdc.open (this, rpc, local_msg);
+            return true;
+        }
+
         private async Message? ensure_webxdc_file (RpcClient app_rpc,
                                                     Message msg) {
             if (msg.has_local_file) return msg;
@@ -2515,6 +2537,7 @@ namespace Dc {
             window_action ("refresh").activate.connect (() => { load_chats.begin (); });
             window_action ("settings").activate.connect (() => { show_settings_dialog (); });
             window_action ("stickers").activate.connect (() => { show_stickers_dialog (); });
+            window_action ("webxdc-apps").activate.connect (() => { show_webxdc_apps_dialog (); });
             window_action ("shortcuts").activate.connect (() => { show_keyboard_shortcuts_dialog (); });
             window_action ("about").activate.connect (() => { show_about_dialog (); });
             window_action ("quit").activate.connect (() => { handle_primary_q (); });
@@ -2532,6 +2555,7 @@ namespace Dc {
             var s2 = new GLib.Menu ();
             s2.append ("Settings", "win.settings");
             s2.append ("Stickers", "win.stickers");
+            s2.append ("Apps", "win.webxdc-apps");
             var s3 = new GLib.Menu ();
             s3.append ("Shortcuts", "win.shortcuts");
             s3.append ("About", "win.about");
@@ -2744,6 +2768,11 @@ namespace Dc {
         private void show_stickers_dialog () {
             if (active_modal != null) return;
             present_modal (new StickerManagerDialog (this));
+        }
+
+        private void show_webxdc_apps_dialog () {
+            if (!can_show_rpc_modal ()) return;
+            present_modal (new WebxdcManagerDialog (this, rpc));
         }
 
         private void show_settings_dialog () {
