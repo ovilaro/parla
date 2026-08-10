@@ -25,6 +25,7 @@ namespace Dc {
             msg.is_info = json_bool (obj, "isInfo");
             msg.is_forwarded = json_bool (obj, "isForwarded");
             msg.is_edited = json_bool (obj, "isEdited");
+            msg.is_pinned = json_bool (obj, "isPinned");
             msg.override_sender_name = json_str (obj, "overrideSenderName");
 
             msg.file_path = json_str (obj, "file");

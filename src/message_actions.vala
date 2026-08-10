@@ -49,11 +49,12 @@ namespace Dc {
                 start_forwarding (msg_id);
             }));
 
-            bool msg_is_pinned = pinned.is_pinned (msg_id);
+            bool msg_is_pinned = msg != null
+                ? msg.is_pinned : pinned.is_pinned (msg_id);
             vbox.append (popover_menu_button (popover,
                 msg_is_pinned ? "Unpin" : "Pin",
                 () => {
-                    pinned.toggle_pin (msg_id);
+                    pinned.toggle_pin.begin (msg_id);
                 }));
 
             if (msg != null && msg.can_edit_text) {

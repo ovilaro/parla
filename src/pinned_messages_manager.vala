@@ -5,6 +5,7 @@ namespace Dc {
         public Gtk.Revealer revealer { get; private set; }
 
         public signal void scroll_requested (int msg_id);
+        public signal void operation_failed (string message);
 
         private unowned RpcClient? rpc = null;
         private Gtk.Box bar_content;
@@ -12,6 +13,9 @@ namespace Dc {
         private int current_chat_id = 0;
         private unowned GLib.ListStore message_store;
         private unowned SettingsManager settings;
+        private bool rpc_available = true;
+        private uint load_generation = 0;
+        private uint bar_generation = 0;
 
 
         public PinnedMessagesManager (GLib.ListStore message_store,
@@ -29,22 +33,35 @@ namespace Dc {
 
         public void set_rpc (RpcClient r) { this.rpc = r; }
 
-        public void load_for_chat (int chat_id) {
+        public async void load_for_chat (int chat_id) {
             current_chat_id = chat_id;
-            msg_ids = {};
-            var kf = new KeyFile ();
+            uint generation = ++load_generation;
+            if (!rpc_available) {
+                load_local_for_chat (chat_id);
+                sync_store_state ();
+                return;
+            }
+            if (rpc == null) {
+                msg_ids = {};
+                return;
+            }
+
             try {
-                kf.load_from_file (SettingsManager.get_config_path (),
-                                   KeyFileFlags.NONE);
-                string key = "chat_%d".printf (chat_id);
-                string val = kf.get_string ("PinnedMessages", key);
-                foreach (string s in val.split (",")) {
-                    string trimmed = s.strip ();
-                    if (trimmed.length > 0) {
-                        msg_ids += int.parse (trimmed);
-                    }
+                int[] loaded_ids = yield rpc.get_pinned_messages (chat_id);
+                if (generation != load_generation || chat_id != current_chat_id)
+                    return;
+                msg_ids = loaded_ids;
+                sync_store_state ();
+            } catch (Error e) {
+                if (generation != load_generation) return;
+                if (is_missing_pin_rpc (e)) {
+                    rpc_available = false;
+                    load_local_for_chat (chat_id);
+                    sync_store_state ();
+                } else {
+                    warning ("load pinned messages: %s", e.message);
                 }
-            } catch (Error e) { /* no pinned messages for this chat */ }
+            }
         }
 
         public bool is_pinned (int msg_id) {
@@ -54,40 +71,58 @@ namespace Dc {
             return false;
         }
 
-        public void toggle_pin (int msg_id) {
-            if (is_pinned (msg_id)) {
-                int[] new_ids = {};
-                foreach (int id in msg_ids) {
-                    if (id != msg_id) new_ids += id;
-                }
-                msg_ids = new_ids;
-            } else {
-                msg_ids += msg_id;
+        public async void toggle_pin (int msg_id) {
+            if (!rpc_available) {
+                toggle_local_pin (msg_id);
+                yield update_bar ();
+                return;
             }
-            save_for_chat (current_chat_id, msg_ids);
+            if (rpc == null) {
+                operation_failed ("Failed to update pin: RPC is not connected");
+                return;
+            }
 
-            var m = find_message (message_store, msg_id);
-            if (m != null) {
-                m.is_pinned = is_pinned (msg_id);
-                m.notify_property ("is-pinned");
-                refresh_in_store (msg_id);
+            var loaded_message = find_message (message_store, msg_id);
+            bool current_state = loaded_message != null
+                ? loaded_message.is_pinned : is_pinned (msg_id);
+            bool new_state = !current_state;
+            try {
+                yield rpc.set_pinned_message_state (msg_id, new_state);
+                set_cached_state (msg_id, new_state);
+                update_message_state (msg_id, new_state);
+
+                /* Core orders pins by message date, so refresh instead of
+                   treating the local insertion order as authoritative. */
+                yield load_for_chat (current_chat_id);
+                yield update_bar ();
+            } catch (Error e) {
+                if (is_missing_pin_rpc (e)) {
+                    rpc_available = false;
+                    /* v2.57 and older do not expose message pinning. Keep
+                       Parla's previous on-device behavior on those engines. */
+                    toggle_local_pin (msg_id);
+                    yield update_bar ();
+                } else {
+                    operation_failed ("Failed to update pin: " + e.message);
+                }
             }
-            update_bar.begin ();
         }
 
         public async void update_bar () {
-            /* Clear existing pinned entries */
-            Gtk.Widget? child;
-            while ((child = bar_content.get_first_child ()) != null) {
-                bar_content.remove (child);
-            }
+            uint generation = ++bar_generation;
+            var next_content = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            next_content.add_css_class ("pinned-bar");
 
             if (msg_ids.length == 0) {
+                if (generation != bar_generation) return;
+                bar_content = next_content;
+                revealer.child = bar_content;
                 revealer.reveal_child = false;
                 return;
             }
 
-            foreach (int pin_id in msg_ids) {
+            int[] displayed_ids = msg_ids;
+            foreach (int pin_id in displayed_ids) {
                 string? text = null;
                 string? sender = null;
 
@@ -109,6 +144,7 @@ namespace Dc {
                     } catch (Error e) { /* skip on error */ }
                 }
 
+                if (generation != bar_generation) return;
                 if (text == null && sender == null) continue;
 
                 var row_btn = new Gtk.Button ();
@@ -156,40 +192,88 @@ namespace Dc {
                 unpin_btn.valign = Gtk.Align.CENTER;
                 unpin_btn.tooltip_text = "Unpin";
                 unpin_btn.clicked.connect (() => {
-                    toggle_pin (captured_id);
+                    toggle_pin.begin (captured_id);
                 });
                 outer.append (unpin_btn);
 
-                bar_content.append (outer);
+                next_content.append (outer);
             }
 
+            if (generation != bar_generation) return;
+            bar_content = next_content;
+            revealer.child = bar_content;
             revealer.reveal_child = bar_content.get_first_child () != null;
         }
 
-        private void save_for_chat (int chat_id, int[] ids) {
+        private void set_cached_state (int msg_id, bool pinned) {
+            int[] next_ids = {};
+            foreach (int id in msg_ids) {
+                if (id != msg_id) next_ids += id;
+            }
+            if (pinned) next_ids += msg_id;
+            msg_ids = next_ids;
+        }
+
+        private void toggle_local_pin (int msg_id) {
+            bool new_state = !is_pinned (msg_id);
+            set_cached_state (msg_id, new_state);
+            save_local_for_chat (current_chat_id, msg_ids);
+            update_message_state (msg_id, new_state);
+        }
+
+        private void load_local_for_chat (int chat_id) {
+            msg_ids = {};
+            var kf = new KeyFile ();
+            try {
+                kf.load_from_file (SettingsManager.get_config_path (),
+                                   KeyFileFlags.NONE);
+                string value = kf.get_string ("PinnedMessages",
+                    "chat_%d".printf (chat_id));
+                foreach (string item in value.split (",")) {
+                    string id = item.strip ();
+                    if (id.length > 0) msg_ids += int.parse (id);
+                }
+            } catch (Error e) { /* No local pins for this chat. */ }
+        }
+
+        private void save_local_for_chat (int chat_id, int[] ids) {
             string key = "chat_%d".printf (chat_id);
             settings.save_to_file ((kf) => {
-                if (ids.length > 0) {
-                    var sb = new StringBuilder ();
-                    foreach (int id in ids) {
-                        if (sb.len > 0) sb.append (",");
-                        sb.append (id.to_string ());
-                    }
-                    kf.set_string ("PinnedMessages", key, sb.str);
-                } else {
+                if (ids.length == 0) {
                     try {
                         kf.remove_key ("PinnedMessages", key);
                     } catch (Error e) { }
+                    return;
                 }
+
+                var value = new StringBuilder ();
+                foreach (int id in ids) {
+                    if (value.len > 0) value.append (",");
+                    value.append (id.to_string ());
+                }
+                kf.set_string ("PinnedMessages", key, value.str);
             });
         }
 
-        private void refresh_in_store (int msg_id) {
-            int idx = find_message_index (message_store, msg_id);
-            if (idx < 0) return;
-            var m = (Message) message_store.get_item (idx);
-            Object[] replacements = { m };
-            message_store.splice (idx, 1, replacements);
+        private void sync_store_state () {
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var msg = (Message) message_store.get_item (i);
+                update_message_state (msg.id, is_pinned (msg.id));
+            }
+        }
+
+        private void update_message_state (int msg_id, bool pinned) {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null || msg.is_pinned == pinned) return;
+            msg.is_pinned = pinned;
+            msg.notify_property ("is-pinned");
+        }
+
+        private static bool is_missing_pin_rpc (Error e) {
+            string msg = e.message.down ();
+            return "method not found" in msg
+                || "procedure not found" in msg
+                || "unknown method" in msg;
         }
     }
 }

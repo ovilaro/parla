@@ -125,6 +125,9 @@ namespace Dc {
             pinned = new PinnedMessagesManager (message_store, settings);
             pinned.set_rpc (rpc);
             pinned.scroll_requested.connect ((mid) => { scroll_to_message (mid); });
+            pinned.operation_failed.connect ((message) => {
+                window.show_toast (message);
+            });
 
             media_bar = new ConversationMediaBar ();
             media_bar.previous_requested.connect (() => {
@@ -605,7 +608,7 @@ namespace Dc {
                 msg_actions.start_forwarding (msg_id);
                 break;
             case "pin":
-                pinned.toggle_pin (msg_id);
+                pinned.toggle_pin.begin (msg_id);
                 break;
             case "webxdc":
                 var msg = find_message (message_store, msg_id);
@@ -978,7 +981,6 @@ namespace Dc {
                 }
                 bool is_current = (window.current_chat_id == this.chat_id);
                 if (is_current) msg.highlighted = true;
-                msg.is_pinned = pinned.is_pinned (msg.id);
                 msg.selection_visible = selection_mode;
                 insert_message_sorted (msg);
                 if (window.is_chat_visible (this.chat_id)
@@ -1072,7 +1074,6 @@ namespace Dc {
             int idx = find_message_index (message_store, msg_id);
             if (idx < 0) return;
             var old_msg = (Message) message_store.get_item (idx);
-            new_msg.is_pinned = old_msg.is_pinned;
             new_msg.selection_visible = old_msg.selection_visible;
             new_msg.selected = old_msg.selected;
             preserve_full_message_state (old_msg, new_msg);
@@ -1452,7 +1453,7 @@ namespace Dc {
                 var messages = yield fetch_messages_batch (
                     loaded_start_index, all_msg_ids.get_length ());
 
-                pinned.load_for_chat (chat_id);
+                yield pinned.load_for_chat (chat_id);
 
                 loading_chat = true;
                 goal_generation++;

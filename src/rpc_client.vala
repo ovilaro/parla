@@ -440,6 +440,33 @@ namespace Dc {
                     .build ());
         }
 
+        public async void set_pinned_message_state (int msg_id,
+                                                     bool pinned) throws Error {
+            yield call ("set_pinned_message_state",
+                Params.begin ()
+                    .add_int (account_id)
+                    .add_int (msg_id)
+                    .add_bool (pinned)
+                    .build ());
+        }
+
+        public async int[] get_pinned_messages (int chat_id) throws Error {
+            var result = yield call ("get_pinned_messages",
+                Params.begin ()
+                    .add_int (account_id)
+                    .add_int (chat_id)
+                    .build ());
+            if (result == null ||
+                result.get_node_type () != Json.NodeType.ARRAY) return {};
+
+            var arr = result.get_array ();
+            int[] msg_ids = new int[arr.get_length ()];
+            for (uint i = 0; i < arr.get_length (); i++) {
+                msg_ids[i] = (int) arr.get_int_element (i);
+            }
+            return msg_ids;
+        }
+
         public async void marknoticed_chat (int chat_id) throws Error {
             yield call ("marknoticed_chat",
                 Params.begin ().add_int (account_id).add_int (chat_id).build ());
