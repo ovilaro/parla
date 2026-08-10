@@ -2553,10 +2553,10 @@ namespace Dc {
             s1.append ("New Channel", "win.new-channel");
             s1.append ("Use Invite Link", "win.use-invite-link");
             var s2 = new GLib.Menu ();
-            s2.append ("Settings", "win.settings");
             s2.append ("Stickers", "win.stickers");
             s2.append ("Apps", "win.webxdc-apps");
             var s3 = new GLib.Menu ();
+            s3.append ("Settings", "win.settings");
             s3.append ("Shortcuts", "win.shortcuts");
             s3.append ("About", "win.about");
             var s4 = new GLib.Menu ();
