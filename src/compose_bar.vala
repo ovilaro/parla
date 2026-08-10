@@ -19,7 +19,7 @@ namespace Dc {
 
         private Gtk.TextView text_view;
         private Gtk.Label placeholder_label;
-        private string placeholder_default = "Type a message…";
+        private string placeholder_default = "Type a message";
         private Gtk.Button attach_button;
         private Gtk.MenuButton emoji_button;
         private const string EMOJI_TRIGGER_START_MARK = "parla-emoji-trigger-start";

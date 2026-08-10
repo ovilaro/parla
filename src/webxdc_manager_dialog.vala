@@ -113,6 +113,8 @@ namespace Dc {
             nav.add (new Adw.NavigationPage (toolbar, "Apps"));
             this.child = nav;
 
+            install_escape_close (this);
+
             reload.begin ();
         }
 
