@@ -12,16 +12,91 @@ namespace Dc.Webxdc {
 
     private HashTable<int, Instance>? windows = null;
 
+    /** Signal hub for run-state and preference changes, so UI like the
+        per-chat apps bar can stay in sync without polling. */
+    public class Monitor : Object {
+        public signal void changed (int msg_id);
+        private static Monitor? instance = null;
+        public static Monitor get_default () {
+            if (instance == null) instance = new Monitor ();
+            return instance;
+        }
+    }
+
+    /* The chat the main window is currently showing, fed from window.vala.
+       FOLLOW_CHAT app windows show only while their own chat is on screen.
+       Focus is deliberately not part of this: focusing the app window
+       unfocuses the chat, and hiding on that would fight the user. */
+    private int active_account = 0;
+    private int active_chat = 0;
+    private bool chat_window_visible = true;
+
+    public void set_active_chat (int account_id, int chat_id,
+                                 bool window_visible) {
+        active_account = account_id;
+        active_chat = chat_id;
+        chat_window_visible = window_visible;
+        if (windows == null) return;
+        windows.get_values ().foreach ((app) => {
+            app.apply_follow_visibility ();
+        });
+    }
+
+    public bool is_running (int msg_id) {
+        return windows != null && windows.lookup (msg_id) != null;
+    }
+
+    /** Msg ids of the running app windows started from the given chat. */
+    public int[] running_apps (int account_id, int chat_id) {
+        int[] ids = {};
+        if (windows == null) return ids;
+        windows.get_values ().foreach ((app) => {
+            if (app.belongs_to (account_id, chat_id)) ids += app.msg_id;
+        });
+        return ids;
+    }
+
+    public void stop_app (int msg_id) {
+        var app = windows == null ? null : windows.lookup (msg_id);
+        if (app != null) app.close_view ();
+    }
+
+    /** Raise the app window (and restore it if minimized). */
+    public void present_app (int msg_id) {
+        var app = windows == null ? null : windows.lookup (msg_id);
+        if (app != null) app.present ();
+    }
+
+    /** Minimize the app window, or restore it if already minimized. */
+    public void minimize_app (int msg_id) {
+        var app = windows == null ? null : windows.lookup (msg_id);
+        if (app != null) app.toggle_minimize_view ();
+    }
+
+
     /* Client used for chat-card lookups (window title/icon before an app
        is started); set from window.vala whenever the RpcClient changes.
        Strong ref so a lookup racing an account switch stays valid. */
     private RpcClient? client = null;
     private unowned SettingsManager? config = null;
 
+    private bool follow_setting_connected = false;
+
     public void setup (RpcClient rpc, SettingsManager settings) {
         client = rpc;
         config = settings;
         cards = null;   /* msg ids are per-account */
+        if (!follow_setting_connected) {
+            follow_setting_connected = true;
+            /* Window behavior is a global setting: reapply to every open
+               app window the moment it is changed in Settings. */
+            settings.notify["webxdc-follow-chat"].connect (() => {
+                if (windows == null) return;
+                windows.get_values ().foreach ((app) => {
+                    app.apply_follow_visibility ();
+                });
+            });
+        }
     }
 
     /** Compile-time support plus the runtime settings toggle. */
@@ -90,6 +165,7 @@ namespace Dc.Webxdc {
             return;
         }
         windows.insert (msg.id, new Instance (rpc, msg));
+        Monitor.get_default ().changed (msg.id);
     }
 
 #if !MACOS
@@ -140,18 +216,35 @@ namespace Dc.Webxdc {
            it was started from (account_id is captured for the same reason). */
         private RpcClient rpc;
         private int account_id;
-        private int msg_id;
+        public int msg_id;
+        private int chat_id;
         private int64 last_serial = 0;
         private string self_addr = "unknown";
         private string self_name = "me";
+        private string app_name;
+        private string? chat_name = null;
+        /* Whether follow-chat mode currently keeps the window hidden;
+           tracked so mode/chat changes only touch window state on an
+           actual transition (a plain show would un-minimize, say). */
+        private bool hidden_by_follow = false;
 
         public Instance (RpcClient rpc, Message msg) {
             this.rpc = rpc;
             this.account_id = rpc.account_id;
             this.msg_id = msg.id;
-            create_view (msg.display_file_name ("Webxdc"));
+            this.chat_id = msg.chat_id;
+            this.app_name = msg.display_file_name ("Webxdc");
+            create_view (app_name);
             present ();
             start.begin ();
+        }
+
+        /** "App — Chat": the window belongs to one specific chat, and the
+            title is where that binding is visible to the user. */
+        private string compose_title () {
+            return chat_name != null && chat_name.length > 0
+                ? "%s — %s".printf (app_name, chat_name)
+                : app_name;
         }
 
         private async void start () {
@@ -160,10 +253,22 @@ namespace Dc.Webxdc {
                     .add_int (account_id).add_int (msg_id).build ());
                 var name = info.get_object ()
                     .get_string_member_with_default ("name", "");
-                if (name.length > 0) set_view_title (name);
+                if (name.length > 0) app_name = name;
             } catch (Error e) {
                 warning ("webxdc info: %s", e.message);
             }
+            try {
+                var chat = yield rpc.get_full_chat_by_id_for (account_id,
+                                                              chat_id);
+                if (chat != null) {
+                    var name = chat.get_string_member_with_default ("name",
+                                                                    "");
+                    if (name.length > 0) chat_name = name;
+                }
+            } catch (Error e) {
+                warning ("webxdc chat info: %s", e.message);
+            }
+            set_view_title (compose_title ());
             try {
                 var dn = yield rpc.get_config ("displayname", account_id);
                 if (dn != null && dn.length > 0) self_name = dn;
@@ -297,6 +402,27 @@ namespace Dc.Webxdc {
 
         private void on_view_closed () {
             if (windows != null) windows.remove (msg_id);
+            Monitor.get_default ().changed (msg_id);
+        }
+
+        public bool belongs_to (int account_id, int chat_id) {
+            return this.account_id == account_id && this.chat_id == chat_id;
+        }
+
+        /** Re-evaluate follow-chat visibility against the chat the main
+            window currently shows. Called when the global window-behavior
+            setting changes and whenever window.vala reports a chat or
+            visibility change. */
+        public void apply_follow_visibility () {
+            bool want_hidden = false;
+            if (config != null && config.webxdc_follow_chat) {
+                want_hidden = !(chat_window_visible
+                    && account_id == active_account
+                    && chat_id == active_chat);
+            }
+            if (want_hidden == hidden_by_follow) return;
+            hidden_by_follow = want_hidden;
+            set_view_visible (!want_hidden);
         }
 
 #if MACOS
@@ -342,6 +468,13 @@ namespace Dc.Webxdc {
                 cname = "parla_webxdc_present")]
         private static extern void shim_present (void* handle);
         [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_minimize")]
+        private static extern void shim_minimize (void* handle);
+        [CCode (cheader_filename = "webxdc_macos.h",
+                cname = "parla_webxdc_set_visible")]
+        private static extern void shim_set_visible (void* handle,
+                                                     bool visible);
+        [CCode (cheader_filename = "webxdc_macos.h",
                 cname = "parla_webxdc_close")]
         private static extern void shim_close (void* handle);
         [CCode (cheader_filename = "webxdc_macos.h",
@@ -378,6 +511,15 @@ namespace Dc.Webxdc {
 
         public void present () {
             if (handle != null) shim_present (handle);
+        }
+
+        /* The shim toggles: it can ask NSWindow for isMiniaturized. */
+        public void toggle_minimize_view () {
+            if (handle != null) shim_minimize (handle);
+        }
+
+        private void set_view_visible (bool visible) {
+            if (handle != null) shim_set_visible (handle, visible);
         }
 
         private void load_view (string uri) {
@@ -484,8 +626,35 @@ namespace Dc.Webxdc {
             return false;
         }
 
+        /* Wayland never reports the minimized state back, so remember
+           what the bar did; the surface state covers the backends that
+           do report it (and users unminimizing through the WM there). */
+        private bool minimized_by_bar = false;
+
         public void present () {
+            minimized_by_bar = false;
             if (win != null) win.present ();
+        }
+
+        public void toggle_minimize_view () {
+            if (win == null) return;
+            bool minimized = minimized_by_bar;
+            var toplevel = win.get_surface () as Gdk.Toplevel;
+            if (toplevel != null
+                && (toplevel.state & Gdk.ToplevelState.MINIMIZED) != 0) {
+                minimized = true;
+            }
+            if (minimized) {
+                minimized_by_bar = false;
+                win.present ();
+            } else {
+                minimized_by_bar = true;
+                win.minimize ();
+            }
+        }
+
+        private void set_view_visible (bool visible) {
+            if (win != null) win.set_visible (visible);
         }
 
         private void load_view (string uri) {

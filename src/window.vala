@@ -76,7 +76,17 @@ namespace Dc {
                 _current_chat_id = value;
                 if (events != null) events.active_chat_id = value;
                 update_conversation_header_actions ();
+                sync_webxdc_chat_visibility ();
             }
+        }
+
+        /* Feed the shown-chat state to the Webxdc runner so app windows in
+           follow-chat mode track their chat. Deliberately based on `visible`
+           and not `is_active`: focusing the app window itself unfocuses this
+           one, and hiding on focus loss would fight the user. */
+        private void sync_webxdc_chat_visibility () {
+            Webxdc.set_active_chat (rpc != null ? rpc.account_id : 0,
+                                    _current_chat_id, this.visible);
         }
 
         public bool is_chat_visible (int chat_id) {
@@ -251,6 +261,7 @@ namespace Dc {
             /* Keep the tray menu's show/minimize label matching the window. */
             this.notify["visible"].connect (() => {
                 if (tray != null) tray.set_window_visible (this.visible);
+                sync_webxdc_chat_visibility ();
             });
 
             /* Defer until the main loop — the tray's D-Bus connection and the

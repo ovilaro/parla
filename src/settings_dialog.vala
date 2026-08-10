@@ -82,6 +82,8 @@ namespace Dc {
         public bool animate_stickers { get; set; default = true; }
         /* Only honored in builds with -Dwebxdc=true (Webxdc.AVAILABLE). */
         public bool webxdc_apps { get; set; default = true; }
+        /* App windows follow their chat: hidden unless the chat is open. */
+        public bool webxdc_follow_chat { get; set; default = false; }
         public int auto_download_limit { get; set; default = AUTO_DOWNLOAD_DEFAULT; }
         public string rpc_server_path { get; set; default = ""; }
         /* An empty value deliberately means the standard Parla account store. */
@@ -178,6 +180,7 @@ namespace Dc {
             AudioPlayer.prefer_system = system_audio_player;
             animate_stickers = kf_bool (kf, "animate_stickers", true);
             webxdc_apps = kf_bool (kf, "webxdc_apps", true);
+            webxdc_follow_chat = kf_bool (kf, "webxdc_follow_chat", false);
             auto_download_limit = normalize_auto_download_limit (
                 kf_int (kf, "auto_download_limit", AUTO_DOWNLOAD_DEFAULT));
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
@@ -305,6 +308,11 @@ namespace Dc {
         public void save_webxdc_apps (bool v) {
             webxdc_apps = v;
             save_bool ("webxdc_apps", v);
+        }
+
+        public void save_webxdc_follow_chat (bool v) {
+            webxdc_follow_chat = v;
+            save_bool ("webxdc_follow_chat", v);
         }
 
         public void save_auto_download_limit (int bytes) {
@@ -876,20 +884,6 @@ namespace Dc {
                     sticker_switch.active);
             });
 
-            Adw.ActionRow? webxdc_row = null;
-            if (Webxdc.AVAILABLE) {
-                webxdc_row = action_row (
-                    "Webxdc apps",
-                    "Run Delta Chat mini-apps shared in chats "
-                    + "(experimental)");
-                var webxdc_switch = row_switch (
-                    webxdc_row, app_window.settings.webxdc_apps);
-                webxdc_switch.notify["active"].connect (() => {
-                    app_window.settings.save_webxdc_apps (
-                        webxdc_switch.active);
-                });
-            }
-
             var download_row = action_row (
                 "Auto-download attachments",
                 "Larger attachments wait for approval; applies to all profiles");
@@ -922,8 +916,9 @@ namespace Dc {
             advanced_list.append (audio_row);
             advanced_list.append (transcription_row);
             advanced_list.append (sticker_row);
-            if (webxdc_row != null) advanced_list.append (webxdc_row);
             advanced_list.append (download_row);
+
+            build_webxdc_section ();
 
             var chatmail_list = settings_list ("Chatmail");
 
@@ -1027,6 +1022,52 @@ namespace Dc {
             box.append (scroll);
 
             this.child = box;
+        }
+
+        /** All Webxdc switches in one place: the enable toggle and how the
+            app windows behave. Builds without -Dwebxdc=true say so instead
+            of offering switches that cannot work. */
+        private void build_webxdc_section () {
+            var webxdc_list = settings_list ("Webxdc Apps");
+
+            if (!Webxdc.AVAILABLE) {
+                var unavailable_row = action_row (
+                    "Webxdc apps",
+                    "This build of Parla was compiled without Webxdc "
+                    + "support");
+                var status = new Gtk.Label ("Unavailable");
+                status.valign = Gtk.Align.CENTER;
+                status.add_css_class ("dim-label");
+                unavailable_row.add_suffix (status);
+                webxdc_list.append (unavailable_row);
+                return;
+            }
+
+            var enable_row = action_row (
+                "Webxdc apps",
+                "Run Delta Chat mini-apps shared in chats (experimental)");
+            var enable_switch = row_switch (
+                enable_row, app_window.settings.webxdc_apps);
+            enable_switch.notify["active"].connect (() => {
+                app_window.settings.save_webxdc_apps (enable_switch.active);
+            });
+            webxdc_list.append (enable_row);
+
+            var behavior_row = action_row (
+                "App windows",
+                "Whether running apps stay visible on their own or only "
+                + "while their chat is open");
+            string[] behavior_labels = {
+                "Independent windows", "Only while their chat is open"
+            };
+            var behavior_combo = row_dropdown (
+                behavior_row, behavior_labels,
+                app_window.settings.webxdc_follow_chat ? 1 : 0);
+            behavior_combo.notify["selected"].connect (() => {
+                app_window.settings.save_webxdc_follow_chat (
+                    behavior_combo.selected == 1);
+            });
+            webxdc_list.append (behavior_row);
         }
 
         private Gtk.ListBox settings_list (string title) {

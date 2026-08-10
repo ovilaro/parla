@@ -87,6 +87,7 @@ namespace Dc {
         private bool sending_queue = false;
 
         private PinnedMessagesManager pinned;
+        private WebxdcAppsBar webxdc_bar;
         private MessageActions msg_actions;
 
         /* Roster of chat members for mention rendering + composer autocomplete.
@@ -127,6 +128,19 @@ namespace Dc {
             pinned.scroll_requested.connect ((mid) => { scroll_to_message (mid); });
             pinned.operation_failed.connect ((message) => {
                 window.show_toast (message);
+            });
+
+            webxdc_bar = new WebxdcAppsBar ();
+            webxdc_bar.set_rpc (rpc);
+            webxdc_bar.set_pinned (pinned);
+            webxdc_bar.scroll_requested.connect ((mid) => {
+                scroll_to_message (mid);
+            });
+            webxdc_bar.forward_requested.connect ((mid) => {
+                msg_actions.start_forwarding (mid);
+            });
+            webxdc_bar.save_requested.connect ((mid) => {
+                save_webxdc_from_bar.begin (mid);
             });
 
             media_bar = new ConversationMediaBar ();
@@ -411,6 +425,7 @@ namespace Dc {
             append (message_search_revealer);
             append (media_bar);
             append (pinned.revealer);
+            append (webxdc_bar.revealer);
 
             scroll_down_btn = new Gtk.Button ();
             scroll_down_btn.icon_name = "go-down-symbolic";
@@ -1454,6 +1469,7 @@ namespace Dc {
                     loaded_start_index, all_msg_ids.get_length ());
 
                 yield pinned.load_for_chat (chat_id);
+                webxdc_bar.load_for_chat.begin (chat_id);
 
                 loading_chat = true;
                 goal_generation++;
@@ -1898,6 +1914,25 @@ namespace Dc {
             }
             message_store.append (msg);
             update_conversation_media_bar ();
+        }
+
+        /** "Save to disk" from the apps bar context menu. */
+        private async void save_webxdc_from_bar (int msg_id) {
+            var msg = find_message (message_store, msg_id);
+            if (msg == null) {
+                try {
+                    msg = yield rpc.fetch_message (msg_id);
+                } catch (Error e) {
+                    window.show_toast ("Failed to load app: " + e.message);
+                    return;
+                }
+            }
+            if (msg == null || msg.file_path == null
+                || msg.file_path.length == 0) {
+                window.show_toast ("The app file is not downloaded");
+                return;
+            }
+            yield window.save_attachment (msg.file_path, msg.file_name);
         }
 
         /* ================================================================

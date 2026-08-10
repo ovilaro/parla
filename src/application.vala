@@ -854,6 +854,10 @@ namespace Dc {
                 background-color: alpha(@accent_bg_color, 0.08);
                 border-bottom: 1px solid alpha(@view_fg_color, 0.12);
             }
+            .webxdc-bar {
+                background-color: alpha(@accent_bg_color, 0.08);
+                border-bottom: 1px solid alpha(@view_fg_color, 0.12);
+            }
             .conversation-media-bar {
                 background-color: alpha(@accent_bg_color, 0.14);
                 border-bottom: 1px solid alpha(@view_fg_color, 0.16);

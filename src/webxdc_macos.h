@@ -41,5 +41,7 @@ void parla_webxdc_fail_task (gpointer handle, gpointer task);
 void parla_webxdc_eval_js (gpointer handle, const char *js);
 void parla_webxdc_set_title (gpointer handle, const char *title);
 void parla_webxdc_present (gpointer handle);
+void parla_webxdc_minimize (gpointer handle);   /* toggles: restores if minimized */
+void parla_webxdc_set_visible (gpointer handle, gboolean visible);
 void parla_webxdc_close (gpointer handle);
 void parla_webxdc_free (gpointer handle);

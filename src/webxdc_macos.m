@@ -358,6 +358,26 @@ parla_webxdc_present (gpointer handle)
 }
 
 void
+parla_webxdc_minimize (gpointer handle)
+{
+	ParlaWebxdcController *c = handle;
+	if ([c->window isMiniaturized])
+		[c->window deminiaturize:nil];
+	else
+		[c->window miniaturize:nil];
+}
+
+void
+parla_webxdc_set_visible (gpointer handle, gboolean visible)
+{
+	ParlaWebxdcController *c = handle;
+	if (visible)
+		[c->window orderFront:nil];   /* no focus steal */
+	else
+		[c->window orderOut:nil];
+}
+
+void
 parla_webxdc_close (gpointer handle)
 {
 	ParlaWebxdcController *c = handle;
