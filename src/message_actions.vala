@@ -41,81 +41,133 @@ namespace Dc {
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            vbox.append (popover_menu_button (popover, "Reply", () => {
-                start_replying (msg_id);
-            }));
+            var reply_btn = popover_menu_button (popover, "Reply");
+            reply_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    start_replying (msg_id);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (reply_btn);
 
-            vbox.append (popover_menu_button (popover, "Forward\u2026", () => {
-                start_forwarding (msg_id);
-            }));
+            var forward_btn = popover_menu_button (popover, "Forward\u2026");
+            forward_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    start_forwarding (msg_id);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (forward_btn);
 
             bool msg_is_pinned = msg != null
                 ? msg.is_pinned : pinned.is_pinned (msg_id);
-            vbox.append (popover_menu_button (popover,
-                msg_is_pinned ? "Unpin" : "Pin",
-                () => {
+            var pin_btn = popover_menu_button (popover,
+                msg_is_pinned ? "Unpin" : "Pin");
+            pin_btn.clicked.connect (() => {
+                Idle.add (() => {
                     pinned.toggle_pin.begin (msg_id);
-                }));
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (pin_btn);
 
             if (msg != null && msg.can_edit_text) {
-                vbox.append (popover_menu_button (popover, "Edit", () => {
-                    start_editing (msg_id);
-                }));
+                var edit_btn = popover_menu_button (popover, "Edit");
+                edit_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        start_editing (msg_id);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (edit_btn);
             }
 
-            vbox.append (popover_menu_button (popover, "Select...", () => {
-                select_requested (msg_id);
-            }));
+            var select_btn = popover_menu_button (popover, "Select...");
+            select_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    select_requested (msg_id);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (select_btn);
 
-            vbox.append (popover_menu_button (popover, "Details...", () => {
-                show_details (msg_id);
-            }));
+            var details_btn = popover_menu_button (popover, "Details...");
+            details_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    show_details (msg_id);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (details_btn);
 
             /* Save file (for messages with attachments) */
             if (msg != null && msg.file_path != null &&
                 msg.file_path.length > 0) {
                 string fpath = msg.file_path;
                 string? fname = msg.file_name;
-                vbox.append (popover_menu_button (popover, "Save file", () => {
-                    window.save_attachment.begin (fpath, fname);
-                }));
+                var save_btn = popover_menu_button (popover, "Save file");
+                save_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        window.save_attachment.begin (fpath, fname);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (save_btn);
             }
 
             /* Transcribe voice messages with the external whisper tool */
             if (msg != null && msg.is_audio_file () && msg.has_local_file
                 && Transcriber.available ()) {
                 string apath = msg.file_path;
-                vbox.append (popover_menu_button (popover, "Transcribe", () => {
-                    Transcriber.shared ().transcribe (apath);
-                }));
+                var transcribe_btn = popover_menu_button (popover, "Transcribe");
+                transcribe_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        Transcriber.shared ().transcribe (apath);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (transcribe_btn);
             }
 
             /* Collect sticker attachments into a local pack */
             if (msg != null && msg.is_sticker_file () && msg.has_local_file) {
                 string spath = msg.file_path;
-                vbox.append (popover_menu_button (popover, "Add Sticker…", () => {
-                    StickerManagerDialog.prompt_add_sticker (window, spath);
-                }));
+                var sticker_btn = popover_menu_button (popover, "Add Sticker…");
+                sticker_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        StickerManagerDialog.prompt_add_sticker (window, spath);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (sticker_btn);
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
-            vbox.append (popover_menu_button (popover, "Delete…", () => {
-                if (is_outgoing) {
-                    confirm_delete_options (window, "Delete Message?",
-                        "Delete this message from your device only, or from all participants? This cannot be undone.",
-                        () => { delete_message.begin (msg_id, false); },
-                        () => { delete_message.begin (msg_id, true); });
-                } else {
-                    confirm_delete_options (window, "Delete Message?",
-                        "Delete this message from your device? This cannot be undone.",
-                        () => { delete_message.begin (msg_id, false); },
-                        null);
-                }
-            }, true));
+            var delete_btn = popover_menu_button (popover, "Delete…", true);
+            delete_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    confirm_delete_message.begin (msg_id, is_outgoing);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (delete_btn);
 
             preserve_scroll_until_closed (popover);
             popover.popup ();
+        }
+
+        private async void confirm_delete_message (int msg_id,
+                                                   bool is_outgoing) {
+            string body = is_outgoing
+                ? "Delete this message from your device only, or from all participants? This cannot be undone."
+                : "Delete this message from your device? This cannot be undone.";
+            var choice = yield confirm_delete_options (
+                window, "Delete Message?", body, is_outgoing);
+            if (choice == DeleteChoice.FOR_ME)
+                delete_message.begin (msg_id, false);
+            else if (choice == DeleteChoice.FOR_EVERYONE)
+                delete_message.begin (msg_id, true);
         }
 
         /** Two rows of quick reaction emoji, plus "…" opening the full
@@ -279,24 +331,22 @@ namespace Dc {
 
         /** Ask for a destination chat or contact and forward msg_ids there.
             Shared by the message context menu and the gallery dialog. */
-        public static void forward_with_picker (Window window, RpcClient rpc,
-                                                int[] msg_ids,
-                                                owned VoidFunc? on_picked = null) {
-            if (msg_ids.length == 0) return;
+        public static ContactPickerDialog? forward_with_picker (
+                Window window, RpcClient rpc, int[] msg_ids) {
+            if (msg_ids.length == 0) return null;
             int[] forward_ids = msg_ids.copy ();
             var picker = new ContactPickerDialog (rpc, window.chat_store,
                                                   "Forward To");
             picker.chat_picked.connect ((chat_id) => {
                 forward_to_chat.begin (window, rpc, forward_ids.copy (),
                                        chat_id);
-                if (on_picked != null) on_picked ();
             });
             picker.contact_picked.connect ((contact_id, email) => {
                 forward_to_contact.begin (window, rpc, forward_ids.copy (),
                                           contact_id, email);
-                if (on_picked != null) on_picked ();
             });
             picker.present (window);
+            return picker;
         }
 
         private static async void forward_to_chat (Window window, RpcClient rpc,

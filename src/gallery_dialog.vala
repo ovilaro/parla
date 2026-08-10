@@ -105,7 +105,7 @@ namespace Dc {
         private class ThumbRequest {
             public string path;
             public int size;
-            public SourceFunc cb;
+            public Source resume_source;
             public Gdk.Texture? result = null;
         }
 
@@ -130,7 +130,7 @@ namespace Dc {
                     } catch (Error e) {
                         /* Broken image: the placeholder icon remains. */
                     }
-                    Idle.add ((owned) req.cb);
+                    req.resume_source.attach (MainContext.default ());
                 }, 2, false);
             } catch (Error e) {
                 warning ("gallery thumb pool: %s", e.message);
@@ -488,15 +488,21 @@ namespace Dc {
             foreach (var m in msgs) ids += m.id;
             /* Leave selection mode only once a destination is picked, so
                cancelling the picker keeps the selection intact. */
-            MessageActions.forward_with_picker (app_window, rpc, ids,
-                () => { exit_selection_mode (); });
+            var picker = MessageActions.forward_with_picker (
+                app_window, rpc, ids);
+            if (picker == null) return;
+            picker.chat_picked.connect ((chat_id) => {
+                exit_selection_mode ();
+            });
+            picker.contact_picked.connect ((contact_id, email) => {
+                exit_selection_mode ();
+            });
         }
 
         private void save_selection () {
             /* Leave selection mode only once a folder is picked, so
                cancelling the chooser keeps the selection intact. */
-            choose_folder_then_save (selected_messages (),
-                () => { exit_selection_mode (); });
+            choose_folder_then_save (selected_messages (), true);
         }
 
         private void delete_selection () {
@@ -508,27 +514,26 @@ namespace Dc {
                 ids += m.id;
                 if (!m.is_outgoing) all_outgoing = false;
             }
-            confirm_delete_ids (ids, all_outgoing);
+            confirm_delete_ids.begin (ids, all_outgoing);
         }
 
         /** Confirmation shared by the selection bar and the item context
             menu. Only fully-outgoing selections offer Delete for Everyone. */
-        private void confirm_delete_ids (owned int[] ids, bool all_outgoing) {
+        private async void confirm_delete_ids (owned int[] ids,
+                                               bool all_outgoing) {
             string title = ids.length == 1
                 ? "Delete Message?" : "Delete Messages?";
             string what = ids.length == 1
                 ? "this message" : "these %d messages".printf (ids.length);
-            if (all_outgoing) {
-                confirm_delete_options (this, title,
-                    "Delete %s from your device only, or from all participants? This cannot be undone.".printf (what),
-                    () => { delete_messages_ui.begin (ids, false); },
-                    () => { delete_messages_ui.begin (ids, true); });
-            } else {
-                confirm_delete_options (this, title,
-                    "Delete %s from your device? This cannot be undone.".printf (what),
-                    () => { delete_messages_ui.begin (ids, false); },
-                    null);
-            }
+            string body = all_outgoing
+                ? "Delete %s from your device only, or from all participants? This cannot be undone.".printf (what)
+                : "Delete %s from your device? This cannot be undone.".printf (what);
+            var choice = yield confirm_delete_options (
+                this, title, body, all_outgoing);
+            if (choice == DeleteChoice.FOR_ME)
+                delete_messages_ui.begin (ids, false);
+            else if (choice == DeleteChoice.FOR_EVERYONE)
+                delete_messages_ui.begin (ids, true);
         }
 
         /* ================================================================
@@ -662,14 +667,8 @@ namespace Dc {
             foreach (var g in media_grids) g.max_columns = cols;
         }
 
-        private delegate Gtk.Widget CellCreator ();
-
-        private static Gtk.SignalListItemFactory make_cell_factory (
-                owned CellCreator create) {
+        private static Gtk.SignalListItemFactory make_cell_factory () {
             var factory = new Gtk.SignalListItemFactory ();
-            factory.setup.connect ((obj) => {
-                ((Gtk.ListItem) obj).child = create ();
-            });
             factory.bind.connect ((obj) => {
                 var item = (Gtk.ListItem) obj;
                 ((GalleryCell) item.child).bind ((Message) item.item);
@@ -686,8 +685,11 @@ namespace Dc {
             /* Stickers are transparent cut-outs: show them whole instead
                of cover-cropping like photos. */
             bool contain = tab.key == "stickers";
-            var factory = make_cell_factory (
-                () => new MediaCell (this, is_video, contain));
+            var factory = make_cell_factory ();
+            factory.setup.connect ((obj) => {
+                ((Gtk.ListItem) obj).child = new MediaCell (
+                    this, is_video, contain);
+            });
 
             var grid = new Gtk.GridView (new Gtk.NoSelection (tab.store),
                                          factory);
@@ -843,7 +845,8 @@ namespace Dc {
             req.path = path;
             /* 2x for crisp rendering on hidpi displays. */
             req.size = CELL_MIN * 2;
-            req.cb = load_thumb.callback;
+            req.resume_source = new IdleSource ();
+            req.resume_source.set_callback (load_thumb.callback);
             try {
                 thumb_pool.add (req);
             } catch (Error e) {
@@ -894,8 +897,10 @@ namespace Dc {
          * ================================================================ */
 
         private Gtk.ListView build_row_list (GalleryTab tab) {
-            var factory = make_cell_factory (
-                () => new GalleryRow (this, tab.key));
+            var factory = make_cell_factory ();
+            factory.setup.connect ((obj) => {
+                ((Gtk.ListItem) obj).child = new GalleryRow (this, tab.key);
+            });
 
             var list = new Gtk.ListView (new Gtk.NoSelection (tab.store),
                                          factory);
@@ -1189,23 +1194,40 @@ namespace Dc {
             if (m.has_local_file) {
                 string fpath = m.file_path;
                 string? fname = m.file_name;
-                vbox.append (popover_menu_button (popover, "Save As…", () => {
-                    app_window.save_attachment.begin (fpath, fname);
-                }));
+                var save_btn = popover_menu_button (popover, "Save As…");
+                save_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        app_window.save_attachment.begin (fpath, fname);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (save_btn);
             }
 
             int msg_id = m.id;
-            vbox.append (popover_menu_button (popover, "Forward…", () => {
-                MessageActions.forward_with_picker (app_window, rpc,
-                                                    new int[] { msg_id });
-            }));
+            var forward_btn = popover_menu_button (popover, "Forward…");
+            forward_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    MessageActions.forward_with_picker (app_window, rpc,
+                                                        new int[] { msg_id });
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (forward_btn);
 
-            vbox.append (popover_menu_button (popover, "Select…", () => {
-                enter_selection_mode (msg_id);
-            }));
+            var select_btn = popover_menu_button (popover, "Select…");
+            select_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    enter_selection_mode (msg_id);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (select_btn);
 
-            vbox.append (popover_menu_button (popover, "View in Conversation",
-                () => {
+            var view_btn = popover_menu_button (
+                popover, "View in Conversation");
+            view_btn.clicked.connect (() => {
+                Idle.add (() => {
                     /* Each closing dialog restores the window focus it saved
                        when presented, and such a focus shift can scroll the
                        chat. Close the stack bottom-up through the closed
@@ -1226,22 +1248,35 @@ namespace Dc {
                         }
                     });
                     close ();
-                }));
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (view_btn);
 
             /* Collect sticker attachments into a local pack */
             if (m.is_sticker_file () && m.has_local_file) {
                 string spath = m.file_path;
-                vbox.append (popover_menu_button (popover, "Add Sticker…", () => {
-                    StickerManagerDialog.prompt_add_sticker (app_window, spath);
-                }));
+                var sticker_btn = popover_menu_button (popover, "Add Sticker…");
+                sticker_btn.clicked.connect (() => {
+                    Idle.add (() => {
+                        StickerManagerDialog.prompt_add_sticker (app_window, spath);
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (sticker_btn);
             }
 
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
             bool is_outgoing = m.is_outgoing;
-            vbox.append (popover_menu_button (popover, "Delete…", () => {
-                confirm_delete_ids ({ msg_id }, is_outgoing);
-            }, true));
+            var delete_btn = popover_menu_button (popover, "Delete…", true);
+            delete_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    confirm_delete_ids.begin ({ msg_id }, is_outgoing);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (delete_btn);
 
             popover.popup ();
         }
@@ -1307,9 +1342,9 @@ namespace Dc {
 
         /** Shared by "save all" and the selection bar's "Save…"; items
             without a downloaded file are only counted as skipped.
-            on_picked runs only when a folder was actually chosen. */
+            exit_selection runs only when a folder was actually chosen. */
         private void choose_folder_then_save (owned Message[] msgs,
-                                              owned VoidFunc? on_picked = null) {
+                                              bool exit_selection = false) {
             Message[] items = {};
             int skipped = 0;
             foreach (var m in msgs) {
@@ -1326,7 +1361,7 @@ namespace Dc {
                 try {
                     var folder = chooser.select_folder.end (res);
                     if (folder == null) return;
-                    if (on_picked != null) on_picked ();
+                    if (exit_selection) exit_selection_mode ();
                     save_files_to_folder.begin (items, skipped, folder);
                 } catch (Error e) {
                     if (!is_dialog_dismissal (e))

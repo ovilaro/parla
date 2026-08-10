@@ -338,17 +338,19 @@ namespace Dc {
             trash_btn.add_css_class ("flat");
             trash_btn.valign = Gtk.Align.CENTER;
             trash_btn.tooltip_text = "Remove this relay";
-            trash_btn.clicked.connect (() => { confirm_delete_relay (addr); });
+            trash_btn.clicked.connect (() => {
+                confirm_delete_relay.begin (addr);
+            });
             row.add_suffix (trash_btn);
 
             return row;
         }
 
-        private void confirm_delete_relay (string addr) {
-            confirm_action (this, "Remove Relay",
+        private async void confirm_delete_relay (string addr) {
+            if (yield confirm_action (this, "Remove Relay",
                 "Remove transport \"%s\"? The profile will no longer receive messages on this address.".printf (addr),
-                "remove", "Remove",
-                () => { do_delete_relay.begin (addr); });
+                "remove", "Remove"))
+                do_delete_relay.begin (addr);
         }
 
         private async void do_delete_relay (string addr) {

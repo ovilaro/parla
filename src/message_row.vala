@@ -142,7 +142,7 @@ namespace Dc {
             this.animation = animation;
             this.playing = playing;
             paintable = new StickerFramePaintable (texture_from_pixbuf (
-                animation.get_static_image ()));
+                PixbufAnimationCompat.get_static_image (animation)));
             picture.paintable = paintable;
             picture.map.connect (on_map);
             picture.unmap.connect (on_unmap);
@@ -166,7 +166,8 @@ namespace Dc {
 
         private void start () {
             if (timeout_id != 0) return;
-            if (iter == null) iter = animation.get_iter (null);
+            if (iter == null)
+                iter = PixbufAnimationCompat.get_iter (animation);
             show_current_frame ();
             schedule_next_frame ();
         }
@@ -179,15 +180,16 @@ namespace Dc {
         }
 
         private void show_current_frame () {
-            paintable.set_texture (texture_from_pixbuf (iter.get_pixbuf ()));
+            paintable.set_texture (texture_from_pixbuf (
+                PixbufAnimationCompat.iter_get_pixbuf (iter)));
         }
 
         private void schedule_next_frame () {
-            int delay = iter.get_delay_time ();
+            int delay = PixbufAnimationCompat.iter_get_delay_time (iter);
             if (delay < 0) return; /* single frame or end of animation */
             timeout_id = Timeout.add (int.max (delay, 20), () => {
                 timeout_id = 0;
-                iter.advance (null);
+                PixbufAnimationCompat.iter_advance (iter);
                 show_current_frame ();
                 schedule_next_frame ();
                 return Source.REMOVE;
@@ -795,9 +797,10 @@ namespace Dc {
             /* Icon and real name only exist inside the archive, so this
                stays generic until the app is downloaded. */
             if (ready) {
-                Webxdc.card_info (msg.id, (app_name, app_icon) => {
-                    if (app_name != null) name.label = app_name;
-                    if (app_icon != null) icon.paintable = app_icon;
+                Webxdc.card_info.begin (msg.id, (obj, res) => {
+                    var info = Webxdc.card_info.end (res);
+                    if (info.name != null) name.label = info.name;
+                    if (info.icon != null) icon.paintable = info.icon;
                 });
             }
             btn.clicked.connect (() => {
@@ -893,10 +896,10 @@ namespace Dc {
             if (video) return load_video_sticker (path);
 
             try {
-                var anim = new Gdk.PixbufAnimation.from_file (path);
-                if (!anim.is_static_image ()) {
-                    int dw = anim.get_width ();
-                    int dh = anim.get_height ();
+                var anim = PixbufAnimationCompat.load (path);
+                if (!PixbufAnimationCompat.is_static_image (anim)) {
+                    int dw = PixbufAnimationCompat.get_width (anim);
+                    int dh = PixbufAnimationCompat.get_height (anim);
                     if (dw > 0 && dh > 0) {
                         double scale = double.min (1.0, double.min (
                             (double) STICKER_MAX / dw,
@@ -919,8 +922,8 @@ namespace Dc {
                         frame.child = picture;
                         frame.halign = Gtk.Align.START;
                         frame.valign = Gtk.Align.START;
-                        add_play_toggle (frame,
-                            () => sticker.toggle_playing ());
+                        var click = add_play_toggle (frame);
+                        click.released.connect (() => sticker.toggle_playing ());
                         return frame;
                     }
                 }
@@ -948,19 +951,17 @@ namespace Dc {
                 picture, frame, path, animate_stickers, STICKER_MAX);
             picture.set_data<StickerVideoAnimation> (
                 "parla-sticker-video-animation", sticker);
-            add_play_toggle (frame, () => sticker.toggle_playing ());
+            var click = add_play_toggle (frame);
+            click.released.connect (() => sticker.toggle_playing ());
             return frame;
         }
 
-        private delegate void PlayToggleFunc ();
-
         /** Primary-click on a sticker toggles its animation playback. */
-        private static void add_play_toggle (Gtk.Widget widget,
-                                             owned PlayToggleFunc toggle) {
+        private static Gtk.GestureClick add_play_toggle (Gtk.Widget widget) {
             var click = new Gtk.GestureClick ();
             click.set_button (Gdk.BUTTON_PRIMARY);
-            click.released.connect (() => toggle ());
             widget.add_controller (click);
+            return click;
         }
 
         /**

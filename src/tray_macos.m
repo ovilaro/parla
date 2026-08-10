@@ -309,7 +309,7 @@ static gboolean
 idle_activate_app (gpointer data)
 {
 	[[NSRunningApplication currentApplication]
-		activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+		activateWithOptions:(NSApplicationActivationOptions)(1 << 1)];
 	return G_SOURCE_REMOVE;
 }
 

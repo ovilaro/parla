@@ -680,7 +680,7 @@ namespace Dc {
             selection_delete_btn.add_css_class ("destructive-action");
             selection_delete_btn.hexpand = true;
             selection_delete_btn.clicked.connect (() => {
-                delete_selected_messages ();
+                delete_selected_messages.begin ();
             });
             bar.append (selection_delete_btn);
 
@@ -827,27 +827,29 @@ namespace Dc {
             end_selection_mode ();
         }
 
-        private void delete_selected_messages () {
+        private async void delete_selected_messages () {
             int[] ids = selected_message_ids ();
             if (ids.length == 0) return;
             string title = ids.length == 1
                 ? "Delete Message?"
                 : "Delete Messages?";
-            if (selected_messages_all_outgoing ()) {
-                string body = ids.length == 1
+            bool all_outgoing = selected_messages_all_outgoing ();
+            string body;
+            if (all_outgoing) {
+                body = ids.length == 1
                     ? "Delete the selected message from your device only, or from all participants? This cannot be undone."
                     : "Delete %d selected messages from your device only, or from all participants? This cannot be undone.".printf (ids.length);
-                confirm_delete_options (window, title, body,
-                    () => { delete_selected_messages_confirmed.begin (ids, false); },
-                    () => { delete_selected_messages_confirmed.begin (ids, true); });
             } else {
-                string body = ids.length == 1
+                body = ids.length == 1
                     ? "Delete the selected message from your device? This cannot be undone."
                     : "Delete %d selected messages from your device? This cannot be undone.".printf (ids.length);
-                confirm_delete_options (window, title, body,
-                    () => { delete_selected_messages_confirmed.begin (ids, false); },
-                    null);
             }
+            var choice = yield confirm_delete_options (
+                window, title, body, all_outgoing);
+            if (choice == DeleteChoice.FOR_ME)
+                delete_selected_messages_confirmed.begin (ids, false);
+            else if (choice == DeleteChoice.FOR_EVERYONE)
+                delete_selected_messages_confirmed.begin (ids, true);
         }
 
         private async void delete_selected_messages_confirmed (int[] ids,

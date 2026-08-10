@@ -297,32 +297,33 @@ namespace Dc {
             item.activate_requested.connect (request_show_on_current_desktop);
             menu.show_toggle_requested.connect (request_window_toggle);
             menu.quit_requested.connect (() => {
-                emit_on_main (() => { quit_requested (); });
+                Idle.add (() => {
+                    quit_requested ();
+                    return Source.REMOVE;
+                });
             });
             menu.notifications_toggle_requested.connect ((v) => {
                 item.take_activation_token ();
-                emit_on_main (() => { notifications_toggle_requested (v); });
+                Idle.add (() => {
+                    notifications_toggle_requested (v);
+                    return Source.REMOVE;
+                });
             });
         }
 
         private void request_show_on_current_desktop () {
             /* Menu-click tokens are delivered to the item object too. */
             string? token = item.take_activation_token ();
-            emit_on_main (() => {
+            Idle.add (() => {
                 show_on_current_desktop_requested (token);
+                return Source.REMOVE;
             });
         }
 
         private void request_window_toggle () {
             string? token = item.take_activation_token ();
-            emit_on_main (() => {
-                window_toggle_requested (token);
-            });
-        }
-
-        private void emit_on_main (owned VoidFunc action) {
             Idle.add (() => {
-                action ();
+                window_toggle_requested (token);
                 return Source.REMOVE;
             });
         }

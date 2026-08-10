@@ -1,7 +1,5 @@
 namespace Dc {
 
-    public delegate void StickerPackFunc (string pack);
-
     /**
      * Dialog to manage local sticker packs: a pack selector with a [+]
      * button to create packs, the pack's stickers with their associated
@@ -45,7 +43,10 @@ namespace Dc {
                 "list-add-symbolic");
             add_pack_btn.tooltip_text = "Create a new sticker pack";
             add_pack_btn.clicked.connect (() => {
-                prompt_new_pack (this, (pack) => { add_session_pack (pack); });
+                prompt_new_pack.begin (this, (obj, res) => {
+                    var pack = prompt_new_pack.end (res);
+                    if (pack != null) add_session_pack (pack);
+                });
             });
             pack_row.append (add_pack_btn);
 
@@ -66,7 +67,7 @@ namespace Dc {
                 "list-remove-symbolic");
             delete_pack_btn.tooltip_text =
                 "Delete the selected pack and all of its stickers";
-            delete_pack_btn.clicked.connect (on_delete_pack);
+            delete_pack_btn.clicked.connect (() => { on_delete_pack.begin (); });
             pack_row.append (delete_pack_btn);
             content.append (pack_row);
 
@@ -109,8 +110,7 @@ namespace Dc {
 
         /* ---- pack picker prompts (also used from the message menu) ---- */
 
-        public static void prompt_new_pack (Gtk.Widget parent,
-                                            owned StickerPackFunc on_created) {
+        public static async string? prompt_new_pack (Gtk.Widget parent) {
             var d = new Adw.AlertDialog ("New Sticker Pack",
                 "Name for the new sticker pack.");
             d.add_response ("cancel", "Cancel");
@@ -125,12 +125,9 @@ namespace Dc {
             entry.activates_default = true;
             d.extra_child = entry;
 
-            d.response.connect ((r) => {
-                if (r != "create") return;
-                string? pack = StickerStore.sanitize_pack_name (entry.text);
-                if (pack != null) on_created (pack);
-            });
-            d.present (parent);
+            string response = yield d.choose (parent, null);
+            if (response != "create") return null;
+            return StickerStore.sanitize_pack_name (entry.text);
         }
 
         /** Ask for the destination pack (existing or new) and copy the
@@ -334,11 +331,16 @@ namespace Dc {
             vbox.margin_top = 8;
             vbox.margin_bottom = 8;
 
-            vbox.append (popover_button (popover, "Copy File Path", () => {
-                this.get_clipboard ().set_text (
-                    StickerStore.sticker_path (sticker.file_name));
-                app_window.show_toast ("File path copied");
-            }));
+            var copy_btn = popover_button (popover, "Copy File Path");
+            copy_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    this.get_clipboard ().set_text (
+                        StickerStore.sticker_path (sticker.file_name));
+                    app_window.show_toast ("File path copied");
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (copy_btn);
             vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
             bool has_move_targets = false;
@@ -346,8 +348,10 @@ namespace Dc {
                 if (other == sticker.pack) continue;
                 has_move_targets = true;
                 string dest = other;
-                vbox.append (popover_button (popover,
-                    "Move to \"%s\"".printf (dest), () => {
+                var move_btn = popover_button (popover,
+                    "Move to \"%s\"".printf (dest));
+                move_btn.clicked.connect (() => {
+                    Idle.add (() => {
                         try {
                             app_window.show_toast (
                                 StickerStore.move_sticker (sticker, dest)
@@ -358,21 +362,23 @@ namespace Dc {
                                 "Could not move sticker: " + e.message);
                         }
                         reload_stickers ();
-                    }));
+                        return Source.REMOVE;
+                    });
+                });
+                vbox.append (move_btn);
             }
             if (has_move_targets) {
                 vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
             }
 
-            vbox.append (popover_button (popover, "Delete…", () => {
-                confirm_action (this, "Delete Sticker?",
-                    "Delete this sticker from \"%s\"? This cannot be undone."
-                        .printf (sticker.pack),
-                    "delete", "Delete", () => {
-                        StickerStore.delete_sticker (sticker);
-                        reload_stickers ();
-                    });
-            }, true));
+            var delete_btn = popover_button (popover, "Delete…", true);
+            delete_btn.clicked.connect (() => {
+                Idle.add (() => {
+                    confirm_delete_sticker.begin (sticker);
+                    return Source.REMOVE;
+                });
+            });
+            vbox.append (delete_btn);
 
             popover.child = vbox;
             popover.closed.connect (() => {
@@ -384,9 +390,18 @@ namespace Dc {
             popover.popup ();
         }
 
+        private async void confirm_delete_sticker (Sticker sticker) {
+            if (yield confirm_action (this, "Delete Sticker?",
+                    "Delete this sticker from \"%s\"? This cannot be undone."
+                        .printf (sticker.pack),
+                    "delete", "Delete")) {
+                StickerStore.delete_sticker (sticker);
+                reload_stickers ();
+            }
+        }
+
         private static Gtk.Button popover_button (Gtk.Popover popover,
                                                   string label,
-                                                  owned VoidFunc action,
                                                   bool destructive = false) {
             var btn = new Gtk.Button.with_label (label);
             btn.add_css_class ("flat");
@@ -398,10 +413,6 @@ namespace Dc {
             }
             btn.clicked.connect (() => {
                 popover.popdown ();
-                Idle.add (() => {
-                    action ();
-                    return Source.REMOVE;
-                });
             });
             return btn;
         }
@@ -450,16 +461,16 @@ namespace Dc {
             d.present (this);
         }
 
-        private void on_delete_pack () {
+        private async void on_delete_pack () {
             string? pack = selected_pack ();
             if (pack == null) return;
-            confirm_action (this, "Delete Sticker Pack?",
+            if (yield confirm_action (this, "Delete Sticker Pack?",
                 "Delete the pack \"%s\" and all of its stickers? This cannot be undone."
                     .printf (pack),
-                "delete", "Delete Pack", () => {
-                    StickerStore.delete_pack (pack);
-                    reload_packs (null);
-                });
+                "delete", "Delete Pack")) {
+                StickerStore.delete_pack (pack);
+                reload_packs (null);
+            }
         }
     }
 }

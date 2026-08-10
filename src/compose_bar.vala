@@ -99,8 +99,10 @@ namespace Dc {
             reply_label.ellipsize = Pango.EllipsizeMode.END;
             reply_bar.append (reply_label);
 
-            reply_bar.append (icon_button (
-                "window-close-symbolic", "Cancel reply", cancel_reply, true));
+            var cancel_reply_button = icon_button (
+                "window-close-symbolic", "Cancel reply", true);
+            cancel_reply_button.clicked.connect (cancel_reply);
+            reply_bar.append (cancel_reply_button);
 
             append (reply_bar);
 
@@ -143,8 +145,10 @@ namespace Dc {
 
             attachment_bar.append (attachment_info);
 
-            attachment_bar.append (icon_button (
-                "window-close-symbolic", "Remove attachment", clear_attachment, true));
+            var remove_attachment_button = icon_button (
+                "window-close-symbolic", "Remove attachment", true);
+            remove_attachment_button.clicked.connect (clear_attachment);
+            attachment_bar.append (remove_attachment_button);
 
             append (attachment_bar);
 
@@ -173,7 +177,8 @@ namespace Dc {
                keep their place next to the last text line when a
                multi-line draft makes the entry grow. */
             attach_button = icon_button (
-                "mail-attachment-symbolic", "Attach file", on_attach_clicked);
+                "mail-attachment-symbolic", "Attach file");
+            attach_button.clicked.connect (on_attach_clicked);
             attach_button.valign = Gtk.Align.END;
             input_row.append (attach_button);
 
@@ -199,13 +204,15 @@ namespace Dc {
             input_row.append (emoji_button);
 
             cancel_attach_button = icon_button (
-                "edit-clear-symbolic", "Remove attachment", clear_attachment);
+                "edit-clear-symbolic", "Remove attachment");
+            cancel_attach_button.clicked.connect (clear_attachment);
             cancel_attach_button.visible = false;
             cancel_attach_button.valign = Gtk.Align.END;
             input_row.append (cancel_attach_button);
 
             cancel_edit_button = icon_button (
-                "edit-undo-symbolic", "Cancel editing", cancel_edit);
+                "edit-undo-symbolic", "Cancel editing");
+            cancel_edit_button.clicked.connect (cancel_edit);
             cancel_edit_button.visible = false;
             cancel_edit_button.valign = Gtk.Align.END;
             input_row.append (cancel_edit_button);
@@ -291,8 +298,8 @@ namespace Dc {
             input_row.append (entry_overlay);
 
             var send_button = icon_button (
-                "go-up-symbolic", "Send message", on_send, true,
-                "suggested-action");
+                "go-up-symbolic", "Send message", true, "suggested-action");
+            send_button.clicked.connect (on_send);
 
             sticker_button = new Gtk.MenuButton ();
             sticker_button.icon_name = "sticker-symbolic";
@@ -306,8 +313,10 @@ namespace Dc {
 
             var idle_actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             idle_actions.append (sticker_button);
-            idle_actions.append (icon_button ("audio-input-microphone-symbolic",
-                "Record a voice message", start_audio_recording, true));
+            var record_button = icon_button (
+                "audio-input-microphone-symbolic", "Record a voice message", true);
+            record_button.clicked.connect (start_audio_recording);
+            idle_actions.append (record_button);
 
             /* Idle actions collapse to one send button as soon as text appears. */
             send_stack = new Gtk.Stack ();
@@ -321,9 +330,10 @@ namespace Dc {
             var recording_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
             recording_row.hexpand = true;
 
-            recording_row.append (icon_button (
-                "window-close-symbolic", "Cancel voice message",
-                cancel_audio_recording, true));
+            var cancel_recording_button = icon_button (
+                "window-close-symbolic", "Cancel voice message", true);
+            cancel_recording_button.clicked.connect (cancel_audio_recording);
+            recording_row.append (cancel_recording_button);
 
             recording_time_label = new Gtk.Label ("00:00");
             recording_time_label.hexpand = true;
@@ -331,11 +341,13 @@ namespace Dc {
             recording_row.append (recording_time_label);
 
             recording_stop_button = icon_button (
-                "media-playback-stop-symbolic", "Stop recording",
-                stop_audio_recording, true, "destructive-action");
+                "media-playback-stop-symbolic", "Stop recording", true,
+                "destructive-action");
+            recording_stop_button.clicked.connect (stop_audio_recording);
             var recording_send_button = icon_button (
-                "go-up-symbolic", "Send voice message",
-                send_audio_recording, true, "suggested-action");
+                "go-up-symbolic", "Send voice message", true,
+                "suggested-action");
+            recording_send_button.clicked.connect (send_audio_recording);
 
             recording_action_stack = new Gtk.Stack ();
             recording_action_stack.valign = Gtk.Align.CENTER;
@@ -389,7 +401,6 @@ namespace Dc {
         }
 
         private Gtk.Button icon_button (string icon_name, string tooltip,
-                                        owned VoidFunc on_click,
                                         bool circular = false,
                                         string style = "flat") {
             var button = new Gtk.Button.from_icon_name (icon_name);
@@ -397,7 +408,6 @@ namespace Dc {
             if (circular) button.add_css_class ("circular");
             button.tooltip_text = tooltip;
             button.valign = Gtk.Align.CENTER;
-            button.clicked.connect (() => { on_click (); });
             return button;
         }
 

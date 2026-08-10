@@ -29,36 +29,27 @@ namespace Dc.Webxdc {
         return config == null || config.webxdc_apps;
     }
 
-    public delegate void CardInfoFn (string? name, Gdk.Texture? icon);
-
-    private class CardInfo {
+    public class CardInfo {
         public string? name;
         public Gdk.Texture? icon;
     }
 
     private HashTable<int, CardInfo>? cards = null;
 
-    /** App name and icon for the chat/gallery card, cached per message.
-        The callback fires once, possibly synchronously on a cache hit. */
-    public void card_info (int msg_id, owned CardInfoFn cb) {
+    /** App name and icon for the chat/gallery card, cached per message. */
+    public async CardInfo card_info (int msg_id) {
         if (cards == null) {
             cards = new HashTable<int, CardInfo> (direct_hash, direct_equal);
         }
         var hit = cards.lookup (msg_id);
-        if (hit != null) {
-            cb (hit.name, hit.icon);
-            return;
-        }
-        fetch_card_info.begin (msg_id, (owned) cb);
+        if (hit != null) return hit;
+        return yield fetch_card_info (msg_id);
     }
 
-    private async void fetch_card_info (int msg_id, owned CardInfoFn cb) {
+    private async CardInfo fetch_card_info (int msg_id) {
         var info = new CardInfo ();
         var rpc = client;
-        if (rpc == null) {
-            cb (null, null);
-            return;
-        }
+        if (rpc == null) return info;
         int acct = rpc.account_id;
         try {
             var res = yield rpc.call ("get_webxdc_info", Params.begin ()
@@ -78,7 +69,7 @@ namespace Dc.Webxdc {
             debug ("webxdc card info: %s", e.message);
         }
         cards.replace (msg_id, info);
-        cb (info.name, info.icon);
+        return info;
     }
 
     public void open (Gtk.Window? parent, RpcClient rpc, Message msg) {

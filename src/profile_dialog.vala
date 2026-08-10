@@ -152,9 +152,11 @@ namespace Dc {
 
             content.append (fields_grid);
 
+            Gtk.Button invite_button;
             content.append (build_profile_action_row ("Invite Code",
                 "Show a contact invite QR code", "Share your contact",
-                show_invite_code_dialog));
+                out invite_button));
+            invite_button.clicked.connect (show_invite_code_dialog);
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
@@ -166,18 +168,26 @@ namespace Dc {
 
             content.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
+            Gtk.Button relays_button;
             content.append (build_profile_action_row ("Relays...",
                 "Manage chatmail relays for this profile", "Manage transports",
-                show_relays_dialog));
+                out relays_button));
+            relays_button.clicked.connect (show_relays_dialog);
+            Gtk.Button second_device_button;
             content.append (build_profile_action_row ("Add Second Device",
                 "Show a setup QR code for another device",
-                "Transfer to another device", show_second_device_dialog));
+                "Transfer to another device", out second_device_button));
+            second_device_button.clicked.connect (show_second_device_dialog);
 
             content.append (build_default_account_row ());
 
+            Gtk.Button delete_button;
             content.append (build_profile_action_row ("Delete Profile",
                 "Delete local profile data", "Delete local profile data",
-                confirm_delete_account, "destructive-action"));
+                out delete_button, "destructive-action"));
+            delete_button.clicked.connect (() => {
+                confirm_delete_account.begin ();
+            });
 
             var scroll = new Gtk.ScrolledWindow ();
             scroll.vexpand = true;
@@ -195,7 +205,7 @@ namespace Dc {
         private Gtk.Widget build_profile_action_row (string button_label,
                                                      string tooltip,
                                                      string caption_text,
-                                                     owned VoidFunc action,
+                                                     out Gtk.Button button,
                                                      string? css_class = null) {
             var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             box.margin_top = 4;
@@ -204,11 +214,10 @@ namespace Dc {
             caption.valign = Gtk.Align.CENTER;
             box.append (caption);
 
-            var button = new Gtk.Button.with_label (button_label);
+            button = new Gtk.Button.with_label (button_label);
             button.halign = Gtk.Align.END;
             if (css_class != null) button.add_css_class (css_class);
             button.tooltip_text = tooltip;
-            button.clicked.connect (() => { action (); });
             box.append (button);
 
             return box;
@@ -476,7 +485,7 @@ namespace Dc {
             dialog.present (this);
         }
 
-        private void confirm_delete_account () {
+        private async void confirm_delete_account () {
             string label = email_label.label.strip ();
             if (label.length == 0) {
                 label = name_entry.text.strip ();
@@ -485,9 +494,10 @@ namespace Dc {
                 label = "this account";
             }
 
-            confirm_action (this, "Delete Profile",
+            if (yield confirm_action (this, "Delete Profile",
                 "Delete \"%s\"? This will remove all local data for this profile.".printf (label),
-                "delete", "Delete Profile", () => { do_delete_account.begin (); });
+                "delete", "Delete Profile"))
+                do_delete_account.begin ();
         }
 
         private async void do_delete_account () {

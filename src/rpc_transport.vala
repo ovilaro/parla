@@ -107,7 +107,9 @@ namespace Dc {
 
             int id = next_id++;
             var pc = new PendingCall (id);
-            pc.callback = call.callback;
+            var resume_source = new IdleSource ();
+            resume_source.set_callback (call.callback);
+            pc.resume_source = resume_source;
             pending.add (pc);
 
             try {
@@ -231,10 +233,9 @@ namespace Dc {
         }
 
         private void resume_pending (PendingCall pc) {
-            if (pc.callback == null) return;
-            var cb = (owned) pc.callback;
-            pc.callback = null;
-            Idle.add ((owned) cb);
+            var source = (owned) pc.resume_source;
+            pc.resume_source = null;
+            if (source != null) source.attach (MainContext.default ());
         }
 
         private async void nap (uint ms) {
@@ -245,7 +246,7 @@ namespace Dc {
 
     private class PendingCall {
         public int id;
-        public SourceFunc? callback = null;
+        public Source? resume_source = null;
         public Json.Node? result = null;
         public string? error_msg = null;
 

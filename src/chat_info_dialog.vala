@@ -40,34 +40,28 @@ namespace Dc {
             if (error) button.add_css_class ("error");
         }
 
-        private Gtk.Button flat_button (string label, owned VoidFunc action,
-                                        bool error = false) {
+        private Gtk.Button flat_button (string label, bool error = false) {
             var button = new Gtk.Button.with_label (label);
             style_flat_button (button, error);
-            button.clicked.connect (() => { action (); });
             return button;
         }
 
         private Gtk.Button flat_icon_button (string icon_name,
                                              string tooltip,
-                                             owned VoidFunc action,
                                              bool error = false) {
             var button = new Gtk.Button.from_icon_name (icon_name);
             style_flat_button (button, error);
             button.tooltip_text = tooltip;
-            button.clicked.connect (() => { action (); });
             return button;
         }
 
         private Adw.ActionRow action_row (string title, string subtitle,
-                                          string icon_name,
-                                          owned VoidFunc action) {
+                                          string icon_name) {
             var row = new Adw.ActionRow ();
             row.title = title;
             row.subtitle = subtitle;
             row.add_prefix (new Gtk.Image.from_icon_name (icon_name));
             row.activatable = true;
-            row.activated.connect (() => { action (); });
             return row;
         }
 
@@ -185,8 +179,10 @@ namespace Dc {
                 }
 
                 if (is_group) {
-                    var change_avatar_btn = flat_button ("Change Avatar",
-                        () => { pick_avatar.begin (); });
+                    var change_avatar_btn = flat_button ("Change Avatar");
+                    change_avatar_btn.clicked.connect (() => {
+                        pick_avatar.begin ();
+                    });
                     change_avatar_btn.halign = Gtk.Align.CENTER;
                     content.append (change_avatar_btn);
                 }
@@ -201,17 +197,19 @@ namespace Dc {
                 name_box.append (name_lbl);
 
                 if (is_dm_chat && dm_contact_id > 1) {
-                    name_box.append (flat_icon_button (
-                        "document-edit-symbolic", "Edit contact name",
-                        () => {
-                            show_edit_contact_name_dialog (dm_contact_id, name_lbl);
-                        }));
+                    var edit_contact_btn = flat_icon_button (
+                        "document-edit-symbolic", "Edit contact name");
+                    edit_contact_btn.clicked.connect (() => {
+                        show_edit_contact_name_dialog (dm_contact_id, name_lbl);
+                    });
+                    name_box.append (edit_contact_btn);
                 } else if (is_group) {
-                    name_box.append (flat_icon_button (
-                        "document-edit-symbolic", "Edit group name",
-                        () => {
-                            show_edit_group_name_dialog (name_lbl);
-                        }));
+                    var edit_group_btn = flat_icon_button (
+                        "document-edit-symbolic", "Edit group name");
+                    edit_group_btn.clicked.connect (() => {
+                        show_edit_group_name_dialog (name_lbl);
+                    });
+                    name_box.append (edit_group_btn);
                 }
 
                 content.append (name_box);
@@ -225,12 +223,14 @@ namespace Dc {
 
                 if (is_group) {
                     var invite_list = boxed_list ();
-                    invite_list.append (action_row ("Invite Link",
+                    var invite_row = action_row ("Invite Link",
                         "Share a link or QR code for others to join",
-                        "mail-forward-symbolic", () => {
+                        "mail-forward-symbolic");
+                    invite_row.activated.connect (() => {
                         var dialog = new InviteCodeDialog (rpc, rpc.account_id, chat_id);
                         dialog.present (this);
-                    }));
+                    });
+                    invite_list.append (invite_row);
                     content.append (invite_list);
                 }
 
@@ -289,16 +289,17 @@ namespace Dc {
                 mute_row.activatable_widget = mute_combo;
 
                 var ephem_list = boxed_list ();
-                ephem_list.append (action_row (
+                var media_row = action_row (
                     "View Media",
                     "Browse apps and media shared in this chat",
-                    "view-grid-symbolic",
-                    () => {
-                        var dialog = new GalleryDialog (
-                            app_window, rpc, chat_id, chat_name);
-                        dialog.presenter_dialog = this;
-                        dialog.present (this);
-                    }));
+                    "view-grid-symbolic");
+                media_row.activated.connect (() => {
+                    var dialog = new GalleryDialog (
+                        app_window, rpc, chat_id, chat_name);
+                    dialog.presenter_dialog = this;
+                    dialog.present (this);
+                });
+                ephem_list.append (media_row);
                 ephem_list.append (mute_row);
                 ephem_list.append (ephem_row);
                 content.append (ephem_list);
@@ -318,9 +319,12 @@ namespace Dc {
                     header_box.append (members_lbl);
 
                     if (is_group) {
-                        header_box.append (flat_icon_button (
-                            "list-add-symbolic", "Add member",
-                            () => { add_member_dialog.begin (); }));
+                        var add_member_btn = flat_icon_button (
+                            "list-add-symbolic", "Add member");
+                        add_member_btn.clicked.connect (() => {
+                            add_member_dialog.begin ();
+                        });
+                        header_box.append (add_member_btn);
                     }
 
                     content.append (header_box);
@@ -350,33 +354,49 @@ namespace Dc {
 
                 var actions_list = boxed_list ();
 
-                actions_list.append (action_row ("Clear Chat",
+                var clear_row = action_row ("Clear Chat",
                     "Remove messages from this device",
-                    "edit-clear-symbolic",
-                    () => { confirm_clear_history (false); }));
+                    "edit-clear-symbolic");
+                clear_row.activated.connect (() => {
+                    confirm_clear_history.begin (false);
+                });
+                actions_list.append (clear_row);
 
-                actions_list.append (action_row ("Clear Sent Messages for Everyone",
+                var clear_sent_row = action_row (
+                    "Clear Sent Messages for Everyone",
                     "Delete messages you sent for all participants",
-                    "edit-delete-symbolic",
-                    () => { confirm_clear_history (true); }));
+                    "edit-delete-symbolic");
+                clear_sent_row.activated.connect (() => {
+                    confirm_clear_history.begin (true);
+                });
+                actions_list.append (clear_sent_row);
 
                 if (is_group) {
-                    actions_list.append (action_row ("Leave Group",
-                        "Stop receiving messages", "system-log-out-symbolic",
-                        () => { confirm_leave_group (); }));
-                    actions_list.append (action_row ("Disband Group",
+                    var leave_row = action_row ("Leave Group",
+                        "Stop receiving messages", "system-log-out-symbolic");
+                    leave_row.activated.connect (() => {
+                        confirm_leave_group.begin ();
+                    });
+                    actions_list.append (leave_row);
+                    var disband_row = action_row ("Disband Group",
                         "Remove all members and delete messages",
-                        "edit-delete-symbolic",
-                        () => { confirm_disband_group (); }));
+                        "edit-delete-symbolic");
+                    disband_row.activated.connect (() => {
+                        confirm_disband_group.begin ();
+                    });
+                    actions_list.append (disband_row);
                 }
 
                 if (dm_contact != null) {
                     actions_list.append (build_contact_block_row (dm_contact));
                 }
 
-                actions_list.append (action_row ("Delete for Me",
-                    "Remove from your chat list", "user-trash-symbolic",
-                    () => { confirm_delete_chat (); }));
+                var delete_row = action_row ("Delete for Me",
+                    "Remove from your chat list", "user-trash-symbolic");
+                delete_row.activated.connect (() => {
+                    confirm_delete_chat.begin ();
+                });
+                actions_list.append (delete_row);
 
                 content.append (actions_list);
 
@@ -404,7 +424,8 @@ namespace Dc {
             if (contact.address.length > 0) {
                 string addr = contact.address;
                 var copy_btn = flat_icon_button (
-                    "edit-copy-symbolic", "Copy email address", () => {
+                    "edit-copy-symbolic", "Copy email address");
+                copy_btn.clicked.connect (() => {
                     var clipboard = this.get_clipboard ();
                     clipboard.set_text (addr);
                 });
@@ -413,9 +434,12 @@ namespace Dc {
 
             if (is_group && contact.id != 1) {
                 int cid = contact.id;
-                row.add_suffix (flat_icon_button (
-                    "user-trash-symbolic", "Remove from group",
-                    () => { remove_member.begin (cid, row); }, true));
+                var remove_btn = flat_icon_button (
+                    "user-trash-symbolic", "Remove from group", true);
+                remove_btn.clicked.connect (() => {
+                    remove_member.begin (cid, row);
+                });
+                row.add_suffix (remove_btn);
             }
 
             return row;
@@ -430,7 +454,7 @@ namespace Dc {
                 if (contact.is_blocked) {
                     set_contact_blocked.begin (contact, row, false);
                 } else {
-                    confirm_block_contact (contact, row);
+                    confirm_block_contact.begin (contact, row);
                 }
             });
             return row;
@@ -595,13 +619,13 @@ namespace Dc {
             }
         }
 
-        private void confirm_block_contact (Contact contact, Adw.ActionRow row) {
+        private async void confirm_block_contact (Contact contact,
+                                                  Adw.ActionRow row) {
             string label = contact_label (contact);
-            confirm_action (this, "Block Contact",
+            if (yield confirm_action (this, "Block Contact",
                 "Block \"%s\"? You will no longer receive messages from this contact.".printf (label),
-                "block", "Block", () => {
-                    set_contact_blocked.begin (contact, row, true);
-                });
+                "block", "Block"))
+                set_contact_blocked.begin (contact, row, true);
         }
 
         private async void set_contact_blocked (Contact contact,
@@ -622,15 +646,15 @@ namespace Dc {
             }
         }
 
-        private void confirm_clear_history (bool for_all) {
+        private async void confirm_clear_history (bool for_all) {
             string title = for_all ? "Clear Sent Messages for Everyone" : "Clear Chat";
             string body = for_all
                 ? "Delete messages you sent for all participants? Messages from other people can only be cleared from your device."
                 : "Remove all messages from this device? The chat will stay in your conversation list.";
             string action_label = for_all ? "Clear Sent Messages" : "Clear Chat";
-            confirm_action (this, title, body, "clear", action_label, () => {
+            if (yield confirm_action (
+                    this, title, body, "clear", action_label))
                 do_clear_history.begin (for_all);
-            });
         }
 
         private async void do_clear_history (bool for_all) {
@@ -650,10 +674,11 @@ namespace Dc {
             else yield rpc.delete_messages (ids);
         }
 
-        private void confirm_leave_group () {
-            confirm_action (this, "Leave Group",
+        private async void confirm_leave_group () {
+            if (yield confirm_action (this, "Leave Group",
                 "Leave \"%s\"? You will stop receiving messages.".printf (chat_name),
-                "leave", "Leave", () => { do_leave_group.begin (); });
+                "leave", "Leave"))
+                do_leave_group.begin ();
         }
 
         private async void do_leave_group () {
@@ -666,10 +691,11 @@ namespace Dc {
             }
         }
 
-        private void confirm_disband_group () {
-            confirm_action (this, "Disband Group",
+        private async void confirm_disband_group () {
+            if (yield confirm_action (this, "Disband Group",
                 "Remove all members from \"%s\" and delete your sent messages for everyone? Other messages will only be removed locally.".printf (chat_name),
-                "disband", "Disband", () => { do_disband_group.begin (); });
+                "disband", "Disband"))
+                do_disband_group.begin ();
         }
 
         private async void do_disband_group () {
@@ -691,10 +717,11 @@ namespace Dc {
             }
         }
 
-        private void confirm_delete_chat () {
-            confirm_action (this, "Delete for Me",
+        private async void confirm_delete_chat () {
+            if (yield confirm_action (this, "Delete for Me",
                 "Remove \"%s\" from your chat list? You may still receive messages if you are a member.".printf (chat_name),
-                "delete", "Delete", () => { do_delete_chat_from_dialog.begin (); });
+                "delete", "Delete"))
+                do_delete_chat_from_dialog.begin ();
         }
 
         private async void do_delete_chat_from_dialog () {

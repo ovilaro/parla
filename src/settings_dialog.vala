@@ -1010,7 +1010,7 @@ namespace Dc {
             var reset_btn = new Gtk.Button.with_label ("Factory Reset");
             reset_btn.add_css_class ("destructive-action");
             reset_btn.tooltip_text = "Delete all Parla configuration and start fresh";
-            reset_btn.clicked.connect (on_reset_settings);
+            reset_btn.clicked.connect (() => { on_reset_settings.begin (); });
             reset_box.append (reset_btn);
 
             var reset_label = new Gtk.Label ("Remove all settings and close the app");
@@ -1535,14 +1535,14 @@ namespace Dc {
             }
         }
 
-        private void on_reset_settings () {
-            confirm_action (app_window, "Factory Reset",
+        private async void on_reset_settings () {
+            if (yield confirm_action (app_window, "Factory Reset",
                 "This will delete all Parla configuration files and close the application. " +
                 "Your Delta Chat accounts and messages are not affected.",
-                "reset", "Reset & Close", () => {
-                    delete_parla_config ();
-                    app_window.quit_application ();
-                });
+                "reset", "Reset & Close")) {
+                delete_parla_config ();
+                app_window.quit_application ();
+            }
         }
 
         private void apply_background () {

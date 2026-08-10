@@ -269,7 +269,9 @@ namespace Dc {
 
             var delete_btn = new Gtk.Button.with_label ("Delete…");
             delete_btn.add_css_class ("destructive-action");
-            delete_btn.clicked.connect (confirm_delete_message);
+            delete_btn.clicked.connect (() => {
+                confirm_delete_message.begin ();
+            });
             row.append (delete_btn);
 
             var forward_btn = new Gtk.Button.with_label ("Forward…");
@@ -515,27 +517,16 @@ namespace Dc {
             return buffer.get_text (start, end, false);
         }
 
-        private void confirm_delete_message () {
-            if (msg.is_outgoing) {
-                confirm_delete_options (this, "Delete Message?",
-                    "Delete this message from your device only, or from all participants? This cannot be undone.",
-                    () => {
-                        actions.delete_message.begin (msg.id, false);
-                        this.close ();
-                    },
-                    () => {
-                        actions.delete_message.begin (msg.id, true);
-                        this.close ();
-                    });
-            } else {
-                confirm_delete_options (this, "Delete Message?",
-                    "Delete this message from your device? This cannot be undone.",
-                    () => {
-                        actions.delete_message.begin (msg.id, false);
-                        this.close ();
-                    },
-                    null);
-            }
+        private async void confirm_delete_message () {
+            string body = msg.is_outgoing
+                ? "Delete this message from your device only, or from all participants? This cannot be undone."
+                : "Delete this message from your device? This cannot be undone.";
+            var choice = yield confirm_delete_options (
+                this, "Delete Message?", body, msg.is_outgoing);
+            if (choice == DeleteChoice.CANCEL) return;
+            actions.delete_message.begin (
+                msg.id, choice == DeleteChoice.FOR_EVERYONE);
+            this.close ();
         }
 
         private string format_full_timestamp (int64 ts) {

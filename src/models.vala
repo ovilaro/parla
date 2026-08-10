@@ -1,6 +1,6 @@
 namespace Dc {
 
-    public delegate void VoidFunc ();
+    public enum DeleteChoice { CANCEL, FOR_ME, FOR_EVERYONE }
 
     public static void show_error (Gtk.Widget parent, string message) {
         var d = new Adw.AlertDialog ("Error", message);
@@ -14,41 +14,36 @@ namespace Dc {
             || error is Gtk.DialogError.DISMISSED;
     }
 
-    public static void confirm_action (Gtk.Widget parent, string title,
-                                        string body, string action_id,
-                                        string action_label,
-                                        owned VoidFunc on_confirm) {
+    public static async bool confirm_action (Gtk.Widget parent, string title,
+                                             string body, string action_id,
+                                             string action_label) {
         var d = new Adw.AlertDialog (title, body);
         d.add_response ("cancel", "Cancel");
         d.add_response (action_id, action_label);
         d.set_response_appearance (action_id, Adw.ResponseAppearance.DESTRUCTIVE);
         d.default_response = "cancel";
         d.close_response = "cancel";
-        d.response.connect ((r) => { if (r == action_id) on_confirm (); });
-        d.present (parent);
+        return (yield d.choose (parent, null)) == action_id;
     }
 
-    public static void confirm_delete_options (Gtk.Widget parent,
-                                                string title, string body,
-                                                owned VoidFunc on_delete_for_me,
-                                                owned VoidFunc? on_delete_for_everyone) {
+    public static async DeleteChoice confirm_delete_options (
+            Gtk.Widget parent, string title, string body,
+            bool allow_delete_for_everyone) {
         var d = new Adw.AlertDialog (title, body);
         d.add_response ("cancel", "Cancel");
         d.add_response ("delete_me", "Delete for Me");
         d.set_response_appearance ("delete_me", Adw.ResponseAppearance.DESTRUCTIVE);
-        if (on_delete_for_everyone != null) {
+        if (allow_delete_for_everyone) {
             d.add_response ("delete_all", "Delete for Everyone");
             d.set_response_appearance ("delete_all",
                 Adw.ResponseAppearance.DESTRUCTIVE);
         }
         d.default_response = "cancel";
         d.close_response = "cancel";
-        d.response.connect ((r) => {
-            if (r == "delete_me") on_delete_for_me ();
-            else if (r == "delete_all" && on_delete_for_everyone != null)
-                on_delete_for_everyone ();
-        });
-        d.present (parent);
+        string response = yield d.choose (parent, null);
+        if (response == "delete_me") return DeleteChoice.FOR_ME;
+        if (response == "delete_all") return DeleteChoice.FOR_EVERYONE;
+        return DeleteChoice.CANCEL;
     }
 
     /** Flat, left-aligned button for hand-built popover menus. Disables
@@ -57,7 +52,6 @@ namespace Dc {
         dialog and friends. */
     public static Gtk.Button popover_menu_button (Gtk.Popover popover,
                                                   string label,
-                                                  owned VoidFunc action,
                                                   bool destructive = false,
                                                   bool hexpand = false) {
         var btn = new Gtk.Button.with_label (label);
@@ -72,10 +66,6 @@ namespace Dc {
         btn.clicked.connect (() => {
             btn.sensitive = false;
             popover.popdown ();
-            Idle.add (() => {
-                action ();
-                return Source.REMOVE;
-            });
         });
         return btn;
     }

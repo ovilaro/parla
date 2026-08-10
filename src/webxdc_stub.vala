@@ -4,13 +4,16 @@ namespace Dc.Webxdc {
 
     public const bool AVAILABLE = false;
 
-    public delegate void CardInfoFn (string? name, Gdk.Texture? icon);
+    public class CardInfo {
+        public string? name;
+        public Gdk.Texture? icon;
+    }
 
     public void setup (RpcClient rpc, SettingsManager settings) { }
 
     public bool enabled () { return false; }
 
-    public void card_info (int msg_id, owned CardInfoFn cb) { }
+    public async CardInfo card_info (int msg_id) { return new CardInfo (); }
 
     public void open (Gtk.Window? parent, RpcClient rpc, Message msg) { }
 

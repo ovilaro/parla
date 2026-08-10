@@ -63,12 +63,10 @@ namespace Dc {
 
     private static Gtk.Button account_setup_action (Gtk.Box content,
                                                     string label,
-                                                    owned VoidFunc action,
                                                     bool with_margin = true) {
         var row = account_setup_action_row (with_margin);
         var button = new Gtk.Button.with_label (label);
         button.add_css_class ("suggested-action");
-        button.clicked.connect (() => { action (); });
         row.append (button);
         content.append (row);
         return button;
@@ -250,8 +248,8 @@ namespace Dc {
                 "chatmail.at/relays</a> for the full list.";
             content.append (hint);
 
-            create_btn = account_setup_action (content, "Create Profile",
-                () => { do_create.begin (); });
+            create_btn = account_setup_action (content, "Create Profile");
+            create_btn.clicked.connect (() => { do_create.begin (); });
             this.default_widget = create_btn;
 
             return content;
@@ -396,8 +394,8 @@ namespace Dc {
             invite_entry.changed.connect (update_start_sensitivity);
             content.append (invite_entry);
 
-            start_btn = account_setup_action (content, "Create Profile",
-                () => { start_create.begin (); }, false);
+            start_btn = account_setup_action (content, "Create Profile", false);
+            start_btn.clicked.connect (() => { start_create.begin (); });
             start_btn.sensitive = false;
 
             this.default_widget = start_btn;
@@ -561,8 +559,8 @@ namespace Dc {
             url_entry.changed.connect (update_start_sensitivity);
             content.append (url_entry);
 
-            start_btn = account_setup_action (content, "Start Import",
-                () => { start_import.begin (); }, false);
+            start_btn = account_setup_action (content, "Start Import", false);
+            start_btn.clicked.connect (() => { start_import.begin (); });
             start_btn.sensitive = false;
 
             this.default_widget = start_btn;

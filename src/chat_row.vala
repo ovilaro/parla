@@ -256,20 +256,26 @@ namespace Dc {
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             box.add_css_class ("menu");
 
-            append_menu_button (box, popover, is_pinned ? "Unpin" : "Pin",
-                () => { toggle_pin.begin (chat_id, is_pinned); });
+            append_menu_button (box, popover,
+                is_pinned ? "Unpin" : "Pin").clicked.connect (() => {
+                    toggle_pin.begin (chat_id, is_pinned);
+                });
             append_menu_button (box, popover,
                 has_unread ? "Mark as read" : "Mark as unread",
-                () => { set_unread_state.begin (chat_id, !has_unread); },
-                false, has_unread || chat_id != window.current_chat_id);
-            append_menu_button (box, popover, "View Media",
-                () => { show_media (chat_id); });
-            append_menu_button (box, popover, "Details…",
-                () => { show_info (chat_id); });
-            append_menu_button (box, popover, "Clear Chat…",
-                () => { confirm_clear_history (chat_id); }, true);
-            append_menu_button (box, popover, "Delete…",
-                () => { confirm_delete (chat_id); }, true);
+                false, has_unread || chat_id != window.current_chat_id)
+                .clicked.connect (() => {
+                    set_unread_state.begin (chat_id, !has_unread);
+                });
+            append_menu_button (box, popover, "View Media")
+                .clicked.connect (() => { show_media (chat_id); });
+            append_menu_button (box, popover, "Details…")
+                .clicked.connect (() => { show_info (chat_id); });
+            append_menu_button (box, popover, "Clear Chat…", true)
+                .clicked.connect (() => {
+                    confirm_clear_history.begin (chat_id);
+                });
+            append_menu_button (box, popover, "Delete…", true)
+                .clicked.connect (() => { confirm_delete.begin (chat_id); });
 
             popover.child = box;
             popover.closed.connect (() => { popover.unparent (); });
@@ -284,20 +290,15 @@ namespace Dc {
             return btn;
         }
 
-        private static void append_menu_button (Gtk.Box box,
-                                                Gtk.Popover popover,
-                                                string label,
-                                                owned VoidFunc action,
-                                                bool destructive = false,
-                                                bool sensitive = true) {
+        private static Gtk.Button append_menu_button (
+                Gtk.Box box, Gtk.Popover popover, string label,
+                bool destructive = false, bool sensitive = true) {
             var btn = make_menu_button (label);
             if (destructive) btn.add_css_class ("menu-destructive");
             btn.sensitive = sensitive;
-            btn.clicked.connect (() => {
-                popover.popdown ();
-                action ();
-            });
+            btn.clicked.connect (() => { popover.popdown (); });
             box.append (btn);
+            return btn;
         }
 
         private async void toggle_pin (int chat_id, bool currently_pinned) {
@@ -357,28 +358,26 @@ namespace Dc {
             dialog.present (window);
         }
 
-        private void confirm_clear_history (int chat_id) {
+        private async void confirm_clear_history (int chat_id) {
             string chat_name = "this chat";
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) chat_name = entry.name;
 
-            confirm_action (window, "Clear Chat",
+            if (yield confirm_action (window, "Clear Chat",
                 "Remove all messages in \"%s\" from this device? The chat will stay in your conversation list.".printf (chat_name),
-                "clear", "Clear Chat", () => {
-                    do_clear_history.begin (chat_id, false);
-                });
+                "clear", "Clear Chat"))
+                do_clear_history.begin (chat_id, false);
         }
 
-        private void confirm_delete (int chat_id) {
+        private async void confirm_delete (int chat_id) {
             string chat_name = "this chat";
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) chat_name = entry.name;
 
-            confirm_action (window, "Delete Chat",
+            if (yield confirm_action (window, "Delete Chat",
                 "Remove \"%s\" from your conversation list? You may still receive new messages if you are a member.".printf (chat_name),
-                "delete", "Delete", () => {
-                    do_delete.begin (chat_id);
-            });
+                "delete", "Delete"))
+                do_delete.begin (chat_id);
         }
 
         private async void do_clear_history (int chat_id, bool for_all) {
