@@ -429,9 +429,14 @@ namespace Dc.Webxdc {
             ctx.register_uri_scheme ("webxdc", (req) => {
                 serve.begin (req.get_path () ?? "", req);
             });
+            /* Secure, but NOT register_uri_scheme_as_local: "local" gives
+               documents file:-like treatment with an opaque origin, which
+               fails every CORS-mode fetch — e.g. <script type="module"
+               crossorigin> as emitted by Vite builds — leaving such apps
+               on a blank page. Plain webxdc: documents keep a proper
+               origin, and this context serves no other scheme anyway. */
             var sec = ctx.get_security_manager ();
             sec.register_uri_scheme_as_secure ("webxdc");
-            sec.register_uri_scheme_as_local ("webxdc");
 
             /* No cookies/cache on disk, and a blackhole proxy so any
                http(s) request an app may attempt dies before reaching the
