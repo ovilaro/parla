@@ -81,6 +81,8 @@ namespace Dc.Webxdc {
     private unowned SettingsManager? config = null;
 
     private bool follow_setting_connected = false;
+    private bool security_settings_connected = false;
+    private bool security_close_pending = false;
 
     public void setup (RpcClient rpc, SettingsManager settings) {
         client = rpc;
@@ -97,6 +99,38 @@ namespace Dc.Webxdc {
                 });
             });
         }
+        if (!security_settings_connected) {
+            security_settings_connected = true;
+            settings.notify["webxdc-allow-internet"].connect (() => {
+                schedule_security_close ();
+            });
+            settings.notify["webxdc-allow-wasm"].connect (() => {
+                schedule_security_close ();
+            });
+            settings.notify["webxdc-allow-webgl"].connect (() => {
+                schedule_security_close ();
+            });
+            settings.notify["webxdc-allow-hardware-acceleration"].connect (
+                () => { schedule_security_close (); });
+        }
+    }
+
+    /* Security policy is fixed when a web view is created. Close existing
+       instances so changing a switch takes effect immediately and no app
+       silently keeps broader permissions than Settings shows. Coalesce the
+       safest-default button's four property notifications into one pass. */
+    private void schedule_security_close () {
+        if (security_close_pending) return;
+        security_close_pending = true;
+        Idle.add (() => {
+            security_close_pending = false;
+            if (windows != null) {
+                windows.get_values ().foreach ((app) => {
+                    app.close_view ();
+                });
+            }
+            return Source.REMOVE;
+        });
     }
 
     /** Compile-time support plus the runtime settings toggle. */
@@ -223,6 +257,10 @@ namespace Dc.Webxdc {
         private string self_name = "me";
         private string app_name;
         private string? chat_name = null;
+        private bool allow_internet = false;
+        private bool allow_wasm = false;
+        private bool allow_webgl = false;
+        private bool allow_hardware_acceleration = false;
         /* Whether follow-chat mode currently keeps the window hidden;
            tracked so mode/chat changes only touch window state on an
            actual transition (a plain show would un-minimize, say). */
@@ -234,6 +272,13 @@ namespace Dc.Webxdc {
             this.msg_id = msg.id;
             this.chat_id = msg.chat_id;
             this.app_name = msg.display_file_name ("Webxdc");
+            if (config != null) {
+                allow_internet = config.webxdc_allow_internet;
+                allow_wasm = config.webxdc_allow_wasm;
+                allow_webgl = config.webxdc_allow_webgl;
+                allow_hardware_acceleration =
+                    config.webxdc_allow_hardware_acceleration;
+            }
             create_view (app_name);
             present ();
             start.begin ();
@@ -446,6 +491,9 @@ namespace Dc.Webxdc {
         private static extern void* shim_open (string title, RawBlobFn blob,
                                                RawMsgFn message,
                                                RawClosedFn closed,
+                                               bool allow_internet,
+                                               bool allow_wasm,
+                                               bool allow_webgl,
                                                void* user_data);
         [CCode (cheader_filename = "webxdc_macos.h",
                 cname = "parla_webxdc_load")]
@@ -506,7 +554,8 @@ namespace Dc.Webxdc {
 
         private void create_view (string title) {
             handle = shim_open (title, on_raw_blob, on_raw_message,
-                                on_raw_closed, this);
+                                on_raw_closed, allow_internet, allow_wasm,
+                                allow_webgl, this);
         }
 
         public void present () {
@@ -580,13 +629,16 @@ namespace Dc.Webxdc {
             var sec = ctx.get_security_manager ();
             sec.register_uri_scheme_as_secure ("webxdc");
 
-            /* No cookies/cache on disk, and a blackhole proxy so any
-               http(s) request an app may attempt dies before reaching the
-               network. webxdc: URIs are served in-process and unaffected. */
+            /* No cookies/cache on disk. The safe default adds a blackhole
+               proxy so http(s) dies before reaching the network; the unsafe
+               opt-in leaves the ephemeral session directly connected.
+               webxdc: URIs are served in-process and unaffected. */
             var session = new WebKit.NetworkSession.ephemeral ();
-            session.set_proxy_settings (WebKit.NetworkProxyMode.CUSTOM,
-                new WebKit.NetworkProxySettings ("socks5://127.0.0.1:1",
-                                                 null));
+            if (!allow_internet) {
+                session.set_proxy_settings (WebKit.NetworkProxyMode.CUSTOM,
+                    new WebKit.NetworkProxySettings ("socks5://127.0.0.1:1",
+                                                     null));
+            }
 
             view = (WebKit.WebView) GLib.Object.new (typeof (WebKit.WebView),
                 "web-context", ctx,
@@ -596,6 +648,15 @@ namespace Dc.Webxdc {
             s.enable_developer_extras = false;
             s.allow_modal_dialogs = false;
             s.javascript_can_open_windows_automatically = false;
+            /* The proxy covers URL loads; WebRTC can create direct UDP
+               transports outside it, and DNS prefetching is unnecessary for
+               an offline custom-scheme app. */
+            s.enable_webrtc = allow_internet;
+            s.enable_dns_prefetching = allow_internet;
+            s.enable_webgl = allow_webgl;
+            s.hardware_acceleration_policy = allow_hardware_acceleration
+                ? WebKit.HardwareAccelerationPolicy.ALWAYS
+                : WebKit.HardwareAccelerationPolicy.NEVER;
             view.decide_policy.connect (on_decide_policy);
             view.vexpand = true;
 
@@ -672,7 +733,18 @@ namespace Dc.Webxdc {
         private void deliver (WebKit.URISchemeRequest token, uint8[] data,
                               string mime) {
             var stream = new MemoryInputStream.from_bytes (new Bytes (data));
-            token.finish (stream, data.length, mime);
+            var csp = WebxdcSecurity.wasm_csp (allow_wasm);
+            if (csp == null) {
+                token.finish (stream, data.length, mime);
+                return;
+            }
+            var response = new WebKit.URISchemeResponse (stream, data.length);
+            response.set_content_type (mime);
+            var headers = new Soup.MessageHeaders (
+                Soup.MessageHeadersType.RESPONSE);
+            headers.append ("Content-Security-Policy", csp);
+            response.set_http_headers ((owned) headers);
+            token.finish_with_response (response);
         }
 
         private void fail (WebKit.URISchemeRequest token) {

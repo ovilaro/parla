@@ -11,13 +11,14 @@
  * explicit. Everything WebKit tells us is re-queued with g_idle_add and
  * handled by webxdc.vala in a normal GTK main-loop iteration.
  *
- * Network policy is enforced by the engine itself: a WKContentRuleList
- * blocks every load and then exempts the webxdc: scheme, which covers
- * subresources (fetch/img/script) that a navigation delegate would never
- * see. If the rule list fails to compile the web view is never created —
- * fail closed. The navigation delegate additionally refuses top-level
- * navigation outside webxdc: and window.open is denied by returning nil
- * from createWebViewWithConfiguration.
+ * Network policy is enforced by the engine itself. The safe default uses a
+ * WKContentRuleList which blocks every load and then exempts the webxdc:
+ * scheme, covering subresources (fetch/img/script) a navigation delegate
+ * would never see. If that rule list fails to compile the web view is never
+ * created — fail closed. An explicit unsafe setting omits the list. The
+ * navigation delegate always refuses top-level navigation outside webxdc:,
+ * and window.open is denied by returning nil from
+ * createWebViewWithConfiguration.
  */
 
 static NSString *const kParlaWebxdcBlockRules =
@@ -39,6 +40,9 @@ static NSString *const kParlaWebxdcBlockRules =
 	NSMutableSet *stopped_tasks;
 	NSString *pending_uri;
 	BOOL closed;
+	BOOL allow_internet;
+	BOOL allow_wasm;
+	BOOL allow_webgl;
 	ParlaWebxdcBlobFn blob_cb;
 	ParlaWebxdcMsgFn message_cb;
 	ParlaWebxdcClosedFn closed_cb;
@@ -123,7 +127,43 @@ setup_webview (ParlaWebxdcController *c, WKContentRuleList *rules)
 	[cfg setURLSchemeHandler:c forURLScheme:@"webxdc"];
 	[cfg setWebsiteDataStore:[WKWebsiteDataStore nonPersistentDataStore]];
 	[[cfg userContentController] addScriptMessageHandler:c name:@"webxdc"];
-	[[cfg userContentController] addContentRuleList:rules];
+	if (rules)
+		[[cfg userContentController] addContentRuleList:rules];
+	if (!c->allow_webgl) {
+		/* WKWebView has no public WebGL-disable preference. Install this at
+		 * document start in every frame as the strongest public best-effort
+		 * restriction; worker-created contexts remain an Apple API gap. */
+		NSString *source =
+		    @"(()=>{const block=p=>{if(!p||!p.getContext)return;"
+		     "const old=p.getContext;Object.defineProperty(p,'getContext',{"
+		     "configurable:false,writable:false,value:function(t){"
+		     "t=String(t).toLowerCase();return t==='webgl'||t==='webgl2'"
+		     "||t==='experimental-webgl'?null:old.apply(this,arguments)}})};"
+		     "block(window.HTMLCanvasElement&&HTMLCanvasElement.prototype);"
+		     "block(window.OffscreenCanvas&&OffscreenCanvas.prototype)})();";
+		WKUserScript *script = [[WKUserScript alloc]
+		    initWithSource:source
+		    injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+		    forMainFrameOnly:NO];
+		[[cfg userContentController] addUserScript:script];
+		[script release];
+	}
+	if (!c->allow_internet) {
+		/* Content rules cover URL-backed loads, but WebRTC can create direct
+		 * transports. WKWebView has no public WebRTC setting, so remove those
+		 * constructors at document start as defense in depth. */
+		NSString *source =
+		    @"(()=>{for(const n of ['RTCPeerConnection',"
+		     "'webkitRTCPeerConnection','WebTransport']){try{"
+		     "Object.defineProperty(window,n,{value:undefined,writable:false,"
+		     "configurable:false})}catch(e){}}})();";
+		WKUserScript *script = [[WKUserScript alloc]
+		    initWithSource:source
+		    injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+		    forMainFrameOnly:NO];
+		[[cfg userContentController] addUserScript:script];
+		[script release];
+	}
 
 	c->webview = [[WKWebView alloc]
 	    initWithFrame:[[c->window contentView] bounds]
@@ -229,6 +269,8 @@ setup_webview (ParlaWebxdcController *c, WKContentRuleList *rules)
 gpointer
 parla_webxdc_open (const char *title, ParlaWebxdcBlobFn blob,
                    ParlaWebxdcMsgFn message, ParlaWebxdcClosedFn closed,
+                   gboolean allow_internet, gboolean allow_wasm,
+                   gboolean allow_webgl,
                    gpointer user_data)
 {
 	ParlaWebxdcController *c = [[ParlaWebxdcController alloc] init];
@@ -236,6 +278,9 @@ parla_webxdc_open (const char *title, ParlaWebxdcBlobFn blob,
 	c->message_cb = message;
 	c->closed_cb = closed;
 	c->user_data = user_data;
+	c->allow_internet = allow_internet;
+	c->allow_wasm = allow_wasm;
+	c->allow_webgl = allow_webgl;
 	c->live_tasks = [[NSMutableSet alloc] init];
 	c->stopped_tasks = [[NSMutableSet alloc] init];
 
@@ -249,6 +294,11 @@ parla_webxdc_open (const char *title, ParlaWebxdcBlobFn blob,
 	[c->window setTitle:[NSString stringWithUTF8String:title]];
 	[c->window setDelegate:c];
 	[c->window center];
+
+	if (allow_internet) {
+		setup_webview (c, nil);
+		return c;
+	}
 
 	[[WKContentRuleListStore defaultStore]
 	    compileContentRuleListForIdentifier:@"parla-webxdc-block-net"
@@ -296,11 +346,15 @@ parla_webxdc_finish_task (gpointer handle, gpointer task_ptr,
 	}
 	if (![c->live_tasks containsObject:task])
 		return;
-	NSURLResponse *resp = [[NSURLResponse alloc]
+	NSMutableDictionary *headers = [NSMutableDictionary dictionaryWithObject:
+	    [NSString stringWithUTF8String:mime] forKey:@"Content-Type"];
+	if (!c->allow_wasm) {
+		headers[@"Content-Security-Policy"] =
+		    @"script-src 'self' 'unsafe-inline' data: blob: http: https:";
+	}
+	NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
 	    initWithURL:[[task request] URL]
-	    MIMEType:[NSString stringWithUTF8String:mime]
-	    expectedContentLength:data_length
-	    textEncodingName:nil];
+	    statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:headers];
 	@try {
 		[task didReceiveResponse:resp];
 		[task didReceiveData:[NSData dataWithBytes:data

@@ -121,6 +121,7 @@ sources = files(
   'src/pinned_messages_manager.vala',
   'src/webxdc_bar.vala',
   'src/webxdc_manager_dialog.vala',
+  'src/webxdc_security.vala',
   'src/quick_switch_dialog.vala',
   'src/event_handler.vala',
   'src/message_details_dialog.vala',
@@ -301,3 +302,12 @@ message_history_test = executable(
 )
 
 test('message-history', message_history_test)
+
+webxdc_security_test = executable(
+  'webxdc-security-test',
+  files('tests/webxdc_security_test.vala', 'src/webxdc_security.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0')],
+  install: false,
+)
+
+test('webxdc-security', webxdc_security_test)

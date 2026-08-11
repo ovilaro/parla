@@ -84,6 +84,15 @@ namespace Dc {
         public bool webxdc_apps { get; set; default = true; }
         /* App windows follow their chat: hidden unless the chat is open. */
         public bool webxdc_follow_chat { get; set; default = false; }
+        /* Webxdc capabilities are opt-in: missing settings stay safest. */
+        public bool webxdc_allow_internet { get; set; default =
+            WebxdcSecurity.SAFE_ALLOW_INTERNET; }
+        public bool webxdc_allow_wasm { get; set; default =
+            WebxdcSecurity.SAFE_ALLOW_WASM; }
+        public bool webxdc_allow_webgl { get; set; default =
+            WebxdcSecurity.SAFE_ALLOW_WEBGL; }
+        public bool webxdc_allow_hardware_acceleration { get; set; default =
+            WebxdcSecurity.SAFE_ALLOW_HARDWARE_ACCELERATION; }
         public int auto_download_limit { get; set; default = AUTO_DOWNLOAD_DEFAULT; }
         public string rpc_server_path { get; set; default = ""; }
         /* An empty value deliberately means the standard Parla account store. */
@@ -181,6 +190,16 @@ namespace Dc {
             animate_stickers = kf_bool (kf, "animate_stickers", true);
             webxdc_apps = kf_bool (kf, "webxdc_apps", true);
             webxdc_follow_chat = kf_bool (kf, "webxdc_follow_chat", false);
+            webxdc_allow_internet =
+                kf_bool (kf, "webxdc_allow_internet",
+                         WebxdcSecurity.SAFE_ALLOW_INTERNET);
+            webxdc_allow_wasm = kf_bool (kf, "webxdc_allow_wasm",
+                                         WebxdcSecurity.SAFE_ALLOW_WASM);
+            webxdc_allow_webgl = kf_bool (kf, "webxdc_allow_webgl",
+                                          WebxdcSecurity.SAFE_ALLOW_WEBGL);
+            webxdc_allow_hardware_acceleration = kf_bool (kf,
+                "webxdc_allow_hardware_acceleration",
+                WebxdcSecurity.SAFE_ALLOW_HARDWARE_ACCELERATION);
             auto_download_limit = normalize_auto_download_limit (
                 kf_int (kf, "auto_download_limit", AUTO_DOWNLOAD_DEFAULT));
             rpc_server_path = kf_str (kf, "rpc_server_path", "");
@@ -313,6 +332,26 @@ namespace Dc {
         public void save_webxdc_follow_chat (bool v) {
             webxdc_follow_chat = v;
             save_bool ("webxdc_follow_chat", v);
+        }
+
+        public void save_webxdc_allow_internet (bool v) {
+            webxdc_allow_internet = v;
+            save_bool ("webxdc_allow_internet", v);
+        }
+
+        public void save_webxdc_allow_wasm (bool v) {
+            webxdc_allow_wasm = v;
+            save_bool ("webxdc_allow_wasm", v);
+        }
+
+        public void save_webxdc_allow_webgl (bool v) {
+            webxdc_allow_webgl = v;
+            save_bool ("webxdc_allow_webgl", v);
+        }
+
+        public void save_webxdc_allow_hardware_acceleration (bool v) {
+            webxdc_allow_hardware_acceleration = v;
+            save_bool ("webxdc_allow_hardware_acceleration", v);
         }
 
         public void save_auto_download_limit (int bytes) {
@@ -1068,6 +1107,84 @@ namespace Dc {
                     behavior_combo.selected == 1);
             });
             webxdc_list.append (behavior_row);
+
+            var internet_row = action_row (
+                "Internet access",
+                "Allow apps to make direct network requests (unsafe)");
+            var internet_switch = row_switch (
+                internet_row, app_window.settings.webxdc_allow_internet);
+            internet_switch.notify["active"].connect (() => {
+                app_window.settings.save_webxdc_allow_internet (
+                    internet_switch.active);
+            });
+            webxdc_list.append (internet_row);
+
+            var wasm_row = action_row (
+                "WebAssembly",
+                "Allow apps to compile and run WebAssembly");
+            var wasm_switch = row_switch (
+                wasm_row, app_window.settings.webxdc_allow_wasm);
+            wasm_switch.notify["active"].connect (() => {
+                app_window.settings.save_webxdc_allow_wasm (
+                    wasm_switch.active);
+            });
+            webxdc_list.append (wasm_row);
+
+            var webgl_row = action_row (
+                "WebGL",
+                Platform.is_macos ()
+                    ? "Best-effort restriction on macOS; WKWebView has no "
+                    + "public hard-disable API"
+                    : "Allow apps to access accelerated 3D graphics");
+            var webgl_switch = row_switch (
+                webgl_row, app_window.settings.webxdc_allow_webgl);
+            webgl_switch.notify["active"].connect (() => {
+                app_window.settings.save_webxdc_allow_webgl (
+                    webgl_switch.active);
+            });
+            webxdc_list.append (webgl_row);
+
+            Gtk.Switch? acceleration_switch = null;
+            if (!Platform.is_macos ()) {
+                var acceleration_row = action_row (
+                    "Hardware acceleration",
+                    "Allow WebKit to use GPU-accelerated rendering");
+                var acceleration = row_switch (acceleration_row,
+                    app_window.settings.webxdc_allow_hardware_acceleration);
+                acceleration.notify["active"].connect (() => {
+                    app_window.settings
+                        .save_webxdc_allow_hardware_acceleration (
+                            acceleration.active);
+                });
+                acceleration_switch = acceleration;
+                webxdc_list.append (acceleration_row);
+            }
+
+            var safest_row = action_row (
+                "Safest defaults",
+                "Block Internet, WebAssembly, WebGL, and hardware "
+                + "acceleration where supported; changing security settings "
+                + "closes running apps");
+            var safest_button = new Gtk.Button.with_label ("Use safest");
+            safest_button.valign = Gtk.Align.CENTER;
+            safest_button.clicked.connect (() => {
+                internet_switch.active =
+                    WebxdcSecurity.SAFE_ALLOW_INTERNET;
+                wasm_switch.active = WebxdcSecurity.SAFE_ALLOW_WASM;
+                webgl_switch.active = WebxdcSecurity.SAFE_ALLOW_WEBGL;
+                if (acceleration_switch != null) {
+                    acceleration_switch.active = WebxdcSecurity
+                        .SAFE_ALLOW_HARDWARE_ACCELERATION;
+                } else {
+                    app_window.settings
+                        .save_webxdc_allow_hardware_acceleration (
+                            WebxdcSecurity
+                                .SAFE_ALLOW_HARDWARE_ACCELERATION);
+                }
+                app_window.show_toast ("Webxdc safest defaults restored");
+            });
+            safest_row.add_suffix (safest_button);
+            webxdc_list.append (safest_row);
         }
 
         private Gtk.ListBox settings_list (string title) {

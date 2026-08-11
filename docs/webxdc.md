@@ -59,6 +59,12 @@ needs conditional compilation and linking stays trivial.
   the app card stays recognizable and the dialog explains why it cannot
   start the app, offering only **Download File** and **Cancel**. Builds
   compiled without Webxdc support use the same download-only flow.
+- The same section has opt-in switches for direct Internet access,
+  WebAssembly, WebGL, and (on WebKitGTK) hardware acceleration. All default
+  to off, including when upgrading from a version which did not have these
+  settings. **Use safest** resets every capability at once. Changing any
+  security switch closes running app windows so the next launch cannot retain
+  an older, broader policy.
 - Sending an `.xdc` file from Parla announces it with the `Webxdc`
   viewtype, so other clients show it as an app too.
 - Every window gets its own isolated web context with a custom `webxdc:`
@@ -74,8 +80,9 @@ needs conditional compilation and linking stays trivial.
 
 ## Security boundaries
 
-Webxdc's contract is that apps run **offline and sandboxed**; Parla
-enforces it inside the engine on both backends:
+Webxdc's contract is that apps run **offline and sandboxed**. Parla starts
+with the following safest policy inside both engines; users may explicitly
+relax individual capabilities in Settings:
 
 - **No network.** WebKitGTK: the `WebKit.NetworkSession` is ephemeral (no
   cookies or cache on disk) and configured with a blackhole SOCKS proxy,
@@ -83,7 +90,21 @@ enforces it inside the engine on both backends:
   network. macOS: a compiled `WKContentRuleList` blocks every load and
   then exempts only the `webxdc:` scheme, which covers subresource
   fetches too, with a non-persistent website data store. `webxdc:`
-  content is served in-process and is unaffected either way.
+  content is served in-process and is unaffected either way. WebKitGTK also
+  disables WebRTC and DNS prefetching in offline mode; macOS removes the
+  WebRTC/WebTransport constructors at document start as defense in depth
+  because WKWebView exposes no public WebRTC setting.
+- **No WebAssembly.** Every custom-scheme response carries a CSP which
+  permits normal archive scripts but omits `unsafe-eval` and
+  `wasm-unsafe-eval`. Enabling WebAssembly removes that host CSP.
+- **No WebGL.** WebKitGTK uses its public per-view `enable-webgl` setting.
+  WKWebView has no public equivalent, so macOS installs a document-start
+  script in every frame which blocks canvas WebGL contexts. This is a
+  best-effort compatibility control, not a macOS security boundary: code in
+  a worker can still reach APIs Apple does not expose for configuration.
+- **No hardware acceleration on WebKitGTK.** Its public per-view policy is
+  set to `NEVER` by default. WKWebView exposes no equivalent public setting,
+  so Parla does not show a misleading hardware-acceleration switch on macOS.
 - **No navigation escape.** The navigation policy delegate refuses any
   navigation or `window.open` outside the `webxdc:` scheme on both
   backends (macOS fails closed: if the rule list cannot compile, the web
@@ -93,6 +114,12 @@ enforces it inside the engine on both backends:
   long as the window (a deliberate, safer deviation from the official
   client).
 - Developer extras and modal dialogs are disabled.
+
+Enabling **Internet access** removes the dead proxy/content rule for
+subresources, but it does not remove the navigation delegate: top-level
+navigation and `window.open` outside `webxdc:` remain blocked. This mode is
+deliberately marked unsafe because it breaks Webxdc's privacy guarantee.
+Sessions remain ephemeral even when direct networking is enabled.
 
 ## JS API exposed to apps
 

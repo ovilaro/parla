@@ -164,6 +164,14 @@ default because embedding a browser engine adds a large dependency and a
 significant attack surface. It can also be disabled at runtime under
 **Settings → Advanced → Webxdc apps**.
 
+That settings section also controls Internet access, WebAssembly, WebGL,
+and WebKitGTK hardware acceleration for mini-apps. These capabilities are
+disabled by default, and a **Use safest** button restores all safe defaults.
+Direct Internet access is marked unsafe because standard Webxdc apps are
+expected to remain offline;
+the macOS WebGL restriction is best-effort because WKWebView offers no public
+hard-disable API.
+
 Platform support currently is:
 
 - **Linux:** WebKitGTK 6.0. Supported by native and Flatpak builds. The

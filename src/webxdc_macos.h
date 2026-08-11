@@ -7,9 +7,10 @@
  * WKWebView from the system WebKit.framework, so no WebKitGTK is needed
  * on macOS. All Cocoa logic lives in webxdc_macos.m behind these plain C
  * entry points; the Vala side (webxdc.vala, #if MACOS section) supplies
- * the app content and the security policy stays engine-level: a
- * WKContentRuleList blocks every load outside the webxdc: scheme and the
- * website data store is non-persistent.
+ * the app content and the security policy stays engine-level. By default a
+ * WKContentRuleList blocks every load outside the webxdc: scheme; an explicit
+ * unsafe setting can omit that list. The website data store is always
+ * non-persistent.
  *
  * Every callback is dispatched to the GTK main loop with g_idle_add, so
  * handlers may safely touch GTK/Vala state. Each blob request is answered
@@ -31,6 +32,9 @@ gpointer parla_webxdc_open (const char          *title,
                             ParlaWebxdcBlobFn    blob,
                             ParlaWebxdcMsgFn     message,
                             ParlaWebxdcClosedFn  closed,
+                            gboolean             allow_internet,
+                            gboolean             allow_wasm,
+                            gboolean             allow_webgl,
                             gpointer             user_data);
 
 void parla_webxdc_load (gpointer handle, const char *uri);
