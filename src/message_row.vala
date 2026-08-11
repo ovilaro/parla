@@ -59,13 +59,12 @@ namespace Dc {
                 int allocated_width = int.min (for_size, width);
                 int h = int.max (1,
                     (int) (((int64) height * allocated_width + width / 2) / width));
-                /* The frame must reserve its aspect-ratio height.  A
-                   one-pixel minimum lets GtkBox allocate a 1x1 preview,
-                   affecting both normal images and stickers. */
                 minimum = natural = h;
             } else {
-                minimum = 1;
-                natural = height;
+                /* The unconstrained minimum must cover the largest
+                   width-constrained minimum.  GtkBox still asks again with
+                   the actual width, allowing narrow previews to shrink. */
+                minimum = natural = height;
             }
         }
 
@@ -966,11 +965,8 @@ namespace Dc {
             return click;
         }
 
-        /**
-         * Load a file into a Gtk.Picture sized to fit within (max_w, max_h)
-         * preserving aspect, then optionally upscaled to (min_w, min_h).
-         * Returns null on read failure (and logs to stderr).
-         */
+        /** Fit within the maximum bounds, preserving aspect ratio and
+            upscaling toward the minimum bounds when possible. */
         private static Gtk.Widget? load_picture (string path,
                                                   int max_w, int max_h,
                                                   int min_w, int min_h,
@@ -1007,14 +1003,19 @@ namespace Dc {
         private static void fit_size (ref int dw, ref int dh,
                                       int max_w, int max_h,
                                       int min_w, int min_h) {
-            if (min_w > 0 && dw < min_w) {
-                dh = (int) ((double) dh * min_w / dw); dw = min_w;
-            } else if (max_w > 0 && dw > max_w) {
-                dh = (int) ((double) dh * max_w / dw); dw = max_w;
-            }
-            if (min_h > 0 && dh < min_h) {
-                dw = (int) ((double) dw * min_h / dh); dh = min_h;
-            }
+            double min_scale = double.max (1.0, double.max (
+                scale_ratio (min_w, dw, 1.0), scale_ratio (min_h, dh, 1.0)));
+            double max_scale = double.min (
+                scale_ratio (max_w, dw, double.MAX),
+                scale_ratio (max_h, dh, double.MAX));
+            double scale = double.min (min_scale, max_scale);
+            dw = int.max (1, (int) (dw * scale + 0.5));
+            dh = int.max (1, (int) (dh * scale + 0.5));
+        }
+
+        private static double scale_ratio (int limit, int size,
+                                           double fallback) {
+            return limit > 0 ? (double) limit / size : fallback;
         }
 
         public static bool same_sender (Message a, Message b) {
