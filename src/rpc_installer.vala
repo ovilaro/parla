@@ -71,6 +71,7 @@ namespace Dc {
 #endif
         }
 
+#if !WINDOWS
         private static string? detect_os () {
             try {
                 string output;
@@ -138,6 +139,7 @@ namespace Dc {
                 return null;
             }
         }
+#endif
 
         /** Read the installed managed binary's --version string, or null. */
         public static async string? installed_version () {

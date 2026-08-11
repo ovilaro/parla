@@ -19,6 +19,8 @@ namespace Dc {
         private const int ALIGN_RIGHT = 1;
         private const int ALIGN_CENTER = 2;
 
+        private delegate string MatchReplacement (MatchInfo match);
+
         private class TableRow {
             public string[] cells;
             public bool separator;
@@ -68,6 +70,25 @@ namespace Dc {
             strip_list_re = new Regex ("^\\s{0,3}(?:[-+*]|\\d+[.)])\\s+",
                                         RegexCompileFlags.MULTILINE);
             strip_escape_re = new Regex ("\\\\([\\\\`*_{}\\[\\]()#+\\-.!>])");
+        }
+
+        private static string replace_matches (Regex regex, string input,
+                                               MatchReplacement replacement)
+                                               throws RegexError {
+            var result = new StringBuilder ();
+            int offset = 0;
+            MatchInfo match;
+            while (regex.match_full (input, -1, offset, 0, out match)) {
+                int start, end;
+                if (!match.fetch_pos (0, out start, out end) || end <= offset) {
+                    throw new RegexError.MATCH ("Invalid replacement match");
+                }
+                result.append (input.substring (offset, start - offset));
+                result.append (replacement (match));
+                offset = end;
+            }
+            result.append (input.substring (offset));
+            return result.str;
         }
 
         /**
@@ -166,20 +187,18 @@ namespace Dc {
             work = strike_re.replace (work, -1, 0, "<s>\\1</s>");
 
             /* Headings: #, ##, ### */
-            work = heading_re.replace_eval (work, -1, 0, 0, (mi, sb) => {
+            work = replace_matches (heading_re, work, (mi) => {
                 var text = mi.fetch (2);
                 switch (mi.fetch (1).length) {
                     case 1:
-                        sb.append ("<span size=\"x-large\"><b>" + text + "</b></span>");
-                        break;
+                        return "<span size=\"x-large\"><b>" + text
+                            + "</b></span>";
                     case 2:
-                        sb.append ("<span size=\"large\"><b>" + text + "</b></span>");
-                        break;
+                        return "<span size=\"large\"><b>" + text
+                            + "</b></span>";
                     default:
-                        sb.append ("<b>" + text + "</b>");
-                        break;
+                        return "<b>" + text + "</b>";
                 }
-                return false;
             });
 
             /* Tables: render pipe tables as aligned monospace text. */
@@ -355,11 +374,10 @@ namespace Dc {
          */
         private static string extract_code (Regex re, string input,
                                              GenericArray<string> segments) throws RegexError {
-            return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
+            return replace_matches (re, input, (mi) => {
                 int idx = (int) segments.length;
                 segments.add ("<tt>" + mi.fetch (1) + "</tt>");
-                sb.append ("\x01%d\x01".printf (idx));
-                return false;
+                return "\x01%d\x01".printf (idx);
             });
         }
 
@@ -372,12 +390,11 @@ namespace Dc {
          */
         private static string extract_code_block (Regex re, string input,
                                                   GenericArray<string> segments) throws RegexError {
-            return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
+            return replace_matches (re, input, (mi) => {
                 int idx = (int) segments.length;
                 string raw = unescape_markup (mi.fetch (2));
                 segments.add ("<tt>" + SyntaxHighlight.highlight (raw) + "</tt>");
-                sb.append ("\x01%d\x01".printf (idx));
-                return false;
+                return "\x01%d\x01".printf (idx);
             });
         }
 
@@ -393,11 +410,10 @@ namespace Dc {
         private static string extract_plain_code (Regex re, string input,
                                                   GenericArray<string> segments,
                                                   int group = 1) throws RegexError {
-            return re.replace_eval (input, -1, 0, 0, (mi, sb) => {
+            return replace_matches (re, input, (mi) => {
                 int idx = (int) segments.length;
                 segments.add (mi.fetch (group));
-                sb.append ("\x01%d\x01".printf (idx));
-                return false;
+                return "\x01%d\x01".printf (idx);
             });
         }
 
@@ -641,14 +657,11 @@ namespace Dc {
         private static string linkify (string escaped) {
             try {
                 ensure_regexes ();
-                return link_re.replace_eval (escaped, -1, 0, 0, (mi, sb) => {
+                return replace_matches (link_re, escaped, (mi) => {
                     var url = mi.fetch (0);
-                    sb.append ("<a href=\"");
-                    sb.append (url);
-                    sb.append ("\"><span foreground=\"#1c71d8\" underline=\"single\">");
-                    sb.append (url);
-                    sb.append ("</span></a>");
-                    return false;
+                    return "<a href=\"" + url + "\"><span foreground="
+                        + "\"#1c71d8\" underline=\"single\">" + url
+                        + "</span></a>";
                 });
             } catch (RegexError e) {
                 return escaped;

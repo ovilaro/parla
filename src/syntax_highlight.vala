@@ -35,6 +35,7 @@ namespace Dc {
             public string constant;
         }
 
+        /* Keep these lists NULL-terminated for strv_contains(). */
         private const string[] KEYWORDS = {
             "if", "else", "elif", "for", "while", "do", "switch", "case",
             "default", "break", "continue", "return", "goto", "new", "delete",
@@ -51,7 +52,7 @@ namespace Dc {
             "nonlocal", "assert", "del", "inline", "extern", "volatile",
             "register", "constexpr", "auto", "operator", "template",
             "ref", "out", "weak", "owned", "unowned", "construct",
-            "mut", "pub", "unsafe", "where", "go", "chan"
+            "mut", "pub", "unsafe", "where", "go", "chan", null
         };
 
         private const string[] TYPES = {
@@ -64,18 +65,14 @@ namespace Dc {
             "uint8_t", "uint16_t", "uint32_t", "uint64_t",
             "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
             "f32", "f64", "usize", "isize",
-            "number", "bigint", "any", "never", "unknown"
+            "number", "bigint", "any", "never", "unknown", null
         };
 
         private const string[] CONSTANTS = {
             "true", "false", "True", "False", "null", "nullptr", "nil",
             "None", "NULL", "undefined", "NaN", "self", "this", "super",
-            "Self"
+            "Self", null
         };
-
-        private static GenericSet<string>? keyword_set = null;
-        private static GenericSet<string>? type_set = null;
-        private static GenericSet<string>? constant_set = null;
 
         /**
          * Highlight raw (unescaped) code and return Pango markup. Every
@@ -86,7 +83,6 @@ namespace Dc {
             if (theme == CodeTheme.NONE) {
                 return Markup.escape_text (code);
             }
-            ensure_sets ();
             Palette pal = current_palette ();
 
             var sb = new StringBuilder ();
@@ -202,24 +198,11 @@ namespace Dc {
             }
         }
 
-        private static void ensure_sets () {
-            if (keyword_set != null) return;
-            keyword_set = build_set (KEYWORDS);
-            type_set = build_set (TYPES);
-            constant_set = build_set (CONSTANTS);
-        }
-
-        private static GenericSet<string> build_set (string[] words) {
-            var set = new GenericSet<string> (str_hash, str_equal);
-            foreach (unowned string w in words) set.add (w);
-            return set;
-        }
-
         private static string? classify (string word, string code, int end,
                                          Palette pal) {
-            if (keyword_set.contains (word)) return pal.keyword;
-            if (type_set.contains (word)) return pal.type;
-            if (constant_set.contains (word)) return pal.constant;
+            if (strv_contains (KEYWORDS, word)) return pal.keyword;
+            if (strv_contains (TYPES, word)) return pal.type;
+            if (strv_contains (CONSTANTS, word)) return pal.constant;
 
             char first = word[0];
             if (first >= 'A' && first <= 'Z') {

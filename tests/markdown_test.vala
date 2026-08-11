@@ -152,6 +152,16 @@ private void test_inline_code_stays_plain () {
     assert (markup == "<tt>int x = 42;</tt>");
 }
 
+private void test_unicode_and_multiple_replacements () {
+    Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
+    string markup = Dc.Markdown.format (
+        "α `β` γ `δ` https://example.com/é");
+
+    assert (markup == "α <tt>β</tt> γ <tt>δ</tt> "
+        + "<a href=\"https://example.com/é\"><span foreground=\"#1c71d8\" "
+        + "underline=\"single\">https://example.com/é</span></a>");
+}
+
 private void test_rendering_modes () {
     Dc.Markdown.mode = Dc.MarkdownMode.ENABLED;
     assert (Dc.Markdown.format ("**bold** and `code`") ==
@@ -280,6 +290,8 @@ public int main (string[] args) {
     Test.add_func ("/markdown/code-block-tilde-fence", test_code_block_tilde_fence);
     Test.add_func ("/markdown/code-block-fences-must-match", test_code_block_fences_must_match);
     Test.add_func ("/markdown/inline-code-stays-plain", test_inline_code_stays_plain);
+    Test.add_func ("/markdown/unicode-multiple-replacements",
+                   test_unicode_and_multiple_replacements);
     Test.add_func ("/markdown/rendering-modes", test_rendering_modes);
     Test.add_func ("/markdown/explicit-rendering-mode-is-local", test_explicit_rendering_mode_is_local);
     Test.add_func ("/markdown/strip-inline-markdown", test_strip_inline_markdown);
