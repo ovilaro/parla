@@ -245,9 +245,12 @@ namespace Dc {
             int64 hours = total_seconds / 3600;
             int64 minutes = (total_seconds % 3600) / 60;
             int64 seconds = total_seconds % 60;
+            string minutes_text = minutes.to_string ("%02" + int64.FORMAT);
+            string seconds_text = seconds.to_string ("%02" + int64.FORMAT);
             return hours > 0
-                ? "%lld:%02lld:%02lld".printf (hours, minutes, seconds)
-                : "%lld:%02lld".printf (minutes, seconds);
+                ? "%s:%s:%s".printf (
+                    hours.to_string (), minutes_text, seconds_text)
+                : "%s:%s".printf (minutes.to_string (), seconds_text);
         }
 
         public override void dispose () {

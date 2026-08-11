@@ -196,7 +196,7 @@ namespace Dc {
                         return GLib.Source.REMOVE;
                     });
                 });
-                emoji_button.popover = emoji_chooser;
+                emoji_button.set_popover (emoji_chooser);
             } else {
                 emoji_button.sensitive = false;
                 emoji_button.tooltip_text = "Emoji picker unavailable";
@@ -309,7 +309,7 @@ namespace Dc {
             sticker_button.valign = Gtk.Align.CENTER;
             var sticker_picker = new StickerPicker ();
             sticker_picker.sticker_picked.connect (on_sticker_picked);
-            sticker_button.popover = sticker_picker;
+            sticker_button.set_popover (sticker_picker);
 
             var idle_actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             idle_actions.append (sticker_button);
