@@ -49,7 +49,7 @@ namespace Dc {
             if (accounts_path != null) {
                 launcher.setenv ("DC_ACCOUNTS_PATH", accounts_path, true);
             }
-            process = launcher.spawnv (argv);
+            process = SubprocessUtil.spawnv (launcher, argv);
             writer = process.get_stdin_pipe ();
             reader = new DataInputStream (process.get_stdout_pipe ());
             err_pipe = process.get_stderr_pipe ();

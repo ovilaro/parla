@@ -1,13 +1,31 @@
 namespace Dc {
 
-    [CCode (cname = "gtk_style_context_add_provider_for_display")]
+    /* Vala 0.56 emits gchar ** for string arrays while GTK declares this
+       parameter as const char * const *. Give the C backend the exact type
+       so newer compilers do not reject the otherwise-safe conversion. */
+    [CCode (cname = "gtk_application_set_accels_for_action",
+            cheader_filename = "gtk/gtk.h")]
+    private extern void set_action_accels (
+        Gtk.Application application,
+        string detailed_action_name,
+        [CCode (array_length = false, array_null_terminated = true,
+                type = "const char * const *")]
+        string[] accels
+    );
+
+    /* Keep these bindings instead of Gtk.StyleContext's deprecated Vala
+       wrapper: the C API itself remains current, and naming the header stops
+       valac from emitting DLL-incompatible declarations on Windows. */
+    [CCode (cname = "gtk_style_context_add_provider_for_display",
+            cheader_filename = "gtk/gtk.h")]
     private extern void add_provider_for_display (
         Gdk.Display display,
         Gtk.StyleProvider provider,
         uint priority
     );
 
-    [CCode (cname = "gtk_style_context_remove_provider_for_display")]
+    [CCode (cname = "gtk_style_context_remove_provider_for_display",
+            cheader_filename = "gtk/gtk.h")]
     private extern void remove_provider_for_display (
         Gdk.Display display,
         Gtk.StyleProvider provider
@@ -328,15 +346,15 @@ namespace Dc {
             add_action (open_chat);
 
             var primary = Platform.primary_accelerator_prefix ();
-            set_accels_for_action ("win.new-chat", { primary + "n" });
-            set_accels_for_action ("win.refresh", { primary + "r" });
-            set_accels_for_action ("win.settings", { primary + "comma" });
-            set_accels_for_action ("win.quit", { primary + "q" });
-            set_accels_for_action ("win.font-increase",
+            set_action_accels (this, "win.new-chat", { primary + "n" });
+            set_action_accels (this, "win.refresh", { primary + "r" });
+            set_action_accels (this, "win.settings", { primary + "comma" });
+            set_action_accels (this, "win.quit", { primary + "q" });
+            set_action_accels (this, "win.font-increase",
                 { primary + "plus", primary + "equal", primary + "KP_Add" });
-            set_accels_for_action ("win.font-decrease",
+            set_action_accels (this, "win.font-decrease",
                 { primary + "minus", primary + "KP_Subtract" });
-            set_accels_for_action ("win.font-reset",
+            set_action_accels (this, "win.font-reset",
                 { primary + "0", primary + "KP_0" });
         }
 

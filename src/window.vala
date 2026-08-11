@@ -530,7 +530,10 @@ namespace Dc {
             account_menu_button.add_css_class ("circular");
             account_menu_button.tooltip_text = "Account Menu (%s)".printf (
                 Platform.primary_shortcut_text ("Shift+A"));
-            account_menu_button.popover = account_popover;
+            /* GTK 4.22 widened the C setter from GtkPopover* to GtkWidget*,
+               while Vala 0.56 still emits the old pointer type. The GObject
+               property is stable across both signatures. */
+            account_menu_button.set ("popover", account_popover);
             sidebar_header.pack_start (account_menu_button);
 
             /* Hamburger menu button on the right */
@@ -2582,7 +2585,9 @@ namespace Dc {
             about.application_icon = Parla.AppData.ID;
             about.version = Parla.VERSION;
             about.developer_name = Parla.AppData.DEVELOPER;
-            about.developers = Parla.AppData.developers ();
+            /* Avoid the same Vala strv constness mismatch as GTK's
+               accelerator API; the GObject property owns a copied strv. */
+            about.set ("developers", Parla.AppData.developers ());
             about.license_type = Gtk.License.GPL_3_0;
             about.website = Parla.AppData.WEBSITE;
             about.issue_url = Parla.AppData.ISSUE_URL;

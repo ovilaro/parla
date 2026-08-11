@@ -37,9 +37,9 @@ namespace Dc.Webxdc {
         active_chat = chat_id;
         chat_window_visible = window_visible;
         if (windows == null) return;
-        windows.get_values ().foreach ((app) => {
+        foreach (unowned Instance app in windows.get_values ()) {
             app.apply_follow_visibility ();
-        });
+        }
     }
 
     public bool is_running (int msg_id) {
@@ -50,9 +50,9 @@ namespace Dc.Webxdc {
     public int[] running_apps (int account_id, int chat_id) {
         int[] ids = {};
         if (windows == null) return ids;
-        windows.get_values ().foreach ((app) => {
+        foreach (unowned Instance app in windows.get_values ()) {
             if (app.belongs_to (account_id, chat_id)) ids += app.msg_id;
-        });
+        }
         return ids;
     }
 
@@ -94,9 +94,9 @@ namespace Dc.Webxdc {
                app window the moment it is changed in Settings. */
             settings.notify["webxdc-follow-chat"].connect (() => {
                 if (windows == null) return;
-                windows.get_values ().foreach ((app) => {
+                foreach (unowned Instance app in windows.get_values ()) {
                     app.apply_follow_visibility ();
-                });
+                }
             });
         }
         if (!security_settings_connected) {
@@ -125,9 +125,9 @@ namespace Dc.Webxdc {
         Idle.add (() => {
             security_close_pending = false;
             if (windows != null) {
-                windows.get_values ().foreach ((app) => {
+                foreach (unowned Instance app in windows.get_values ()) {
                     app.close_view ();
-                });
+                }
             }
             return Source.REMOVE;
         });
@@ -649,10 +649,8 @@ namespace Dc.Webxdc {
             s.allow_modal_dialogs = false;
             s.javascript_can_open_windows_automatically = false;
             /* The proxy covers URL loads; WebRTC can create direct UDP
-               transports outside it, and DNS prefetching is unnecessary for
-               an offline custom-scheme app. */
+               transports outside it. */
             s.enable_webrtc = allow_internet;
-            s.enable_dns_prefetching = allow_internet;
             s.enable_webgl = allow_webgl;
             s.hardware_acceleration_policy = allow_hardware_acceleration
                 ? WebKit.HardwareAccelerationPolicy.ALWAYS

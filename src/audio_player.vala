@@ -200,7 +200,7 @@ namespace Dc {
             try {
                 var launcher = new GLib.SubprocessLauncher (
                     SubprocessFlags.STDOUT_SILENCE | SubprocessFlags.STDERR_SILENCE);
-                var p = launcher.spawnv (argv);
+                var p = SubprocessUtil.spawnv (launcher, argv);
                 int played_id = current_message_id;
                 proc = p;
                 var pid_str = p.get_identifier ();

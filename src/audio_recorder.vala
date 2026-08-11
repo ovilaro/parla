@@ -103,7 +103,7 @@ namespace Dc {
                         SubprocessFlags.STDIN_PIPE
                         | SubprocessFlags.STDOUT_SILENCE
                         | SubprocessFlags.STDERR_SILENCE);
-                    var child = launcher.spawnv (argv);
+                    var child = SubprocessUtil.spawnv (launcher, argv);
                     process = child;
                     using_ffmpeg = ffmpeg;
                     child.wait_async.begin (null, (obj, res) => {

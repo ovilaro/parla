@@ -20,7 +20,9 @@ namespace Dc.Platform {
 #if WINDOWS
     [CCode (cheader_filename = "platform.h", cname = "parla_win32_spawn")]
     private extern bool win32_spawn (
-        [CCode (array_length = false, array_null_terminated = true)] string[] argv,
+        [CCode (array_length = false, array_null_terminated = true,
+                type = "const gchar * const *")]
+        string[] argv,
         string? cwd,
         string? env_name,
         string? env_value,

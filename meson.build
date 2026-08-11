@@ -79,6 +79,7 @@ src_inc = include_directories('src')
 sources = files(
   'src/main.vala',
   'src/platform.vala',
+  'src/subprocess.vala',
   'src/platform.c',
   'src/application.vala',
   'src/window.vala',
@@ -285,7 +286,8 @@ test('attachment-types', attachment_types_test)
 
 whisper_test = executable(
   'whisper-test',
-  files('tests/whisper_test.vala', 'src/whisper.vala'),
+  files('tests/whisper_test.vala', 'src/whisper.vala',
+        'src/subprocess.vala'),
   dependencies: [dependency('glib-2.0'), dependency('gobject-2.0'),
                  dependency('gio-2.0')],
   install: false,

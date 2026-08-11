@@ -59,7 +59,7 @@ namespace Dc {
                 /* whisper drops .txt/.srt/.json transcript files into its
                    working directory; keep that litter in the cache dir. */
                 launcher.set_cwd (work_dir ());
-                var proc = launcher.spawnv (argv);
+                var proc = SubprocessUtil.spawnv (launcher, argv);
                 string stdout_buf;
                 string stderr_buf;
                 yield proc.communicate_utf8_async (null, null,
