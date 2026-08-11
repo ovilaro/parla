@@ -1093,18 +1093,13 @@ namespace Dc {
             webxdc_list.append (enable_row);
 
             var behavior_row = action_row (
-                "App windows",
-                "Whether running apps stay visible on their own or only "
-                + "while their chat is open");
-            string[] behavior_labels = {
-                "Independent windows", "Only while their chat is open"
-            };
-            var behavior_combo = row_dropdown (
-                behavior_row, behavior_labels,
-                app_window.settings.webxdc_follow_chat ? 1 : 0);
-            behavior_combo.notify["selected"].connect (() => {
+                "Keep apps with their chat",
+                "Hide app windows when you leave the chat");
+            var behavior_switch = row_switch (
+                behavior_row, app_window.settings.webxdc_follow_chat);
+            behavior_switch.notify["active"].connect (() => {
                 app_window.settings.save_webxdc_follow_chat (
-                    behavior_combo.selected == 1);
+                    behavior_switch.active);
             });
             webxdc_list.append (behavior_row);
 
@@ -1162,9 +1157,7 @@ namespace Dc {
 
             var safest_row = action_row (
                 "Safest defaults",
-                "Block Internet, WebAssembly, WebGL, and hardware "
-                + "acceleration where supported; changing security settings "
-                + "closes running apps");
+                "Turn off extra access and close running apps");
             var safest_button = new Gtk.Button.with_label ("Use safest");
             safest_button.valign = Gtk.Align.CENTER;
             safest_button.clicked.connect (() => {
