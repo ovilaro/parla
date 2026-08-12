@@ -29,6 +29,15 @@
     <name translate="no">pancake</name>
   </developer>
   <releases>
+    <release version="0.7.8" date="2026-07-09">
+      <description>
+        <ul>
+          <li>Better webxdc, app manager and capabilities</li>
+          <li>Redesigned settings dialog</li>
+          <li>Shared pinned messages (requires core v2.58)</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.6" date="2026-07-09">
       <description>
         <ul>
