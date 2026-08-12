@@ -170,6 +170,7 @@ jobs:
         id: zip
         env:
           ARCH: ${{ matrix.arch }}
+          WITH_WEBXDC: "1"
         run: scripts/macos/package-zip.sh
 
       - name: Upload ZIP artifact

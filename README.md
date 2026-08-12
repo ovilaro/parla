@@ -52,6 +52,7 @@ Want to build it yourself? See [Build](#build) below.
 - **Reply previews** — quoted sender and text preview (capped at 3 lines) above the compose entry and inside bubbles.
 - **Inline image previews** with a full-screen viewer (click to open, right-click to save, Escape to close).
 - **Sticker packs** — send stickers, collect received ones, and manage your own local packs.
+- **Voice-message transcription** — transcribe downloaded voice messages locally with the Whisper command-line tool when it is installed; results stay in memory and are not sent or saved with the message.
 - **Optional Markdown rendering** — **bold**, *italic*, ~~strikethrough~~, `inline code`, fenced code blocks, headings, tables, and auto-linkified URLs.
 - **In-chat search** (Ctrl+F, Command+F on macOS) with real-time filtering and highlight.
 - **Save attachments** to disk from the message context menu.
