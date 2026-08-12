@@ -569,9 +569,8 @@ namespace Dc {
         }
     }
 
-    public class SettingsDialog : Adw.Dialog {
+    public class SettingsDialog : Adw.PreferencesDialog {
 
-        private Gtk.Box content;
         private unowned Window app_window;
         private RpcClient rpc;
         private Adw.ActionRow proxy_switch_row;
@@ -579,7 +578,7 @@ namespace Dc {
         private Gtk.Switch proxy_switch;
         private Gtk.Entry proxy_entry;
         private Adw.ActionRow rpc_row;
-        private Gtk.DropDown rpc_source_dropdown;
+        private Adw.ComboRow rpc_source_dropdown;
         private Gtk.Button rpc_choose_btn;
         private Gtk.Button rpc_check_btn;
         private Adw.ActionRow accounts_path_row;
@@ -589,86 +588,67 @@ namespace Dc {
         private bool saved_proxy_enabled = false;
         private string saved_proxy_url = "";
         private bool syncing_rpc_source = false;
-        private bool syncing_font_controls = false;
         private Adw.ActionRow font_type_row;
-        private Gtk.FontDialogButton font_btn;
+        private Gtk.Button font_btn;
         private uint rpc_version_request = 0;
         private string? rpc_current_version = null;
 
         public SettingsDialog (Window window, RpcClient rpc) {
             this.app_window = window;
             this.rpc = rpc;
-            this.title = "Settings";
-            this.content_width = 400;
-            this.content_height = 480;
+            this.content_width = 640;
+            this.content_height = 576;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            var general_page = new Adw.PreferencesPage ();
+            general_page.title = "General";
+            general_page.icon_name = "preferences-system-symbolic";
+            this.add (general_page);
 
-            var header = new Adw.HeaderBar ();
-            header.show_end_title_buttons = true;
-            box.append (header);
+            var advanced_page = new Adw.PreferencesPage ();
+            advanced_page.title = "Advanced";
+            advanced_page.icon_name = "preferences-other-symbolic";
+            this.add (advanced_page);
 
-            content = new Gtk.Box (Gtk.Orientation.VERTICAL, 16);
-            content.margin_start = 16;
-            content.margin_end = 16;
-            content.margin_top = 12;
-            content.margin_bottom = 16;
-
-            var appearance_list = settings_list ("Appearance");
-
-            var theme_row = action_row (
-                "GTK theme",
-                "Override the system light or dark theme");
+            var appearance_group = settings_group (general_page, "Appearance");
 
             string[] theme_labels = { "System", "Light", "Dark" };
-            var theme_combo = row_dropdown (theme_row, theme_labels,
-                (uint) app_window.settings.theme_override);
+            var theme_combo = row_combo (appearance_group,
+                "GTK theme", "Override the system light or dark theme",
+                theme_labels, (uint) app_window.settings.theme_override);
             theme_combo.notify["selected"].connect (() => {
                 app_window.settings.save_theme_override (
                     (ThemeOverride) theme_combo.selected);
                 apply_theme_override ();
             });
-            appearance_list.append (theme_row);
 
-            var code_row = action_row (
-                "Code highlighting",
-                "Color scheme for code blocks in messages");
             string[] code_labels = {
                 "Adaptive", "Solarized", "Monokai", "Nord", "None"
             };
-            var code_combo = row_dropdown (code_row, code_labels,
-                (uint) app_window.settings.code_theme);
+            var code_combo = row_combo (appearance_group,
+                "Code highlighting", "Color scheme for code blocks in messages",
+                code_labels, (uint) app_window.settings.code_theme);
             code_combo.notify["selected"].connect (() => {
                 app_window.settings.save_code_theme (
                     (CodeTheme) code_combo.selected);
             });
-            appearance_list.append (code_row);
-
-            var style_row = action_row (
-                "Message style",
-                "Chat bubbles, compact IRC lines or workspace rows");
 
             string[] style_labels = { "Bubbles", "IRC", "Workspace" };
-            var style_combo = row_dropdown (style_row, style_labels,
-                (uint) app_window.settings.message_style);
+            var style_combo = row_combo (appearance_group,
+                "Message style", "Chat bubbles, compact IRC lines or workspace rows",
+                style_labels, (uint) app_window.settings.message_style);
             style_combo.notify["selected"].connect (() => {
                 app_window.settings.save_message_style (
                     (MessageStyle) style_combo.selected);
             });
-            appearance_list.append (style_row);
-
-            var avatar_row = action_row (
-                "Bubble avatars",
-                "Show small avatars beside message bubbles");
 
             string[] avatar_labels = { "none", "other", "both" };
-            var avatar_combo = row_dropdown (avatar_row, avatar_labels,
-                (uint) app_window.settings.bubble_avatar_display);
+            var avatar_combo = row_combo (appearance_group,
+                "Bubble avatars", "Show small avatars beside message bubbles",
+                avatar_labels, (uint) app_window.settings.bubble_avatar_display);
             avatar_combo.notify["selected"].connect (() => {
                 app_window.settings.save_bubble_avatar_display (
                     (BubbleAvatarDisplay) avatar_combo.selected);
             });
-            appearance_list.append (avatar_row);
 
             var direct_avatar_row = action_row (
                 "Use avatars in 1:1 chats",
@@ -682,27 +662,24 @@ namespace Dc {
             });
             direct_avatar_row.add_suffix (direct_avatar_check);
             direct_avatar_row.activatable_widget = direct_avatar_check;
-            appearance_list.append (direct_avatar_row);
+            appearance_group.add (direct_avatar_row);
 
             font_type_row = action_row (
                 "Conversation font",
                 "Use the system font or choose another family, style and size");
+            /* Bound to 1/2 lines: this row's suffix (font chooser + reset
+               button) leaves little room, and without a cap the title can
+               collapse into vertical, one-letter-per-line wrapping. */
+            font_type_row.title_lines = 1;
+            font_type_row.subtitle_lines = 2;
             var font_dialog = new Gtk.FontDialog ();
             font_dialog.title = "Choose Font";
             font_dialog.modal = true;
-            font_btn = new Gtk.FontDialogButton (font_dialog);
+            font_btn = new Gtk.Button.with_label ("Choose");
             font_btn.valign = Gtk.Align.CENTER;
-            font_btn.use_font = false;
-            font_btn.use_size = false;
-            font_btn.font_desc = app_window.settings.effective_font_description ();
-            font_btn.notify["font-desc"].connect (() => {
-                if (syncing_font_controls) return;
-                var desc = font_btn.get_font_desc ();
-                if (desc != null) {
-                    app_window.settings.save_font_description (desc);
-                    sync_font_controls ();
-                }
-            });
+            font_btn.add_css_class ("flat");
+            font_btn.tooltip_text = "Choose a font family, style and size";
+            font_btn.clicked.connect (() => { on_choose_font.begin (font_dialog); });
             font_type_row.add_suffix (font_btn);
 
             var font_reset_btn = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
@@ -714,7 +691,7 @@ namespace Dc {
                 sync_font_controls ();
             });
             font_type_row.add_suffix (font_reset_btn);
-            appearance_list.append (font_type_row);
+            appearance_group.add (font_type_row);
 
             sync_font_controls ();
 
@@ -741,15 +718,13 @@ namespace Dc {
 
             accent_row.add_suffix (accent_btn);
             accent_row.add_suffix (accent_reset_btn);
-            appearance_list.append (accent_row);
-
-            var bg_row = action_row (
-                "Background color",
-                "Tint the window background with a solid color or a gradient");
+            appearance_group.add (accent_row);
 
             string[] bg_mode_labels = { "System", "Solid", "Gradient" };
-            var bg_mode_combo = row_dropdown (bg_row, bg_mode_labels,
-                (uint) app_window.settings.background_mode);
+            var bg_mode_combo = row_combo (appearance_group,
+                "Background color",
+                "Tint the window background with a solid color or a gradient",
+                bg_mode_labels, (uint) app_window.settings.background_mode);
 
             var bg_color_btn = new Gtk.ColorDialogButton (new Gtk.ColorDialog ());
             bg_color_btn.valign = Gtk.Align.CENTER;
@@ -770,14 +745,9 @@ namespace Dc {
                 apply_background ();
             });
 
-            bg_row.add_suffix (bg_color_btn);
-            appearance_list.append (bg_row);
+            bg_mode_combo.add_suffix (bg_color_btn);
 
-            var behavior_list = settings_list ("Behavior");
-
-            var dblclick_row = action_row (
-                "Double-click on message",
-                "Action when a message is double-clicked");
+            var behavior_group = settings_group (general_page, "Behavior");
 
             string[] dblclick_labels = {
                 "Reply to message",
@@ -791,8 +761,10 @@ namespace Dc {
             uint dblclick_selected = (uint) app_window.settings.double_click_action;
             if (dblclick_selected == 4) dblclick_selected = 5;
             else if (dblclick_selected == 5) dblclick_selected = 4;
-            var dblclick_combo = row_dropdown (dblclick_row, dblclick_labels,
-                dblclick_selected);
+            var dblclick_combo = row_combo (behavior_group,
+                "Double-click on message",
+                "Action when a message is double-clicked",
+                dblclick_labels, dblclick_selected);
             dblclick_combo.notify["selected"].connect (() => {
                 uint selected = dblclick_combo.selected;
                 int action = (int) selected;
@@ -801,14 +773,10 @@ namespace Dc {
                 app_window.settings.save_double_click_action (action);
             });
 
-            behavior_list.append (dblclick_row);
-
-            var md_row = action_row (
-                "Markdown rendering",
-                "Render, strip, or preserve markdown syntax");
             string[] md_labels = { "Enabled", "Stripped", "Disabled" };
-            var md_combo = row_dropdown (md_row, md_labels,
-                (uint) app_window.settings.markdown_mode);
+            var md_combo = row_combo (behavior_group,
+                "Markdown rendering", "Render, strip, or preserve markdown syntax",
+                md_labels, (uint) app_window.settings.markdown_mode);
             md_combo.notify["selected"].connect (() => {
                 app_window.settings.save_markdown_mode (
                     (MarkdownMode) md_combo.selected);
@@ -823,7 +791,7 @@ namespace Dc {
                 app_window.settings.save_shift_enter_sends (shift_switch.active);
             });
 
-            behavior_list.append (shift_row);
+            behavior_group.add (shift_row);
 
             var audio_row = action_row (
                 "System audio tools",
@@ -852,9 +820,9 @@ namespace Dc {
                 app_window.set_minimize_to_tray (tray_switch.active);
             });
 
-            behavior_list.append (tray_row);
+            behavior_group.add (tray_row);
 
-            var notifications_list = settings_list ("Notifications");
+            var notifications_group = settings_group (general_page, "Notifications");
             var notif_row = action_row (
                 "Desktop notifications",
                 "Notify on incoming messages when the window is not focused");
@@ -864,7 +832,7 @@ namespace Dc {
                 app_window.set_notifications_enabled (notif_switch.active);
             });
 
-            notifications_list.append (notif_row);
+            notifications_group.add (notif_row);
 
 
             var notification_contents_row = action_row (
@@ -877,92 +845,15 @@ namespace Dc {
                 app_window.settings.save_show_notification_contents (
                     notification_contents_switch.active);
             });
-            notifications_list.append (notification_contents_row);
+            notifications_group.add (notification_contents_row);
 
-            var network_list = settings_list ("Network");
-
-            proxy_switch_row = action_row (
-                "Use Proxy",
-                "Route this profile through the configured proxy");
-            proxy_switch = row_switch (proxy_switch_row, false);
-            proxy_switch.notify["active"].connect (() => {
-                if (!loading_proxy) save_proxy_settings.begin ();
-            });
-            network_list.append (proxy_switch_row);
-
-            proxy_url_row = action_row (
-                "Proxy URL",
-                "socks5://, http://, https://, or ss://");
-
-            proxy_entry = new Gtk.Entry ();
-            proxy_entry.placeholder_text = "socks5://127.0.0.1:9050";
-            proxy_entry.input_purpose = Gtk.InputPurpose.URL;
-            proxy_entry.hexpand = true;
-            proxy_entry.valign = Gtk.Align.CENTER;
-            proxy_entry.activate.connect (() => { save_proxy_settings.begin (); });
-            var proxy_focus = new Gtk.EventControllerFocus ();
-            proxy_focus.leave.connect (() => { save_proxy_settings.begin (); });
-            proxy_entry.add_controller (proxy_focus);
-            proxy_url_row.add_suffix (proxy_entry);
-            proxy_url_row.activatable_widget = proxy_entry;
-            network_list.append (proxy_url_row);
-
-            load_proxy_settings.begin ();
-
-            var sticker_row = action_row (
-                "Sticker animations",
-                "Auto-play GIF, WebP and WebM stickers; " +
-                "clicking a sticker toggles playback");
-            var sticker_switch = row_switch (
-                sticker_row, app_window.settings.animate_stickers);
-            sticker_switch.notify["active"].connect (() => {
-                app_window.settings.save_animate_stickers (
-                    sticker_switch.active);
-            });
-
-            var download_row = action_row (
-                "Auto-download attachments",
-                "Larger attachments wait for approval; applies to all profiles");
-            string[] download_labels = {
-                "Never", "256 KB", "512 KB", "1 MB", "2 MB", "5 MB", "Unlimited"
-            };
-            var download_combo = row_dropdown (
-                download_row, download_labels,
-                auto_download_limit_index (
-                    app_window.settings.auto_download_limit));
-            download_combo.notify["selected"].connect (() => {
-                app_window.set_auto_download_limit.begin (
-                    auto_download_limit_for_index (download_combo.selected));
-            });
-
-            bool whisper_found = Transcriber.available ();
-            var transcription_row = action_row (
-                "Voice transcription",
-                whisper_found
-                    ? "Whisper is available in PATH"
-                    : "Whisper was not found in PATH");
-            var transcription_status = new Gtk.Label (
-                whisper_found ? "Available" : "Not found");
-            transcription_status.valign = Gtk.Align.CENTER;
-            transcription_status.add_css_class ("dim-label");
-            transcription_row.add_suffix (transcription_status);
-
-            var advanced_list = settings_list ("Advanced");
-            advanced_list.append (md_row);
-            advanced_list.append (audio_row);
-            advanced_list.append (transcription_row);
-            advanced_list.append (sticker_row);
-            advanced_list.append (download_row);
-
-            build_webxdc_section ();
-
-            var chatmail_list = settings_list ("Chatmail Core");
-
-            rpc_row = action_row ("Source");
+            var chatmail_group = settings_group (advanced_page, "Chatmail Core");
 
             string[] rpc_source_labels = { "Auto", "Custom" };
-            rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
+            rpc_source_dropdown = row_combo (chatmail_group, "Source", null,
+                rpc_source_labels,
                 (uint) app_window.settings.effective_rpc_server_source ());
+            rpc_row = rpc_source_dropdown;
             rpc_source_dropdown.notify["selected"].connect (on_rpc_source_changed);
 
             rpc_choose_btn = new Gtk.Button.with_label ("Choose");
@@ -979,8 +870,6 @@ namespace Dc {
             rpc_check_btn.clicked.connect (() => { check_rpc_updates.begin (); });
             rpc_row.add_suffix (rpc_check_btn);
 
-            chatmail_list.append (rpc_row);
-
             var rpc_autocheck_row = action_row (
                 "Check for updates on startup",
                 "Notify when a newer Chatmail Core version is available");
@@ -993,7 +882,7 @@ namespace Dc {
             });
             /* Updates are off entirely when the binary path is pinned. */
             rpc_autocheck_row.visible = !SettingsManager.rpc_server_path_is_fixed ();
-            chatmail_list.append (rpc_autocheck_row);
+            chatmail_group.add (rpc_autocheck_row);
 
             update_rpc_row ();
 
@@ -1021,40 +910,100 @@ namespace Dc {
                 app_window.reconnect_rpc_server.begin ();
             });
             accounts_path_row.add_suffix (accounts_path_reset_btn);
-            chatmail_list.append (accounts_path_row);
+            chatmail_group.add (accounts_path_row);
 
             sync_accounts_path_row ();
 
-            var reset_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            reset_box.margin_top = 8;
+            var network_group = settings_group (advanced_page, "Network");
 
+            proxy_switch_row = action_row (
+                "Use Proxy",
+                "Route this profile through the configured proxy");
+            proxy_switch = row_switch (proxy_switch_row, false);
+            proxy_switch.notify["active"].connect (() => {
+                if (!loading_proxy) save_proxy_settings.begin ();
+            });
+            network_group.add (proxy_switch_row);
+
+            proxy_url_row = action_row (
+                "Proxy URL",
+                "socks5://, http://, https://, or ss://");
+
+            proxy_entry = new Gtk.Entry ();
+            proxy_entry.placeholder_text = "socks5://127.0.0.1:9050";
+            proxy_entry.input_purpose = Gtk.InputPurpose.URL;
+            proxy_entry.hexpand = true;
+            proxy_entry.valign = Gtk.Align.CENTER;
+            proxy_entry.activate.connect (() => { save_proxy_settings.begin (); });
+            var proxy_focus = new Gtk.EventControllerFocus ();
+            proxy_focus.leave.connect (() => { save_proxy_settings.begin (); });
+            proxy_entry.add_controller (proxy_focus);
+            proxy_url_row.add_suffix (proxy_entry);
+            proxy_url_row.activatable_widget = proxy_entry;
+            network_group.add (proxy_url_row);
+
+            load_proxy_settings.begin ();
+
+            var sticker_row = action_row (
+                "Sticker animations",
+                "Auto-play GIF, WebP and WebM stickers; " +
+                "clicking a sticker toggles playback");
+            var sticker_switch = row_switch (
+                sticker_row, app_window.settings.animate_stickers);
+            sticker_switch.notify["active"].connect (() => {
+                app_window.settings.save_animate_stickers (
+                    sticker_switch.active);
+            });
+
+            string[] download_labels = {
+                "Never", "256 KB", "512 KB", "1 MB", "2 MB", "5 MB", "Unlimited"
+            };
+            var download_combo = row_combo (behavior_group,
+                "Auto-download attachments",
+                "Larger attachments wait for approval; applies to all profiles",
+                download_labels, auto_download_limit_index (
+                    app_window.settings.auto_download_limit));
+            download_combo.notify["selected"].connect (() => {
+                app_window.set_auto_download_limit.begin (
+                    auto_download_limit_for_index (download_combo.selected));
+            });
+
+            bool whisper_found = Transcriber.available ();
+            var transcription_row = action_row (
+                "Voice transcription",
+                whisper_found
+                    ? "Whisper is available in PATH"
+                    : "Whisper was not found in PATH");
+            var transcription_status = new Gtk.Label (
+                whisper_found ? "Available" : "Not found");
+            transcription_status.valign = Gtk.Align.CENTER;
+            transcription_status.add_css_class ("dim-label");
+            transcription_row.add_suffix (transcription_status);
+
+            behavior_group.add (audio_row);
+            behavior_group.add (transcription_row);
+            behavior_group.add (sticker_row);
+
+            build_webxdc_section (advanced_page);
+
+            var reset_group = settings_group (advanced_page, "Factory Reset");
+            var reset_row = action_row (
+                "Factory Reset",
+                "Remove all settings and close the app");
             var reset_btn = new Gtk.Button.with_label ("Factory Reset");
+            reset_btn.valign = Gtk.Align.CENTER;
             reset_btn.add_css_class ("destructive-action");
             reset_btn.tooltip_text = "Delete all Parla configuration and start fresh";
             reset_btn.clicked.connect (() => { on_reset_settings.begin (); });
-            reset_box.append (reset_btn);
-
-            var reset_label = new Gtk.Label ("Remove all settings and close the app");
-            reset_label.add_css_class ("dim-label");
-            reset_label.valign = Gtk.Align.CENTER;
-            reset_box.append (reset_label);
-
-            content.append (reset_box);
-
-            var scroll = new Gtk.ScrolledWindow ();
-            scroll.vexpand = true;
-            scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
-            scroll.child = content;
-            box.append (scroll);
-
-            this.child = box;
+            reset_row.add_suffix (reset_btn);
+            reset_group.add (reset_row);
         }
 
         /** All Webxdc switches in one place: the enable toggle and how the
             app windows behave. Builds without -Dwebxdc=true say so instead
             of offering switches that cannot work. */
-        private void build_webxdc_section () {
-            var webxdc_list = settings_list ("Webxdc Apps");
+        private void build_webxdc_section (Adw.PreferencesPage page) {
+            var webxdc_group = settings_group (page, "Webxdc Apps");
 
             if (!Webxdc.AVAILABLE) {
                 var unavailable_row = action_row (
@@ -1065,7 +1014,7 @@ namespace Dc {
                 status.valign = Gtk.Align.CENTER;
                 status.add_css_class ("dim-label");
                 unavailable_row.add_suffix (status);
-                webxdc_list.append (unavailable_row);
+                webxdc_group.add (unavailable_row);
                 return;
             }
 
@@ -1077,7 +1026,7 @@ namespace Dc {
             enable_switch.notify["active"].connect (() => {
                 app_window.settings.save_webxdc_apps (enable_switch.active);
             });
-            webxdc_list.append (enable_row);
+            webxdc_group.add (enable_row);
 
             var behavior_row = action_row (
                 "Keep apps with their chat",
@@ -1088,7 +1037,7 @@ namespace Dc {
                 app_window.settings.save_webxdc_follow_chat (
                     behavior_switch.active);
             });
-            webxdc_list.append (behavior_row);
+            webxdc_group.add (behavior_row);
 
             var internet_row = action_row (
                 "Internet access",
@@ -1099,7 +1048,7 @@ namespace Dc {
                 app_window.settings.save_webxdc_allow_internet (
                     internet_switch.active);
             });
-            webxdc_list.append (internet_row);
+            webxdc_group.add (internet_row);
 
             var wasm_row = action_row (
                 "WebAssembly",
@@ -1110,7 +1059,7 @@ namespace Dc {
                 app_window.settings.save_webxdc_allow_wasm (
                     wasm_switch.active);
             });
-            webxdc_list.append (wasm_row);
+            webxdc_group.add (wasm_row);
 
             var webgl_row = action_row (
                 "WebGL",
@@ -1124,7 +1073,7 @@ namespace Dc {
                 app_window.settings.save_webxdc_allow_webgl (
                     webgl_switch.active);
             });
-            webxdc_list.append (webgl_row);
+            webxdc_group.add (webgl_row);
 
             Gtk.Switch? acceleration_switch = null;
             if (!Platform.is_macos ()) {
@@ -1139,7 +1088,7 @@ namespace Dc {
                             acceleration.active);
                 });
                 acceleration_switch = acceleration;
-                webxdc_list.append (acceleration_row);
+                webxdc_group.add (acceleration_row);
             }
 
             var safest_row = action_row (
@@ -1164,20 +1113,15 @@ namespace Dc {
                 app_window.show_toast ("Webxdc safest defaults restored");
             });
             safest_row.add_suffix (safest_button);
-            webxdc_list.append (safest_row);
+            webxdc_group.add (safest_row);
         }
 
-        private Gtk.ListBox settings_list (string title) {
-            var label = new Gtk.Label (title);
-            label.add_css_class ("title-3");
-            label.halign = Gtk.Align.START;
-            content.append (label);
-
-            var list = new Gtk.ListBox ();
-            list.selection_mode = Gtk.SelectionMode.NONE;
-            list.add_css_class ("boxed-list");
-            content.append (list);
-            return list;
+        private Adw.PreferencesGroup settings_group (Adw.PreferencesPage page,
+                                                      string title) {
+            var group = new Adw.PreferencesGroup ();
+            group.title = title;
+            page.add (group);
+            return group;
         }
 
         private static uint auto_download_limit_index (int bytes) {
@@ -1223,27 +1167,43 @@ namespace Dc {
             return sw;
         }
 
-        private static Gtk.DropDown row_dropdown (Adw.ActionRow row, string[] labels,
-                                                  uint selected) {
-            var dropdown = new Gtk.DropDown.from_strings (labels);
-            dropdown.selected = selected;
-            dropdown.valign = Gtk.Align.CENTER;
-            row.add_suffix (dropdown);
-            row.activatable_widget = dropdown;
-            return dropdown;
+        /* Adw.ComboRow (not a raw Gtk.DropDown suffix) so the row stays
+           usable when narrow: its value renders as ellipsizable text
+           instead of a button sized to the widest option label. */
+        private static Adw.ComboRow row_combo (Adw.PreferencesGroup group,
+                                               string title, string? subtitle,
+                                               string[] labels, uint selected) {
+            var row = new Adw.ComboRow ();
+            row.title = title;
+            if (subtitle != null) row.subtitle = subtitle;
+            row.model = new Gtk.StringList (labels);
+            row.expression = new Gtk.PropertyExpression (
+                typeof (Gtk.StringObject), null, "string");
+            row.selected = selected;
+            group.add (row);
+            return row;
         }
 
         private void sync_font_controls () {
-            syncing_font_controls = true;
-
             string family = app_window.settings.font_family;
             font_type_row.subtitle = family.length > 0
                 ? family
                 : "System default";
             font_type_row.tooltip_text = family.length > 0 ? family : null;
-            font_btn.font_desc = app_window.settings.effective_font_description ();
+        }
 
-            syncing_font_controls = false;
+        private async void on_choose_font (Gtk.FontDialog dialog) {
+            try {
+                var desc = yield dialog.choose_font (app_window,
+                    app_window.settings.effective_font_description (), null);
+                if (desc != null) {
+                    app_window.settings.save_font_description (desc);
+                    sync_font_controls ();
+                }
+            } catch (Error e) {
+                if (!is_dialog_dismissal (e))
+                    show_error (app_window, e.message);
+            }
         }
 
         private static string hex_from_rgba (Gdk.RGBA c) {
