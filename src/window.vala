@@ -192,12 +192,19 @@ namespace Dc {
            reply/edit/attachment. Any other key clears it. */
         private bool escape_armed = false;
 
+        /* 360px is the narrowest width libadwaita's AdwPreferencesDialog
+           can render: its navigation view carries a hardcoded 360px
+           minimum. Below that the settings dialog is not laid out
+           narrower, it is simply clipped by the window — rows lose their
+           switches, dropdowns and the close button. Keep the window from
+           ever getting narrower than the dialogs it hosts; 360px is also
+           the smallest width the GNOME HIG asks apps to support. */
         public Window (Dc.Application app) {
             Object (
                 application: app,
                 default_width: 920,
                 default_height: 640,
-                width_request: 300,
+                width_request: 360,
                 height_request: 320,
                 title: "Parla"
             );
