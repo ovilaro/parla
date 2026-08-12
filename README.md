@@ -5,12 +5,12 @@
 <h1 align="center">Parla</h1>
 
 <p align="center">
-  A <a href="https://delta.chat">Delta Chat</a> client for GNOME &mdash; chat over email, decentralized and encrypted.
+  A native <a href="https://delta.chat">Delta Chat</a> client for GNOME &mdash; decentralized, encrypted chat over email.
 </p>
 
 <p align="center">
   <a href="https://github.com/trufae/parla/actions/workflows/build.yml"><img alt="CI" src="https://github.com/trufae/parla/actions/workflows/build.yml/badge.svg"/></a>
-  <a href="https://github.com/trufae/parla/releases/latest"><img alt="Flatpak" src="https://img.shields.io/badge/Flatpak-download-4a86cf?style=flat-square&logo=flatpak&logoColor=white"/></a>
+  <a href="https://github.com/trufae/parla/releases"><img alt="Downloads" src="https://img.shields.io/badge/downloads-releases-4a86cf?style=flat-square&logo=github&logoColor=white"/></a>
   <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square"/>
   <img alt="GTK4 + libadwaita" src="https://img.shields.io/badge/GTK4-libadwaita-4a86cf?style=flat-square&logo=gnome&logoColor=white"/>
   <img alt="Vala" src="https://img.shields.io/badge/lang-Vala-a56de2?style=flat-square"/>
@@ -18,9 +18,30 @@
 
 ---
 
-Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) over JSON-RPC. Follows GNOME HIG, works on desktop and mobile form factors.
+Parla is a lightweight, native **Vala** + **GTK4** + **libadwaita** app that talks to [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) over JSON-RPC. It is designed for GNOME and follows its desktop conventions, while also running on Linux, Windows, and macOS.
 
-## Features
+<p align="center">
+  <img src="data/screenshots/parla-overview.png" width="669" alt="Parla's welcome screen, showing the chat list and an adaptive split-view conversation area"/>
+</p>
+
+## Get Parla and start chatting
+
+Download a package from the [Parla releases page](https://github.com/trufae/parla/releases). It provides Linux packages (`.deb`, Flatpak, and AppImage), macOS `.dmg` images, and a Windows `.zip` archive. On Windows, extract the archive and start `parla.exe`; on macOS, open the disk image and move Parla to Applications.
+
+On first launch, follow the profile setup to choose a display name and a chatmail relay. The relay creates an email address and password for you, while Parla generates your encryption keys on your device. You can also redeem an invitation code or import a second device instead. Then use **New chat** or **New group** to start talking and share an invite link or QR code with others.
+
+Want to build it yourself? See [Build](#build) below.
+
+## Highlights
+
+- **Stickers that are yours to keep** &mdash; send stickers, collect received stickers, and organize them in local packs. Animated stickers can be paused or disabled when you want to save resources.
+- **A useful media gallery** &mdash; each chat has a browsable gallery for images, stickers, files, audio, video, and shared Webxdc apps, with quick access back to the original message.
+- **Webxdc mini-apps** &mdash; run and manage offline web apps shared in chats. This is experimental and available on supported Linux and macOS builds; see [Webxdc apps](#webxdc-apps-experimental) for security and platform details.
+- **Choose the conversation layout** &mdash; use familiar bubbles, compact IRC-style lines, or workspace rows. The split view adapts to narrow and phone-sized windows, where the sidebar becomes a single-pane navigation view.
+- **Keyboard-first when you want it** &mdash; quickly switch chats, create conversations, search, navigate, and focus the composer without leaving the keyboard.
+- **Desktop-aware** &mdash; configurable notifications, a tray icon for keeping Parla available in the background, and support for multiple accounts.
+
+## More features
 
 ### Messaging
 
@@ -30,6 +51,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - **Pinned messages** — pin any message in a chat; a pinned-messages bar at the top of the conversation lets you jump back to them.
 - **Reply previews** — quoted sender and text preview (capped at 3 lines) above the compose entry and inside bubbles.
 - **Inline image previews** with a full-screen viewer (click to open, right-click to save, Escape to close).
+- **Sticker packs** — send stickers, collect received ones, and manage your own local packs.
 - **Optional Markdown rendering** — **bold**, *italic*, ~~strikethrough~~, `inline code`, fenced code blocks, headings, tables, and auto-linkified URLs.
 - **In-chat search** (Ctrl+F, Command+F on macOS) with real-time filtering and highlight.
 - **Save attachments** to disk from the message context menu.
@@ -43,6 +65,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - **Sidebar search** to filter chats by name.
 - **Quick switcher** fuzzy chat search, Enter to open the top match.
 - **New 1:1 chat** via contact picker, and **new group** with name, avatar and member selection.
+- **Per-chat media gallery** for images, stickers, files, audio, video, and Webxdc attachments.
 
 ### Accounts & profile
 
@@ -58,6 +81,7 @@ Lightweight **Vala** + **GTK4** + **libadwaita** desktop client that talks to [d
 - Choose whether Markdown is rendered, stripped, or shown as-is.
 - Toggle Shift+Enter vs Enter to send.
 - Toggle desktop notifications for incoming messages when the window is unfocused.
+- Choose bubble, compact IRC, or workspace message layouts, and configure the tray icon for background use.
 - Choose the JSON-RPC server source: Parla/system auto-discovery or a custom binary.
 
 ### Keyboard shortcuts
