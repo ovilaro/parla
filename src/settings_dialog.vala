@@ -579,11 +579,9 @@ namespace Dc {
         private Gtk.Switch proxy_switch;
         private Gtk.Entry proxy_entry;
         private Adw.ActionRow rpc_row;
-        private Adw.ActionRow rpc_version_row;
         private Gtk.DropDown rpc_source_dropdown;
         private Gtk.Button rpc_choose_btn;
-        private Gtk.Button rpc_download_btn;
-        private Gtk.Button rpc_update_btn;
+        private Gtk.Button rpc_check_btn;
         private Adw.ActionRow accounts_path_row;
         private Gtk.Button accounts_path_reset_btn;
         private bool loading_proxy = false;
@@ -596,7 +594,6 @@ namespace Dc {
         private Gtk.FontDialogButton font_btn;
         private uint rpc_version_request = 0;
         private string? rpc_current_version = null;
-        private bool rpc_update_check_available = false;
 
         public SettingsDialog (Window window, RpcClient rpc) {
             this.app_window = window;
@@ -959,9 +956,9 @@ namespace Dc {
 
             build_webxdc_section ();
 
-            var chatmail_list = settings_list ("Chatmail");
+            var chatmail_list = settings_list ("Chatmail Core");
 
-            rpc_row = action_row ("Chatmail Server");
+            rpc_row = action_row ("Source");
 
             string[] rpc_source_labels = { "Auto", "Custom" };
             rpc_source_dropdown = row_dropdown (rpc_row, rpc_source_labels,
@@ -971,27 +968,43 @@ namespace Dc {
             rpc_choose_btn = new Gtk.Button.with_label ("Choose");
             rpc_choose_btn.valign = Gtk.Align.CENTER;
             rpc_choose_btn.add_css_class ("flat");
-            rpc_choose_btn.tooltip_text = "Choose a deltachat-rpc-server binary";
+            rpc_choose_btn.tooltip_text = "Choose a Chatmail Core binary";
             rpc_choose_btn.clicked.connect (() => { on_browse_rpc_server.begin (); });
             rpc_row.add_suffix (rpc_choose_btn);
 
-            rpc_download_btn = new Gtk.Button.with_label ("Install");
-            rpc_download_btn.valign = Gtk.Align.CENTER;
-            rpc_download_btn.add_css_class ("flat");
-            rpc_download_btn.tooltip_text =
-                "Download the latest deltachat-rpc-server into Parla's data dir";
-            rpc_download_btn.clicked.connect (() => { install_managed_server.begin (); });
-            rpc_row.add_suffix (rpc_download_btn);
+            rpc_check_btn = new Gtk.Button.with_label ("Check");
+            rpc_check_btn.valign = Gtk.Align.CENTER;
+            rpc_check_btn.add_css_class ("flat");
+            rpc_check_btn.tooltip_text = "Check for the latest Chatmail Core release";
+            rpc_check_btn.clicked.connect (() => { check_rpc_updates.begin (); });
+            rpc_row.add_suffix (rpc_check_btn);
 
             chatmail_list.append (rpc_row);
 
-            accounts_path_row = action_row ("Chatmail accounts path");
+            var rpc_autocheck_row = action_row (
+                "Check for updates on startup",
+                "Notify when a newer Chatmail Core version is available");
+            var autocheck_switch = row_switch (
+                rpc_autocheck_row,
+                app_window.settings.rpc_check_updates_on_startup);
+            autocheck_switch.notify["active"].connect (() => {
+                app_window.settings.save_rpc_check_updates_on_startup (
+                    autocheck_switch.active);
+            });
+            /* Updates are off entirely when the binary path is pinned. */
+            rpc_autocheck_row.visible = !SettingsManager.rpc_server_path_is_fixed ();
+            chatmail_list.append (rpc_autocheck_row);
 
-            var accounts_path_change_btn = new Gtk.Button.with_label ("Change");
+            update_rpc_row ();
+
+            accounts_path_row = action_row ("Accounts Path");
+            accounts_path_row.subtitle_lines = 2;
+
+            var accounts_path_change_btn = new Gtk.Button.from_icon_name (
+                "folder-symbolic");
             accounts_path_change_btn.valign = Gtk.Align.CENTER;
             accounts_path_change_btn.add_css_class ("flat");
-            accounts_path_change_btn.tooltip_text =
-                "Choose a different folder for Chatmail accounts";
+            accounts_path_change_btn.tooltip_text = "Choose a different folder";
             accounts_path_change_btn.clicked.connect (() => {
                 on_browse_accounts_path.begin ();
             });
@@ -1001,8 +1014,7 @@ namespace Dc {
                 "edit-undo-symbolic");
             accounts_path_reset_btn.valign = Gtk.Align.CENTER;
             accounts_path_reset_btn.add_css_class ("flat");
-            accounts_path_reset_btn.tooltip_text =
-                "Use the default Chatmail accounts path";
+            accounts_path_reset_btn.tooltip_text = "Use the default folder";
             accounts_path_reset_btn.clicked.connect (() => {
                 app_window.settings.reset_accounts_path ();
                 sync_accounts_path_row ();
@@ -1012,31 +1024,6 @@ namespace Dc {
             chatmail_list.append (accounts_path_row);
 
             sync_accounts_path_row ();
-
-            rpc_version_row = action_row ("Chatmail server version", "Checking...");
-            rpc_update_btn = new Gtk.Button.with_label ("Check");
-            rpc_update_btn.valign = Gtk.Align.CENTER;
-            rpc_update_btn.add_css_class ("flat");
-            rpc_update_btn.tooltip_text = "Check latest deltachat-rpc-server release";
-            rpc_update_btn.clicked.connect (() => { check_rpc_updates.begin (); });
-            rpc_version_row.add_suffix (rpc_update_btn);
-            chatmail_list.append (rpc_version_row);
-
-            var rpc_autocheck_row = action_row (
-                "Check for chatmail updates on startup",
-                "Notify when a newer deltachat-rpc-server is available");
-            var autocheck_switch = row_switch (
-                rpc_autocheck_row,
-                app_window.settings.rpc_check_updates_on_startup);
-            autocheck_switch.notify["active"].connect (() => {
-                app_window.settings.save_rpc_check_updates_on_startup (
-                    autocheck_switch.active);
-            });
-            /* Engine updates are off entirely when the server path is pinned. */
-            rpc_autocheck_row.visible = !SettingsManager.rpc_server_path_is_fixed ();
-            chatmail_list.append (rpc_autocheck_row);
-
-            update_rpc_row ();
 
             var reset_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             reset_box.margin_top = 8;
@@ -1405,30 +1392,28 @@ namespace Dc {
             rpc_source_dropdown.sensitive = !pinned;
             rpc_choose_btn.visible = source == RpcServerSource.CUSTOM && !pinned;
             rpc_choose_btn.sensitive = source == RpcServerSource.CUSTOM && !pinned;
-            rpc_download_btn.visible = source == RpcServerSource.AUTO && !pinned;
-            rpc_download_btn.sensitive = RpcInstaller.can_auto_install () && !pinned;
-            rpc_download_btn.label =
-                found == AccountFinder.get_managed_rpc_path () ? "Update" : "Install";
-            rpc_update_btn.visible = !pinned;
+            rpc_check_btn.visible = source == RpcServerSource.AUTO && !pinned;
+            rpc_check_btn.sensitive = !pinned;
             switch (source) {
             case RpcServerSource.CUSTOM:
                 if (custom.length == 0) {
                     rpc_row.subtitle = "No custom binary selected";
-                    rpc_row.tooltip_text = "Choose a deltachat-rpc-server binary";
+                    rpc_row.tooltip_text = "Choose a Chatmail Core binary";
+                } else if (found == null) {
+                    rpc_row.subtitle = "Custom path is not executable";
+                    rpc_row.tooltip_text = custom;
                 } else {
-                    rpc_row.subtitle = found != null
-                        ? (pinned ? "Using built-in server" : "Using custom binary")
-                        : "Custom path is not executable";
+                    rpc_row.subtitle = "Checking version…";
                     rpc_row.tooltip_text = custom;
                 }
                 break;
             case RpcServerSource.AUTO:
             default:
                 rpc_row.subtitle = found != null
-                    ? "Using Parla or system server"
-                    : "Standalone server not found";
+                    ? "Checking version…"
+                    : "Chatmail Core not found";
                 rpc_row.tooltip_text = found
-                    ?? "Install deltachat-rpc-server or choose a custom binary";
+                    ?? "Install Chatmail Core or choose a custom binary";
                 break;
             }
             update_rpc_version_row.begin (found);
@@ -1436,20 +1421,8 @@ namespace Dc {
 
         private async void update_rpc_version_row (string? rpc_path) {
             uint request_id = ++rpc_version_request;
-            if (rpc_path == null || rpc_path.length == 0) {
-                rpc_version_row.subtitle = "Not available";
-                rpc_version_row.tooltip_text = "No executable server selected";
-                rpc_current_version = null;
-                rpc_update_check_available = false;
-                rpc_update_btn.sensitive = false;
-                return;
-            }
-
-            rpc_version_row.subtitle = "Checking...";
-            rpc_version_row.tooltip_text = rpc_path;
             rpc_current_version = null;
-            rpc_update_check_available = false;
-            rpc_update_btn.sensitive = false;
+            if (rpc_path == null || rpc_path.length == 0) return;
 
             try {
                 string? stdout_buf;
@@ -1475,40 +1448,47 @@ namespace Dc {
                     ? (stdout_buf ?? "").strip ()
                     : (stderr_buf ?? "").strip ();
                 if (successful && version.length > 0) {
-                    rpc_version_row.subtitle = version;
                     rpc_current_version = RpcInstaller.extract_version (version);
-                    rpc_update_check_available =
-                        !SettingsManager.rpc_server_path_is_fixed ();
-                    rpc_update_btn.sensitive = rpc_update_check_available;
+                    rpc_row.subtitle = rpc_current_version ?? version;
                 } else {
-                    rpc_version_row.subtitle = "Unable to read version";
-                    rpc_current_version = null;
-                    rpc_update_check_available = false;
-                    rpc_update_btn.sensitive = false;
+                    rpc_row.subtitle = "Unable to read version";
                 }
             } catch (Error e) {
                 if (request_id != rpc_version_request) return;
-                rpc_version_row.subtitle = "Unable to read version";
-                rpc_version_row.tooltip_text = "%s\n%s".printf (rpc_path, e.message);
-                rpc_current_version = null;
-                rpc_update_check_available = false;
-                rpc_update_btn.sensitive = false;
+                rpc_row.subtitle = "Unable to read version";
+                rpc_row.tooltip_text = "%s\n%s".printf (rpc_path, e.message);
             }
         }
 
-        private async void check_rpc_updates () {
-            if (rpc_update_btn == null || !rpc_update_btn.sensitive) return;
+        private async bool confirm_update_dialog (string title, string body,
+                                                   string action_label) {
+            var d = new Adw.AlertDialog (title, body);
+            d.add_response ("dismiss", "Dismiss");
+            d.add_response ("update", action_label);
+            d.set_response_appearance ("update", Adw.ResponseAppearance.SUGGESTED);
+            d.default_response = "update";
+            d.close_response = "dismiss";
+            return (yield d.choose (app_window, null)) == "update";
+        }
 
-            rpc_update_btn.sensitive = false;
-            string previous_subtitle = rpc_version_row.subtitle;
-            rpc_version_row.subtitle = "Checking for updates...";
+        private async void check_rpc_updates () {
+            if (rpc_check_btn == null || !rpc_check_btn.sensitive) return;
+
+            rpc_check_btn.sensitive = false;
+            string previous_subtitle = rpc_row.subtitle;
+            rpc_row.subtitle = "Checking for updates…";
 
             try {
                 string latest_tag = yield RpcInstaller.fetch_latest_tag ();
                 string? latest_version = RpcInstaller.extract_version (latest_tag);
+                rpc_row.subtitle = previous_subtitle;
                 if (latest_version == null) {
-                    rpc_version_row.subtitle = previous_subtitle;
-                    app_window.show_toast ("Could not parse latest RPC server version");
+                    app_window.show_toast ("Could not parse the latest Chatmail Core version");
+                    return;
+                }
+
+                if (rpc_current_version != null && rpc_current_version == latest_version) {
+                    app_window.show_toast ("Chatmail Core is up to date: " + latest_version);
                     return;
                 }
 
@@ -1518,33 +1498,40 @@ namespace Dc {
                         app_window.settings.effective_rpc_server_source ())
                     == AccountFinder.get_managed_rpc_path ();
 
-                if (rpc_current_version == null) {
-                    rpc_version_row.subtitle =
-                        "Latest available: %s".printf (latest_version);
-                    app_window.show_toast ("Latest RPC server: " + latest_version);
-                } else if (rpc_current_version != latest_version) {
-                    rpc_version_row.subtitle = "Latest: %s (installed %s)".printf (
-                        latest_version, rpc_current_version);
-                    if (managed_active) {
-                        app_window.show_toast (
-                            "Update available: %s — press Install to update".printf (
-                                latest_version));
-                    } else {
-                        app_window.show_toast (
-                            "Chatmail server version differs: " + latest_version);
+                if (!managed_active && rpc_current_version != null) {
+                    /* Parla doesn't control the active binary, so it can't
+                       overwrite it — point at the release instead. */
+                    if (yield confirm_update_dialog ("Update Available",
+                            "Chatmail Core %s is available. Parla doesn't manage the active binary, so open its release page to update it manually.".printf (latest_version),
+                            "View Release")) {
+                        yield open_rpc_download_page ();
                     }
-                } else {
-                    rpc_version_row.subtitle = "Up to date: %s".printf (rpc_current_version);
-                    app_window.show_toast ("Chatmail server is up to date");
+                    return;
                 }
-                rpc_version_row.tooltip_text =
-                    "Latest release: https://github.com/chatmail/core/releases/tag/%s".printf (
-                        latest_tag);
+
+                if (!RpcInstaller.can_auto_install ()) {
+                    if (yield confirm_update_dialog ("Update Available",
+                            "Chatmail Core %s is available, but no prebuilt binary exists for this platform.".printf (latest_version),
+                            "View Release")) {
+                        yield open_rpc_download_page ();
+                    }
+                    return;
+                }
+
+                string body = rpc_current_version == null
+                    ? "Chatmail Core %s is available to install.".printf (latest_version)
+                    : "Chatmail Core %s is available (installed: %s).".printf (
+                        latest_version, rpc_current_version);
+                if (yield confirm_update_dialog (
+                        "Update Available", body,
+                        rpc_current_version == null ? "Install" : "Update")) {
+                    yield install_managed_server ();
+                }
             } catch (Error e) {
-                rpc_version_row.subtitle = previous_subtitle;
+                rpc_row.subtitle = previous_subtitle;
                 app_window.show_toast ("Update check failed: " + e.message);
             } finally {
-                rpc_update_btn.sensitive = rpc_update_check_available;
+                rpc_check_btn.sensitive = !SettingsManager.rpc_server_path_is_fixed ();
             }
         }
 
@@ -1566,14 +1553,14 @@ namespace Dc {
             }
 
             app_window.settings.save_rpc_server_source (source);
-            app_window.show_toast ("Chatmail server preference saved");
+            app_window.show_toast ("Chatmail Core source saved");
             update_rpc_row ();
             app_window.reconnect_rpc_server.begin ();
         }
 
         private async void on_browse_rpc_server () {
             var dlg = new Gtk.FileDialog ();
-            dlg.title = "Locate deltachat-rpc-server";
+            dlg.title = "Locate a Chatmail Core binary";
             dlg.modal = true;
 
             string start = app_window.settings.rpc_server_path;
@@ -1588,7 +1575,7 @@ namespace Dc {
                         app_window.settings.save_rpc_server_path (path);
                         app_window.settings.save_rpc_server_source (RpcServerSource.CUSTOM);
                         sync_rpc_source_dropdown ();
-                        app_window.show_toast ("Chatmail server path saved");
+                        app_window.show_toast ("Chatmail Core binary saved");
                         app_window.reconnect_rpc_server.begin ();
                     } else {
                         show_error (app_window, "Selected file is not an executable binary.");
@@ -1611,7 +1598,7 @@ namespace Dc {
 
         private async void on_browse_accounts_path () {
             var dlg = new Gtk.FileDialog ();
-            dlg.title = "Choose Chatmail accounts folder";
+            dlg.title = "Choose accounts folder";
             dlg.modal = true;
 
             string path = app_window.settings.effective_accounts_path ();
@@ -1626,7 +1613,7 @@ namespace Dc {
                     if (selected_path != null) {
                         app_window.settings.save_accounts_path (selected_path);
                         sync_accounts_path_row ();
-                        app_window.show_toast ("Chatmail accounts path saved");
+                        app_window.show_toast ("Accounts path saved");
                         app_window.reconnect_rpc_server.begin ();
                     }
                 }
@@ -1636,7 +1623,8 @@ namespace Dc {
             }
         }
 
-        /* One-click: download the latest server into Parla's data dir. */
+        /* Downloads the latest Chatmail Core into Parla's data dir. Only
+           called after check_rpc_updates() confirms with the user. */
         private async void install_managed_server () {
             if (!RpcInstaller.can_auto_install ()) {
                 /* No prebuilt binary for this arch — fall back to the browser. */
@@ -1644,8 +1632,9 @@ namespace Dc {
                 return;
             }
 
-            rpc_download_btn.sensitive = false;
+            rpc_check_btn.sensitive = false;
             string prev_subtitle = rpc_row.subtitle;
+
             var installer = new RpcInstaller ();
             installer.progress.connect ((received, total) => {
                 if (total > 0) {
@@ -1665,13 +1654,13 @@ namespace Dc {
                     app_window.settings.save_rpc_server_source (RpcServerSource.AUTO);
                     sync_rpc_source_dropdown ();
                 }
-                app_window.show_toast ("Chatmail server installed");
+                app_window.show_toast ("Chatmail Core installed");
                 yield app_window.reconnect_rpc_server ();
             } catch (Error e) {
                 rpc_row.subtitle = prev_subtitle;
                 app_window.show_toast ("Download failed: " + e.message);
             } finally {
-                rpc_download_btn.sensitive = true;
+                rpc_check_btn.sensitive = !SettingsManager.rpc_server_path_is_fixed ();
             }
             update_rpc_row ();
         }
