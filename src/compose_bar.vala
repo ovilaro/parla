@@ -12,10 +12,16 @@ namespace Dc {
 
         public signal void send_message (string text, string? file_path,
             string? file_name, int quote_msg_id);
-        public signal void send_voice_message (string file_path, int quote_msg_id);
+        /* `text` is the transcription typed into the composer alongside the
+           recording, empty for a plain voice message. `temporary` marks a file
+           the receiver of this signal owns and must delete after sending; a
+           voice draft restored from the blob directory is not temporary. */
+        public signal void send_voice_message (string file_path, string text,
+            int quote_msg_id, bool temporary);
         public signal void edit_message (int msg_id, string new_text);
         public signal void edit_last_requested ();
-        public signal void draft_changed (string text, string? file_path, string? file_name, int quote_msg_id);
+        public signal void draft_changed (string text, string? file_path,
+            string? file_name, int quote_msg_id, bool voice);
 
         private Gtk.TextView text_view;
         private Gtk.Label placeholder_label;
@@ -32,7 +38,11 @@ namespace Dc {
         private Gtk.Label recording_time_label;
         private Gtk.Stack recording_action_stack;
         private Gtk.Button recording_stop_button;
+        private Gtk.Button transcribe_button;
         private AudioRecorder? audio_recorder = null;
+        /* Path being transcribed for the composer, null when idle. */
+        private string? transcribing_path = null;
+        private ulong transcriber_handler = 0;
         private int64 recording_started_us = 0;
         private uint recording_timer = 0;
         private Gtk.Label reply_label;
@@ -46,6 +56,9 @@ namespace Dc {
         private string? pending_file = null;
         private string? pending_file_name = null;
         private bool pending_file_is_temp = false;
+        /* The pending attachment is a voice recording: it must be sent as a
+           Voice message, not as a plain audio file. */
+        private bool pending_file_is_voice = false;
         private string[] extra_pending_files = {};
         private string[] extra_pending_file_names = {};
         private string[] extra_pending_temp_files = {};
@@ -58,11 +71,14 @@ namespace Dc {
         private int mention_index = 0;
         private GenericArray<string> mention_tokens = new GenericArray<string> ();
         private const string MENTION_ANCHOR_MARK = "parla-mention-anchor";
+        public const string VOICE_FILE_NAME = "voice-message.m4a";
         private bool suppress_draft_signal = false;
         private bool has_suspended_draft = false;
         private string suspended_draft_text = "";
         private string? suspended_draft_file = null;
         private string? suspended_draft_file_name = null;
+        private bool suspended_draft_file_is_temp = false;
+        private bool suspended_draft_file_is_voice = false;
         private string[] suspended_extra_draft_files = {};
         private string[] suspended_extra_draft_file_names = {};
         private int suspended_replying_msg_id = 0;
@@ -344,6 +360,18 @@ namespace Dc {
                 "media-playback-stop-symbolic", "Stop recording", true,
                 "destructive-action");
             recording_stop_button.clicked.connect (stop_audio_recording);
+            /* Offered once the recording is finished: transcribe it and move
+               both the audio and its text into the composer, so the message
+               carries a readable version of what was said. */
+            transcribe_button = new Gtk.Button.with_label ("Transcribe");
+            transcribe_button.add_css_class ("flat");
+            transcribe_button.valign = Gtk.Align.CENTER;
+            transcribe_button.tooltip_text =
+                "Transcribe the recording into the message text";
+            transcribe_button.visible = false;
+            transcribe_button.clicked.connect (transcribe_audio_recording);
+            recording_row.append (transcribe_button);
+
             var recording_send_button = icon_button (
                 "go-up-symbolic", "Send voice message", true,
                 "suggested-action");
@@ -366,6 +394,8 @@ namespace Dc {
 
         ~ComposeBar () {
             stop_recording_timer ();
+            if (transcriber_handler != 0)
+                Transcriber.shared ().disconnect (transcriber_handler);
             if (audio_recorder != null) audio_recorder.cancel ();
         }
 
@@ -620,6 +650,19 @@ namespace Dc {
             if (open_emoji) open_emoji_picker_after_typed_colon ();
         }
 
+        /* Replace the entry text with the cursor at the end, scrolled on
+           screen once the text view has validated the new content. */
+        private void set_entry_text (string text) {
+            text_view.buffer.text = text;
+            Gtk.TextIter end_iter;
+            text_view.buffer.get_end_iter (out end_iter);
+            text_view.buffer.place_cursor (end_iter);
+            GLib.Idle.add (() => {
+                text_view.scroll_mark_onscreen (text_view.buffer.get_insert ());
+                return GLib.Source.REMOVE;
+            });
+        }
+
         private string get_text () {
             Gtk.TextIter start, end;
             text_view.buffer.get_bounds (out start, out end);
@@ -629,7 +672,7 @@ namespace Dc {
         private void notify_draft_changed () {
             if (suppress_draft_signal || editing_msg_id > 0) return;
             draft_changed (get_text (), pending_file, pending_file_name,
-                replying_msg_id);
+                replying_msg_id, pending_file_is_voice);
         }
 
         private void update_placeholder () {
@@ -669,6 +712,8 @@ namespace Dc {
             recorder.completed.connect (() => {
                 if (audio_recorder != recorder) return;
                 recording_action_stack.visible_child_name = "send";
+                /* Only a finished file can be handed to whisper. */
+                transcribe_button.visible = Transcriber.available ();
             });
             recorder.failed.connect ((message) => {
                 if (audio_recorder != recorder) return;
@@ -711,9 +756,72 @@ namespace Dc {
             audio_recorder.stop ();
         }
 
+        /* Run whisper over the finished recording; on_transcription_updated
+           moves the result into the composer. */
+        private void transcribe_audio_recording () {
+            if (audio_recorder == null || transcribing_path != null) return;
+            string path = audio_recorder.output_path;
+            if (path.length == 0) return;
+
+            var transcriber = Transcriber.shared ();
+            transcribing_path = path;
+            transcribe_button.sensitive = false;
+            transcribe_button.label = "Transcribing…";
+            if (transcriber_handler == 0) {
+                transcriber_handler = transcriber.updated.connect (
+                    on_transcription_updated);
+            }
+            transcriber.transcribe (path);
+        }
+
+        private void on_transcription_updated (string path) {
+            if (transcribing_path == null || path != transcribing_path) return;
+            var transcriber = Transcriber.shared ();
+            if (transcriber.is_running (path)) return;
+
+            string? text = transcriber.result_for (path);
+            transcribing_path = null;
+            reset_transcribe_button ();
+            if (text == null) {
+                show_compose_toast ("Transcription is unavailable");
+                return;
+            }
+            attach_recording_with_text (text);
+        }
+
+        /* Leave recording mode carrying the recording over as a pending voice
+           attachment, with its transcription ready to edit in the entry. */
+        private void attach_recording_with_text (string text) {
+            if (audio_recorder == null) return;
+            /* Take the file first: leaving recording mode discards whatever
+               the recorder still owns. */
+            string path = audio_recorder.take_output ();
+            leave_audio_recording_mode ();
+            if (path.length == 0) return;
+
+            suppress_draft_signal = true;
+            set_pending_attachment (path, VOICE_FILE_NAME, true);
+            pending_file_is_voice = true;
+            if (text.length > 0) set_entry_text (text);
+            suppress_draft_signal = false;
+            notify_draft_changed ();
+
+            text_view.grab_focus ();
+            if (text.length == 0) {
+                show_compose_toast (
+                    "No speech detected; the voice message is still attached");
+            }
+        }
+
+        private void reset_transcribe_button () {
+            transcribe_button.sensitive = true;
+            transcribe_button.label = "Transcribe";
+        }
+
         private void send_audio_recording () {
             if (audio_recorder == null) return;
-            send_voice_message (audio_recorder.take_output (), replying_msg_id);
+            send_voice_message (audio_recorder.take_output (), "",
+                replying_msg_id, true);
             leave_audio_recording_mode ();
 
             suppress_draft_signal = true;
@@ -729,6 +837,9 @@ namespace Dc {
 
         private void leave_audio_recording_mode () {
             stop_recording_timer ();
+            transcribing_path = null;
+            reset_transcribe_button ();
+            transcribe_button.visible = false;
             if (audio_recorder != null) {
                 audio_recorder.cancel ();
                 audio_recorder = null;
@@ -748,9 +859,13 @@ namespace Dc {
         }
 
         private void show_recording_error (string message) {
+            show_compose_toast ("Recording failed: " + message);
+        }
+
+        private void show_compose_toast (string message) {
             var window = get_root () as Dc.Window;
-            if (window != null) window.show_toast ("Recording failed: " + message);
-            else warning ("audio recording: %s", message);
+            if (window != null) window.show_toast (message);
+            else warning ("compose bar: %s", message);
         }
 
         private void set_entry_active (bool active) {
@@ -894,6 +1009,7 @@ namespace Dc {
             pending_file = null;
             pending_file_name = null;
             pending_file_is_temp = false;
+            pending_file_is_voice = false;
             foreach (string path in extra_pending_temp_files) {
                 try {
                     var f = GLib.File.new_for_path (path);
@@ -959,7 +1075,12 @@ namespace Dc {
             }
             if (text.length == 0 && pending_file == null) return;
             int qid = replying_msg_id;
-            if (pending_file != null) {
+            if (pending_file != null && pending_file_is_voice) {
+                /* Sent as a Voice message so it stays playable as a voice note
+                   everywhere; the transcription rides along as its text. */
+                send_voice_message (pending_file, text, qid,
+                    pending_file_is_temp);
+            } else if (pending_file != null) {
                 send_message (text, pending_file,
                     pending_file_name ?? Path.get_basename (pending_file), qid);
             } else {
@@ -1010,23 +1131,13 @@ namespace Dc {
             cancel_reply ();
             clear_attachment ();
             editing_msg_id = msg_id;
-            text_view.buffer.text = current_text;
+            set_entry_text (current_text);
             suppress_draft_signal = false;
             placeholder_label.label = "Edit message…";
             cancel_edit_button.visible = true;
             attach_button.sensitive = false;
             update_send_stack ();
             text_view.grab_focus ();
-            Gtk.TextIter end_iter;
-            text_view.buffer.get_end_iter (out end_iter);
-            text_view.buffer.place_cursor (end_iter);
-            /* If the message is taller than the space the entry gets, make
-               sure the cursor end is on screen. Deferred to idle so the
-               text view has validated the new content first. */
-            GLib.Idle.add (() => {
-                text_view.scroll_mark_onscreen (text_view.buffer.get_insert ());
-                return GLib.Source.REMOVE;
-            });
         }
 
         private void cancel_edit () {
@@ -1050,6 +1161,8 @@ namespace Dc {
             suspended_draft_text = get_text ();
             suspended_draft_file = pending_file;
             suspended_draft_file_name = pending_file_name;
+            suspended_draft_file_is_temp = pending_file_is_temp;
+            suspended_draft_file_is_voice = pending_file_is_voice;
             suspended_extra_draft_files = extra_pending_files;
             suspended_extra_draft_file_names = extra_pending_file_names;
             suspended_replying_msg_id = replying_msg_id;
@@ -1063,7 +1176,8 @@ namespace Dc {
             if (suspended_draft_file != null &&
                 GLib.FileUtils.test (suspended_draft_file, GLib.FileTest.EXISTS)) {
                 set_pending_attachment (suspended_draft_file,
-                    suspended_draft_file_name);
+                    suspended_draft_file_name, suspended_draft_file_is_temp);
+                pending_file_is_voice = suspended_draft_file_is_voice;
             }
             for (int i = 0; i < suspended_extra_draft_files.length; i++) {
                 string path = suspended_extra_draft_files[i];
@@ -1096,11 +1210,13 @@ namespace Dc {
             cancel_reply ();
             clear_attachment ();
 
-            text_view.buffer.text = draft.text ?? "";
+            set_entry_text (draft.text ?? "");
 
             if (draft.file_path != null && draft.file_path.length > 0 &&
                 GLib.FileUtils.test (draft.file_path, GLib.FileTest.EXISTS)) {
                 set_pending_attachment (draft.file_path, draft.file_name);
+                pending_file_is_voice = draft.view_type != null
+                    && draft.view_type.down () == "voice";
             }
 
             if (draft.quote_msg_id > 0) {
@@ -1113,14 +1229,6 @@ namespace Dc {
 
             suppress_draft_signal = false;
             update_placeholder ();
-
-            Gtk.TextIter end_iter;
-            text_view.buffer.get_end_iter (out end_iter);
-            text_view.buffer.place_cursor (end_iter);
-            GLib.Idle.add (() => {
-                text_view.scroll_mark_onscreen (text_view.buffer.get_insert ());
-                return GLib.Source.REMOVE;
-            });
         }
 
         public bool has_active_mode () {

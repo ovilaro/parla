@@ -36,12 +36,15 @@ namespace Dc {
             return running.contains (path);
         }
 
+        /* Always emits `updated`, so callers can treat "already done" and
+           "whisper unavailable" the same way as a finished run. */
         public void transcribe (string path) {
-            if (!available ()) return;
-            if (running.contains (path) || results.contains (path)) return;
-            running.add (path);
+            if (available () && !running.contains (path)
+                && !results.contains (path)) {
+                running.add (path);
+                run_whisper.begin (path);
+            }
             updated (path);
-            run_whisper.begin (path);
         }
 
         private async void run_whisper (string path) {

@@ -5,16 +5,20 @@ namespace Dc {
         public string? file_path;
         public string? file_name;
         public int quote_msg_id;
-        public bool temporary_voice;
+        public bool voice;
+        /* Delete file_path once the send RPC returns. False for a voice draft
+           restored from the blob directory, which the message keeps using. */
+        public bool owns_file;
 
         public PendingSend (string text, string? file_path,
                             string? file_name, int quote_msg_id,
-                            bool temporary_voice = false) {
+                            bool voice = false, bool owns_file = false) {
             this.text = text;
             this.file_path = file_path;
             this.file_name = file_name;
             this.quote_msg_id = quote_msg_id;
-            this.temporary_voice = temporary_voice;
+            this.voice = voice;
+            this.owns_file = owns_file;
         }
     }
 
@@ -1953,10 +1957,12 @@ namespace Dc {
                 text, file_path, file_name, quote_msg_id));
         }
 
-        private void on_send_voice_message (string file_path,
-                                            int quote_msg_id) {
-            queue_send (new PendingSend ("", file_path, "voice-message.m4a",
-                quote_msg_id, true));
+        /* `text` carries the transcription when the composer attached one to
+           the recording; the message still goes out as a Voice message. */
+        private void on_send_voice_message (string file_path, string text,
+                                            int quote_msg_id, bool temporary) {
+            queue_send (new PendingSend (text, file_path,
+                ComposeBar.VOICE_FILE_NAME, quote_msg_id, true, temporary));
         }
 
         private void queue_send (PendingSend job) {
@@ -1970,24 +1976,20 @@ namespace Dc {
             if (sending_queue) return;
             sending_queue = true;
             while (!send_queue.is_empty ()) {
-                var job = send_queue.pop_head ();
-                yield do_send (job.text, job.file_path, job.file_name,
-                    job.quote_msg_id, job.temporary_voice);
+                yield do_send (send_queue.pop_head ());
             }
             sending_queue = false;
         }
 
-        private async void do_send (string text, string? file_path,
-                                    string? file_name, int quote_msg_id,
-                                    bool temporary_voice) {
+        private async void do_send (PendingSend job) {
             try {
-                string? send_text = text.length > 0 ? text : null;
-                string? view_type = temporary_voice ? "Voice"
+                string? send_text = job.text.length > 0 ? job.text : null;
+                string? view_type = job.voice ? "Voice"
                     : AttachmentTypes.infer_outgoing_view_type (
-                        file_path, file_name);
+                        job.file_path, job.file_name);
                 int msg_id = yield rpc.send_msg (chat_id,
-                                                  send_text, file_path, file_name,
-                                                  quote_msg_id, view_type);
+                    send_text, job.file_path, job.file_name,
+                    job.quote_msg_id, view_type);
                 if (msg_id > 0) {
                     var msg = yield rpc.fetch_message (msg_id);
                     if (msg != null) {
@@ -1999,18 +2001,20 @@ namespace Dc {
             } catch (Error e) {
                 window.show_toast ("Send failed: " + e.message);
             } finally {
-                if (temporary_voice && file_path != null)
-                    FileUtils.unlink (file_path);
+                if (job.owns_file && job.file_path != null)
+                    FileUtils.unlink (job.file_path);
             }
         }
 
         private void on_draft_changed (string text, string? file_path,
-                                       string? file_name, int quote_msg_id) {
+                                       string? file_name, int quote_msg_id,
+                                       bool voice) {
             if (!draft_rpc_available || rpc.account_id <= 0) return;
             cancel_pending_draft_save ();
             draft_save_timer = Timeout.add (600, () => {
                 draft_save_timer = 0;
-                save_draft.begin (text, file_path, file_name, quote_msg_id);
+                save_draft.begin (text, file_path, file_name, quote_msg_id,
+                    voice);
                 return Source.REMOVE;
             });
         }
@@ -2034,7 +2038,8 @@ namespace Dc {
         }
 
         private async void save_draft (string text, string? file_path,
-                                       string? file_name, int quote_msg_id) {
+                                       string? file_name, int quote_msg_id,
+                                       bool voice) {
             if (!draft_rpc_available || rpc.account_id <= 0) return;
             try {
                 bool has_text = text.length > 0;
@@ -2049,8 +2054,9 @@ namespace Dc {
                         has_file ? file_name : null,
                         quote_msg_id,
                         has_file
-                            ? AttachmentTypes.infer_outgoing_view_type (
-                                file_path, file_name)
+                            ? (voice ? "Voice"
+                                : AttachmentTypes.infer_outgoing_view_type (
+                                    file_path, file_name))
                             : null);
                 }
                 window.request_reload_chats ();
