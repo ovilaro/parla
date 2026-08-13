@@ -115,7 +115,7 @@ namespace Dc {
             picker.present (this);
         }
 
-        private void add_member_email (string email) {
+        public void add_member_email (string email) {
             if (email.length == 0 || !email.contains ("@")) return;
 
             /* Avoid duplicates */

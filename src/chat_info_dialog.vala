@@ -19,6 +19,7 @@ namespace Dc {
         private Gtk.Box content;
         private ImageViewer viewer;
         private string chat_name = "";
+        private bool is_channel = false;
         private int[] member_contact_ids = {};
         private Contact? dm_contact = null;
 
@@ -147,6 +148,7 @@ namespace Dc {
                     && !json_bool (chat, "isDeviceChat");
 
                 is_group = chat_type == "Group" || chat_type == "Broadcast";
+                is_channel = chat_type == "Broadcast";
                 chat_name = name;
                 dm_contact = null;
 
@@ -349,6 +351,17 @@ namespace Dc {
 
                 var actions_list = boxed_list ();
 
+                if (is_group) {
+                    var duplicate_row = action_row (
+                        is_channel ? "New Channel with Same Members"
+                                   : "New Group with Same Members",
+                        "Start a new one without picking members again",
+                        "system-users-symbolic");
+                    duplicate_row.activated.connect (() =>
+                        show_duplicate_group_dialog.begin ());
+                    actions_list.append (duplicate_row);
+                }
+
                 var clear_row = action_row ("Clear Chat",
                     "Remove messages from this device",
                     "edit-clear-symbolic");
@@ -366,7 +379,8 @@ namespace Dc {
 
                 if (is_group) {
                     var leave_row = action_row ("Leave Group",
-                        "Stop receiving messages", "system-log-out-symbolic");
+                        "Stop receiving messages and remove the chat",
+                        "system-log-out-symbolic");
                     leave_row.activated.connect (() => confirm_leave_group.begin ());
                     actions_list.append (leave_row);
                     var disband_row = action_row ("Disband Group",
@@ -658,9 +672,54 @@ namespace Dc {
             else yield rpc.delete_messages (ids);
         }
 
+        /* Query the member list at activation time rather than reusing the
+           snapshot from load_info, so members added or removed while this
+           dialog is open are reflected. */
+        private async void show_duplicate_group_dialog () {
+            string[] addresses = {};
+            try {
+                var chat = yield rpc.get_full_chat_by_id_for (
+                    rpc.account_id, chat_id);
+                if (chat != null && chat.has_member ("contactIds")) {
+                    var ids = chat.get_array_member ("contactIds");
+                    for (uint i = 0; i < ids.get_length (); i++) {
+                        int cid = (int) ids.get_int_element (i);
+                        /* Self is added automatically on creation. */
+                        if (cid <= 1) continue;
+                        var contact_obj = yield rpc.get_contact_for (
+                            rpc.account_id, cid);
+                        var contact = contact_obj != null
+                            ? RpcParsers.parse_contact (cid, contact_obj)
+                            : null;
+                        if (contact != null && contact.address.contains ("@"))
+                            addresses += contact.address;
+                    }
+                }
+            } catch (Error e) {
+                show_error (this, e.message);
+                return;
+            }
+
+            var dialog = new NewGroupDialog (rpc, is_channel);
+            foreach (var address in addresses)
+                dialog.add_member_email (address);
+            dialog.group_created.connect ((new_chat_id) => {
+                on_duplicate_created.begin (new_chat_id);
+            });
+            dialog.present (this);
+        }
+
+        private async void on_duplicate_created (int new_chat_id) {
+            yield app_window.load_chats ();
+            app_window.select_chat_by_id (new_chat_id);
+            app_window.show_toast (is_channel
+                ? "Channel created" : "Group created");
+            this.close ();
+        }
+
         private async void confirm_leave_group () {
             if (yield confirm_action (this, "Leave Group",
-                "Leave \"%s\"? You will stop receiving messages.".printf (chat_name),
+                "Leave \"%s\"? You will stop receiving messages and the chat will be removed from your list.".printf (chat_name),
                 "leave", "Leave"))
                 do_leave_group.begin ();
         }
@@ -668,7 +727,8 @@ namespace Dc {
         private async void do_leave_group () {
             try {
                 yield rpc.leave_group (chat_id);
-                chat_changed ();
+                yield rpc.delete_chat (chat_id);
+                chat_deleted (chat_id);
                 this.close ();
             } catch (Error e) {
                 show_error (this, e.message);

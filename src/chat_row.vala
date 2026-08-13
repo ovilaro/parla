@@ -380,7 +380,7 @@ namespace Dc {
             if (entry != null) chat_name = entry.name;
 
             if (yield confirm_action (window, "Leave Group",
-                "Leave \"%s\"? You will stop receiving messages. The chat stays in your list until you delete it.".printf (chat_name),
+                "Leave \"%s\"? You will stop receiving messages and the chat will be removed from your list.".printf (chat_name),
                 "leave", "Leave"))
                 do_leave.begin (chat_id);
         }
@@ -388,10 +388,11 @@ namespace Dc {
         private async void do_leave (int chat_id) {
             try {
                 yield rpc.leave_group (chat_id);
+                yield rpc.delete_chat (chat_id);
                 window.show_toast ("You left the chat");
                 if (window.current_chat_id == chat_id)
-                    window.request_messages_reload ();
-                window.request_reload_chats ();
+                    window.clear_chat_view ();
+                yield window.load_chats ();
             } catch (Error e) {
                 window.show_toast ("Leave failed: " + e.message);
             }
