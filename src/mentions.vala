@@ -67,6 +67,11 @@ namespace Dc {
            used to flag self-mentions. */
         private GenericArray<string> self_keys = new GenericArray<string> ();
 
+        /* The member that is the local user, when the chat has one. Its
+           display name is what self-mentions render as, whichever token form
+           the sender used. */
+        private MentionMember? self_member = null;
+
         public void add_member (MentionMember m) {
             members.add (m);
             register_address (m);
@@ -76,6 +81,7 @@ namespace Dc {
         /* Register an address without adding a composer-visible member. Used to
            feed the account-wide contact address book for resolution only. */
         public void register_address (MentionMember m) {
+            if (m.is_self && self_member == null) self_member = m;
             if (m.address.length > 0) {
                 by_address.insert (m.address.down (), m);
             }
@@ -138,7 +144,21 @@ namespace Dc {
                email — that is the portable form. */
             var span = resolve_address (raw, at, rest);
             if (span != null) return span;
-            return resolve_name (raw, at, rest);
+            span = resolve_name (raw, at, rest);
+            if (span != null) return span;
+            /* Nothing in the roster matched: the token may still be one of the
+               local user's own identifiers, e.g. a display name this chat's
+               member list does not carry (the self contact is named "Me" by
+               core) or a name the account used earlier. */
+            return resolve_self_name (raw, at, rest);
+        }
+
+        /* Display name to show for a mention of the local user, whichever
+           token form the sender typed. */
+        private string self_display (string fallback) {
+            if (self_member != null && self_member.display_name.length > 0)
+                return self_member.display_name;
+            return fallback;
         }
 
         private MentionSpan? resolve_address (string raw, int at, string rest) {
@@ -166,8 +186,11 @@ namespace Dc {
             span.start = at;
             span.end = at + 1 + candidate.length;
             span.is_self = member.is_self || key_is_self (candidate.down ());
-            span.display = member.display_name.length > 0
-                ? member.display_name : candidate;
+            span.display = span.is_self
+                ? self_display (member.display_name.length > 0
+                    ? member.display_name : candidate)
+                : (member.display_name.length > 0
+                    ? member.display_name : candidate);
             span.href = "parla-mention:cid=%d".printf (member.contact_id);
             return span;
         }
@@ -195,14 +218,55 @@ namespace Dc {
             return null;
         }
 
-        /* True when position `pos` (byte offset) in `s` ends the token: either
-           end of string or a non-word character follows. */
-        private static bool boundary_after (string s, int pos) {
+        /* Match `rest` against the account's own identifiers (display name and
+           transport addresses). Resolves to the self contact so a mention
+           written by another client — which knows the account only by its
+           configured name — is still recognized and rendered like any other. */
+        private MentionSpan? resolve_self_name (string raw, int at, string rest) {
+            string rest_down = rest.down ();
+            int best = 0;
+            for (int i = 0; i < self_keys.length; i++) {
+                string key = self_keys[i];
+                if (key.length == 0 || key.length > rest.length) continue;
+                if (key.length <= best) continue;
+                if (!rest_down.has_prefix (key)) continue;
+                if (!boundary_after (rest, key.length)) continue;
+                best = key.length;
+            }
+            if (best == 0) return null;
+
+            var span = new MentionSpan ();
+            span.start = at;
+            span.end = at + 1 + best;
+            span.is_self = true;
+            span.display = self_display (rest.substring (0, best));
+            span.href = "parla-mention:cid=%d".printf (
+                self_member != null ? self_member.contact_id : 1);
+            return span;
+        }
+
+        /* True when position `pos` (byte offset) in `s` ends the token: end of
+           string, or a character that cannot continue a name follows.
+
+           A joiner ('-', '.', '+') only ends the token when nothing word-like
+           comes after it, so "@pancake-dcg" is not truncated to a member named
+           "pancake" while "@Alice." at the end of a sentence still matches. */
+        public static bool boundary_after (string s, int pos) {
             if (pos >= s.length) return true;
             unichar c;
             int idx = pos;
             if (!s.get_next_char (ref idx, out c)) return true;
-            return !(c.isalnum () || c == '_');
+            if (c.isalnum () || c == '_') return false;
+            if (!is_name_joiner (c)) return true;
+
+            unichar next;
+            int after = idx;
+            if (!s.get_next_char (ref after, out next)) return true;
+            return !(next.isalnum () || next == '_' || is_name_joiner (next));
+        }
+
+        private static bool is_name_joiner (unichar c) {
+            return c == '-' || c == '.' || c == '+';
         }
 
         private static string trim_trailing_punct (string s) {
@@ -222,6 +286,21 @@ namespace Dc {
     }
 
     public class Mentions {
+
+        /* Adwaita's default accent, used until the app reports its own. */
+        private const string DEFAULT_ACCENT = "#3584e4";
+        private static string? accent_override = null;
+
+        /* Accent colour for the inline mention chip. Pango markup cannot
+           reference CSS colours, so Application.apply_accent_color pushes the
+           configured accent in here; an empty value restores the default. */
+        public static void set_accent (string? hex) {
+            accent_override = (hex != null && hex.length > 0) ? hex : null;
+        }
+
+        private static string accent () {
+            return accent_override ?? DEFAULT_ACCENT;
+        }
 
         /* Delimiter wrapped around a mention placeholder while the text passes
            through Markdown.format. U+FFFC (OBJECT REPLACEMENT CHARACTER), here
@@ -300,15 +379,32 @@ namespace Dc {
             return markup;
         }
 
+        /* Every mention renders the same way — a bold link — so a mention of
+           the local user is not styled differently from a mention of anyone
+           else. Self-mentions add a translucent accent chip; the alpha keeps
+           the label's own foreground readable in light and dark themes. */
         private static string anchor_markup (MentionSpan span) {
             string href = Markup.escape_text (span.href);
             string label = Markup.escape_text ("@" + span.display);
             if (span.is_self) {
-                return ("<a href=\"%s\"><span background=\"#f9c440\" " +
-                        "foreground=\"#000000\"><b>%s</b></span></a>")
-                    .printf (href, label);
+                return ("<a href=\"%s\"><span background=\"%s\" " +
+                        "bgalpha=\"35%%\"><b>%s</b></span></a>")
+                    .printf (href, Markup.escape_text (accent ()), label);
             }
             return "<a href=\"%s\"><b>%s</b></a>".printf (href, label);
+        }
+
+        /**
+         * True when `raw` contains a mention of the local user that `roster`
+         * can resolve. Used to tint the bubble of a message that mentions you.
+         */
+        public static bool has_self_mention (string? raw, MentionRoster? roster) {
+            if (raw == null || raw.length == 0 || roster == null) return false;
+            var spans = find_mentions (raw, roster);
+            for (int i = 0; i < spans.length; i++) {
+                if (spans[i].is_self) return true;
+            }
+            return false;
         }
 
         /**
@@ -349,7 +445,7 @@ namespace Dc {
                 /* Addresses end at whitespace; names end at a non-word char. */
                 if (key.contains ("@")) {
                     if (c.isspace () || is_addr_terminator (c)) return true;
-                } else if (!(c.isalnum () || c == '_')) {
+                } else if (MentionRoster.boundary_after (rest, end)) {
                     return true;
                 }
             }

@@ -468,6 +468,15 @@ namespace Dc {
             box.append (pin);
         }
 
+        /* A message that mentions you gets an accent tint so it stands out
+           while scrolling. Own messages are left alone: they already carry the
+           accent background, and tinting them would say nothing. */
+        private void flag_self_mention (Message msg) {
+            if (!msg.is_outgoing
+                && Mentions.has_self_mention (msg.text, mention_roster))
+                this.add_css_class ("mentions-me");
+        }
+
         private void build_bubble_row (Message msg,
                                        BubbleAvatarDisplay avatar_display,
                                        bool avatar_scope_enabled,
@@ -486,6 +495,8 @@ namespace Dc {
             var bubble = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
             bubble.add_css_class ("message-bubble");
             bubble.add_css_class (outgoing ? "outgoing" : "incoming");
+            if (!outgoing && Mentions.has_self_mention (msg.text, mention_roster))
+                bubble.add_css_class ("mentions-me");
             bubble.valign = Gtk.Align.START;
 
             /* Sticker-only messages drop the bubble chrome so the sticker
@@ -572,6 +583,7 @@ namespace Dc {
             this.margin_end = 8;
             this.spacing = 6;
             this.add_css_class ("message-irc");
+            flag_self_mention (msg);
 
             string time_str = format_timestamp (msg.timestamp);
             var time_lbl = new Gtk.Label (time_str);
@@ -612,6 +624,7 @@ namespace Dc {
            same sender within five minutes drop the avatar and header. */
         private void build_workspace_row (Message msg, Message? prev) {
             this.add_css_class ("message-workspace");
+            flag_self_mention (msg);
             this.margin_start = 4;
             this.margin_end = 4;
 

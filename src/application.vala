@@ -91,6 +91,10 @@ namespace Dc {
         }
 
         public void apply_accent_color (string hex) {
+            /* Inline mention chips are Pango markup and cannot reference CSS
+               colours, so they get the accent pushed to them. */
+            Mentions.set_accent (hex);
+
             var display = Gdk.Display.get_default ();
             if (display == null) return;
 
@@ -415,6 +419,19 @@ namespace Dc {
             .message-bubble.outgoing {
                 background-color: alpha(@accent_bg_color, 0.5);
                 border-bottom-right-radius: 4px;
+            }
+            /* Incoming message that mentions you: half-accent tint plus an
+               accent edge. Declared after .incoming so it wins on equal
+               specificity. */
+            .message-bubble.incoming.mentions-me {
+                background-color: alpha(@accent_bg_color, 0.22);
+                box-shadow: inset 2px 0 0 0 @accent_bg_color;
+            }
+            .message-irc.mentions-me,
+            .message-workspace.mentions-me {
+                background-color: alpha(@accent_bg_color, 0.16);
+                box-shadow: inset 2px 0 0 0 @accent_bg_color;
+                border-radius: 4px;
             }
             .message-avatar {
                 margin-bottom: 1px;

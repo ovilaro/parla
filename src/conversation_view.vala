@@ -1527,8 +1527,16 @@ namespace Dc {
                         var cobj = yield rpc.get_contact_for (rpc.account_id, cid);
                         if (cobj == null) continue;
                         var c = RpcParsers.parse_contact (cid, cobj);
+                        /* Core names the self contact "Me"; mentions must show
+                           (and resolve by) the account's configured display
+                           name, which is what other clients write. */
+                        string name = cid == 1
+                            && MessageRow.self_display_name != null
+                            && MessageRow.self_display_name.strip ().length > 0
+                            ? MessageRow.self_display_name.strip ()
+                            : c.display_name;
                         roster.add_member (new MentionMember (
-                            cid, c.display_name, c.address, cid == 1,
+                            cid, name, c.address, cid == 1,
                             c.profile_image));
                     }
                 }
@@ -1536,13 +1544,13 @@ namespace Dc {
                 reaction_roster = roster;
                 if (msg_actions != null)
                     msg_actions.set_reaction_roster (reaction_roster);
-                if (chat_kind == ChatKind.DIRECT) {
-                    mention_roster = null;
-                    compose_bar.set_mention_roster (null);
-                } else {
-                    mention_roster = roster;
-                    compose_bar.set_mention_roster (roster);
-                }
+                /* Message text resolves mentions in every chat kind — a
+                   one-to-one partner mentioning you must render like it does
+                   in a group. Only the composer autocomplete is groups-only,
+                   where picking someone out of a member list makes sense. */
+                mention_roster = roster;
+                compose_bar.set_mention_roster (
+                    chat_kind == ChatKind.DIRECT ? null : roster);
             } catch (Error e) {
                 /* Non-critical: retry on the next reload. */
                 reaction_roster = null;
