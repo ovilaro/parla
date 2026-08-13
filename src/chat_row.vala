@@ -242,11 +242,13 @@ namespace Dc {
         public void show (int chat_id, double x, double y, Gtk.Widget parent) {
             bool is_pinned = false;
             bool is_archived = false;
+            bool is_muted = false;
             bool has_unread = false;
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) {
                 is_pinned = entry.is_pinned;
                 is_archived = entry.is_archived;
+                is_muted = entry.is_muted;
                 has_unread = entry.unread_count > 0;
             }
 
@@ -270,6 +272,16 @@ namespace Dc {
                 is_archived ? "Unarchive" : "Archive").clicked.connect (() => {
                     toggle_archive.begin (chat_id, is_archived);
                 });
+            /* Mute is normally managed from the Details dialog, but for
+               archived chats it is the mechanism that keeps them archived
+               (core auto-unarchives unmuted chats on new messages), so it
+               earns a direct entry here. */
+            if (is_archived) {
+                append_menu_button (box, popover,
+                    is_muted ? "Unmute" : "Mute").clicked.connect (() => {
+                        set_mute_state.begin (chat_id, !is_muted, null);
+                    });
+            }
             append_menu_button (box, popover,
                 has_unread ? "Mark as read" : "Mark as unread",
                 false, has_unread || chat_id != window.current_chat_id)
@@ -327,14 +339,40 @@ namespace Dc {
         }
 
         private async void toggle_archive (int chat_id, bool currently_archived) {
+            var entry = find_chat_entry (chat_store, chat_id);
+            bool already_muted = entry != null && entry.is_muted;
             try {
                 yield rpc.set_chat_visibility (chat_id,
                     currently_archived ? "Normal" : "Archived");
-                window.show_toast (currently_archived
-                    ? "Chat unarchived" : "Chat archived");
+                if (currently_archived) {
+                    window.show_toast ("Chat unarchived");
+                } else if (already_muted) {
+                    window.show_toast ("Chat archived");
+                } else {
+                    /* Unmuted chats pop back on the next message; offer the
+                       one-click way to make the archive stick. */
+                    window.show_action_toast (
+                        "Chat archived. New messages will unarchive it.",
+                        "Mute", () => {
+                            set_mute_state.begin (chat_id, true,
+                                "Muted. Chat will stay archived.");
+                        });
+                }
                 yield window.load_chats ();
             } catch (Error e) {
                 window.show_toast ("Failed to update archive: " + e.message);
+            }
+        }
+
+        private async void set_mute_state (int chat_id, bool mute,
+                                           string? done_message) {
+            try {
+                yield rpc.set_chat_mute_duration (chat_id, mute ? -1 : 0);
+                window.show_toast (done_message ??
+                    (mute ? "Chat muted" : "Chat unmuted"));
+                window.request_reload_chats ();
+            } catch (Error e) {
+                window.show_toast ("Failed to update mute: " + e.message);
             }
         }
 
