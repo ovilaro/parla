@@ -270,10 +270,15 @@ namespace Dc {
                 .clicked.connect (() => { show_media (chat_id); });
             append_menu_button (box, popover, "Details…")
                 .clicked.connect (() => { show_info (chat_id); });
+            box.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
             append_menu_button (box, popover, "Clear Chat…", true)
                 .clicked.connect (() => {
                     confirm_clear_history.begin (chat_id);
                 });
+            if (entry != null && entry.kind == ChatKind.GROUP) {
+                append_menu_button (box, popover, "Leave…", true)
+                    .clicked.connect (() => { confirm_leave.begin (chat_id); });
+            }
             append_menu_button (box, popover, "Delete…", true)
                 .clicked.connect (() => { confirm_delete.begin (chat_id); });
 
@@ -367,6 +372,29 @@ namespace Dc {
                 "Remove all messages in \"%s\" from this device? The chat will stay in your conversation list.".printf (chat_name),
                 "clear", "Clear Chat"))
                 do_clear_history.begin (chat_id, false);
+        }
+
+        private async void confirm_leave (int chat_id) {
+            string chat_name = "this chat";
+            var entry = find_chat_entry (chat_store, chat_id);
+            if (entry != null) chat_name = entry.name;
+
+            if (yield confirm_action (window, "Leave Group",
+                "Leave \"%s\"? You will stop receiving messages. The chat stays in your list until you delete it.".printf (chat_name),
+                "leave", "Leave"))
+                do_leave.begin (chat_id);
+        }
+
+        private async void do_leave (int chat_id) {
+            try {
+                yield rpc.leave_group (chat_id);
+                window.show_toast ("You left the chat");
+                if (window.current_chat_id == chat_id)
+                    window.request_messages_reload ();
+                window.request_reload_chats ();
+            } catch (Error e) {
+                window.show_toast ("Leave failed: " + e.message);
+            }
         }
 
         private async void confirm_delete (int chat_id) {
