@@ -241,10 +241,12 @@ namespace Dc {
 
         public void show (int chat_id, double x, double y, Gtk.Widget parent) {
             bool is_pinned = false;
+            bool is_archived = false;
             bool has_unread = false;
             var entry = find_chat_entry (chat_store, chat_id);
             if (entry != null) {
                 is_pinned = entry.is_pinned;
+                is_archived = entry.is_archived;
                 has_unread = entry.unread_count > 0;
             }
 
@@ -256,9 +258,17 @@ namespace Dc {
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             box.add_css_class ("menu");
 
+            /* Same visibility matrix as the official client: an archived
+               chat only offers Unarchive (pinning would unarchive it). */
+            if (!is_archived) {
+                append_menu_button (box, popover,
+                    is_pinned ? "Unpin" : "Pin").clicked.connect (() => {
+                        toggle_pin.begin (chat_id, is_pinned);
+                    });
+            }
             append_menu_button (box, popover,
-                is_pinned ? "Unpin" : "Pin").clicked.connect (() => {
-                    toggle_pin.begin (chat_id, is_pinned);
+                is_archived ? "Unarchive" : "Archive").clicked.connect (() => {
+                    toggle_archive.begin (chat_id, is_archived);
                 });
             append_menu_button (box, popover,
                 has_unread ? "Mark as read" : "Mark as unread",
@@ -313,6 +323,18 @@ namespace Dc {
                 yield window.load_chats ();
             } catch (Error e) {
                 window.show_toast ("Failed to update pin: " + e.message);
+            }
+        }
+
+        private async void toggle_archive (int chat_id, bool currently_archived) {
+            try {
+                yield rpc.set_chat_visibility (chat_id,
+                    currently_archived ? "Normal" : "Archived");
+                window.show_toast (currently_archived
+                    ? "Chat unarchived" : "Chat archived");
+                yield window.load_chats ();
+            } catch (Error e) {
+                window.show_toast ("Failed to update archive: " + e.message);
             }
         }
 

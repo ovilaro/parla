@@ -86,6 +86,7 @@ namespace Dc {
             entry.is_muted = json_bool (obj, "isMuted");
             entry.is_contact_request = json_bool (obj, "isContactRequest");
             entry.is_pinned = json_bool (obj, "isPinned");
+            entry.is_archived = json_bool (obj, "isArchived");
             entry.was_seen_recently = json_bool (obj, "wasSeenRecently");
             if (!entry.was_seen_recently && obj.has_member ("contact") &&
                 !obj.get_member ("contact").is_null ()) {

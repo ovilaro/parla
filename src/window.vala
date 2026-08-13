@@ -31,6 +31,14 @@ namespace Dc {
         private Gtk.ListBox chat_listbox;
         public GLib.ListStore chat_store { get; private set; }
 
+        /* Archived-chats view: the sidebar shows either the normal chatlist
+           or the archived one; the toggle only exists while the account has
+           at least one archived chat. */
+        private Gtk.Button archived_toggle_btn;
+        private Adw.ButtonContent archived_btn_content;
+        private bool showing_archived = false;
+        private int archived_count = 0;
+
         /* Per-chat cached views */
         private HashTable<int, ConversationView> views;
 
@@ -160,6 +168,9 @@ namespace Dc {
             chat_store.remove_all ();
             clear_listbox (chat_listbox);
             search_entry.text = "";
+            showing_archived = false;
+            archived_count = 0;
+            update_archived_toggle ();
             content_title_label.label = "Select a chat";
             content_mute_icon.visible = false;
         }
@@ -609,6 +620,22 @@ namespace Dc {
             });
             search_entry.add_controller (search_keys);
             sidebar_box.append (search_entry);
+
+            /* Archived-chats toggle. Hidden until the account actually has
+               archived chats; flips the list between normal and archived. */
+            archived_btn_content = new Adw.ButtonContent ();
+            archived_btn_content.icon_name = "archive-symbolic";
+            archived_toggle_btn = new Gtk.Button ();
+            archived_toggle_btn.child = archived_btn_content;
+            archived_toggle_btn.add_css_class ("flat");
+            archived_toggle_btn.margin_start = 8;
+            archived_toggle_btn.margin_end = 8;
+            archived_toggle_btn.margin_bottom = 4;
+            archived_toggle_btn.visible = false;
+            archived_toggle_btn.clicked.connect (() => {
+                toggle_archived_view ();
+            });
+            sidebar_box.append (archived_toggle_btn);
 
             /* Chat list */
             var chat_scroll = new Gtk.ScrolledWindow ();
@@ -1306,12 +1333,58 @@ namespace Dc {
             if (v != null) v.reload_messages.begin ();
         }
 
+        private void toggle_archived_view () {
+            showing_archived = !showing_archived;
+            search_entry.text = "";
+            update_archived_toggle ();
+            load_chats.begin ();
+        }
+
+        private void update_archived_toggle () {
+            if (archived_toggle_btn == null) return;
+            bool compact = settings.sidebar_mode == SidebarMode.COMPACT;
+            archived_toggle_btn.visible = showing_archived || archived_count > 0;
+            if (showing_archived) {
+                archived_btn_content.icon_name = "go-previous-symbolic";
+                archived_btn_content.label = compact ? "" : "Back to Chats";
+                archived_toggle_btn.tooltip_text = "Back to Chats";
+            } else {
+                archived_btn_content.icon_name = "archive-symbolic";
+                archived_btn_content.label = compact ? ""
+                    : "Archived Chats (%d)".printf (archived_count);
+                archived_toggle_btn.tooltip_text = "Show Archived Chats";
+            }
+        }
+
         public async void load_chats () {
             if (rpc.account_id <= 0) return;
 
             try {
-                var entries = yield rpc.get_chatlist_entries_for (rpc.account_id);
+                /* The main list drops core's special entries (the "archived
+                   chats" pseudo-chat used to show up as an empty row). */
+                var entries = yield rpc.get_chatlist_entries_for (
+                    rpc.account_id, null,
+                    showing_archived ? RpcClient.GCL_ARCHIVED_ONLY
+                                     : RpcClient.GCL_NO_SPECIALS);
                 if (entries == null) return;
+
+                if (showing_archived) {
+                    archived_count = (int) entries.get_length ();
+                    if (archived_count == 0) {
+                        /* Last chat left the archive: fall back to the
+                           normal list instead of showing an empty one. */
+                        showing_archived = false;
+                        update_archived_toggle ();
+                        yield load_chats ();
+                        return;
+                    }
+                } else {
+                    var archived = yield rpc.get_chatlist_entries_for (
+                        rpc.account_id, null, RpcClient.GCL_ARCHIVED_ONLY);
+                    archived_count = archived != null
+                        ? (int) archived.get_length () : 0;
+                }
+                update_archived_toggle ();
 
                 var items = yield rpc.get_chatlist_items_by_entries_for (
                     rpc.account_id, entries);
@@ -2958,6 +3031,7 @@ namespace Dc {
                 break;
             }
             apply_compact_to_rows (mode == SidebarMode.COMPACT);
+            update_archived_toggle ();
         }
 
         private void set_compact_header_chrome (bool compact) {

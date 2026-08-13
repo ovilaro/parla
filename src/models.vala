@@ -287,6 +287,7 @@ namespace Dc {
         public bool is_muted { get; set; default = false; }
         public bool is_contact_request { get; set; default = false; }
         public bool is_pinned { get; set; default = false; }
+        public bool is_archived { get; set; default = false; }
         public bool was_seen_recently { get; set; default = false; }
         /* Client-side flag: an unseen message in this chat mentions the local
            user. Not persisted (see Window.mentioned_chats). */

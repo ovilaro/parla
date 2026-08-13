@@ -231,12 +231,18 @@ namespace Dc {
             return result.get_string ();
         }
 
+        /* Chatlist flags understood by get_chatlist_entries (DC_GCL_*). */
+        public const int GCL_ARCHIVED_ONLY = 0x01;
+        public const int GCL_NO_SPECIALS = 0x02;
+
         public async Json.Array? get_chatlist_entries_for (int acct_id,
-                                                            string? query = null) throws Error {
+                                                            string? query = null,
+                                                            int list_flags = -1) throws Error {
+            var params = Params.begin ().add_int (acct_id);
+            if (list_flags < 0) params.add_null ();      /* listFlags */
+            else params.add_int (list_flags);
             var result = yield call ("get_chatlist_entries",
-                Params.begin ()
-                    .add_int (acct_id)
-                    .add_null ()            /* listFlags */
+                params
                     .add_string (query)
                     .add_null ()            /* contactId */
                     .build ());
