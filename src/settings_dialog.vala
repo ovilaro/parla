@@ -811,7 +811,8 @@ namespace Dc {
                     : "Minimize to status bar",
                 Platform.is_macos ()
                     ? "Closing the window keeps Parla running as a menu bar "
-                    + "icon, out of the Dock; notifications still appear"
+                    + "icon; the Dock icon stays visible and notifications "
+                    + "still appear"
                     : "Closing the window keeps Parla running in the status "
                     + "bar; notifications still appear");
             var tray_switch = row_switch (

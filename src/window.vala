@@ -309,6 +309,13 @@ namespace Dc {
         private bool on_close_request () {
             if (quit_requested) return false;
 
+#if MACOS
+            /* Closing the window keeps Parla running with its Dock icon
+               always visible; only an explicit quit (Cmd+Q, the tray menu,
+               Dock > Quit) exits for real. */
+            minimize_to_tray ();
+            return true;
+#else
             if (ensure_tray_visible ()) {
                 minimize_to_tray ();
                 return true;
@@ -322,6 +329,7 @@ namespace Dc {
             }
             release_background_hold ();
             return false;
+#endif
         }
 
         private bool runs_in_background () {
@@ -347,11 +355,16 @@ namespace Dc {
         }
 
         public void handle_primary_w () {
+#if MACOS
+            minimize_to_tray ();
+            return;
+#else
             if (ensure_tray_visible () || runs_in_background ()) {
                 minimize_to_tray ();
                 return;
             }
             handle_primary_q ();
+#endif
         }
 
         private void handle_native_file_drop (string path) {
@@ -366,6 +379,13 @@ namespace Dc {
         /* Single source of truth for the tray icon: create it on first need,
            then show/hide it to track the setting. */
         private void sync_tray () {
+#if MACOS
+            /* macOS keeps the reopen handler installed so a Dock click
+               brings the hidden window back, even when no menu-bar icon
+               is shown. */
+            ensure_tray_backend ();
+#endif
+
             if (!settings.minimize_to_tray) {
                 if (tray != null) tray.hide ();
                 /* In background/service mode the hidden window is
@@ -380,28 +400,35 @@ namespace Dc {
             ensure_tray_visible ();
         }
 
+        /* Create the tray backend and wire its callbacks, without showing
+           the status item. macOS needs this even when only the Dock icon
+           keeps the app alive: constructing MacosTray installs the reopen
+           handler that brings the hidden window back. */
+        private void ensure_tray_backend () {
+            if (tray != null) return;
+#if MACOS
+            tray = new MacosTray ();
+#else
+            var conn = this.application.get_dbus_connection ();
+            if (conn == null) return;
+            tray = new TrayIcon (conn);
+#endif
+            tray.show_on_current_desktop_requested.connect (
+                show_from_tray_on_current_desktop);
+            tray.window_toggle_requested.connect (
+                toggle_window_from_tray);
+            tray.quit_requested.connect (() => {
+                handle_primary_q ();
+            });
+            tray.notifications_toggle_requested.connect ((enabled) => {
+                set_notifications_enabled (enabled);
+            });
+        }
+
         private bool ensure_tray_visible () {
             if (!settings.minimize_to_tray) return false;
 
-            if (tray == null) {
-#if MACOS
-                tray = new MacosTray ();
-#else
-                var conn = this.application.get_dbus_connection ();
-                if (conn == null) return false;
-                tray = new TrayIcon (conn);
-#endif
-                tray.show_on_current_desktop_requested.connect (
-                    show_from_tray_on_current_desktop);
-                tray.window_toggle_requested.connect (
-                    toggle_window_from_tray);
-                tray.quit_requested.connect (() => {
-                    handle_primary_q ();
-                });
-                tray.notifications_toggle_requested.connect ((enabled) => {
-                    set_notifications_enabled (enabled);
-                });
-            }
+            ensure_tray_backend ();
             if (tray == null) return false;
             tray.set_notifications_enabled (settings.notifications_enabled);
             tray.set_window_visible (this.visible);
@@ -411,20 +438,10 @@ namespace Dc {
         private void minimize_to_tray () {
             close_active_modal ();
             this.set_visible (false);
-            set_macos_app_hidden (true);
             if (!held_in_background) {
                 this.application.hold ();
                 held_in_background = true;
             }
-        }
-
-        /* On macOS "in the tray" also means out of the Dock and Cmd-Tab
-           (see tray_macos.h); a no-op everywhere else. Restoring must run
-           before present () so the window can take focus again. */
-        private static void set_macos_app_hidden (bool hidden) {
-#if MACOS
-            MacosTray.set_app_hidden (hidden);
-#endif
         }
 
         private void close_active_modal () {
@@ -435,7 +452,6 @@ namespace Dc {
         }
 
         public void restore_from_tray () {
-            set_macos_app_hidden (false);
             release_background_hold ();
             this.present ();
         }
@@ -452,7 +468,6 @@ namespace Dc {
 
         private void show_from_tray_on_current_desktop (
                 string? activation_token) {
-            set_macos_app_hidden (false);
             release_background_hold ();
             if (activation_token != null && activation_token.length > 0 &&
                 request_activation_on_current_desktop (activation_token)) {
