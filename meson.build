@@ -105,6 +105,7 @@ sources = files(
   'src/audio_recorder.vala',
   'src/conversation_media_bar.vala',
   'src/compose_bar.vala',
+  'src/link_cleaner.vala',
   'src/emoji.vala',
   'src/file_drop.vala',
   'src/conversation_view.vala',
@@ -244,6 +245,15 @@ save_folder_test = executable(
 )
 
 test('save-folder', save_folder_test)
+
+link_cleaner_test = executable(
+  'link-cleaner-test',
+  files('tests/link_cleaner_test.vala', 'src/link_cleaner.vala'),
+  dependencies: [dependency('glib-2.0'), dependency('gobject-2.0')],
+  install: false,
+)
+
+test('link-cleaner', link_cleaner_test)
 
 storage_quota_test = executable(
   'storage-quota-test',
