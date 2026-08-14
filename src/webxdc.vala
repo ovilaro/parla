@@ -256,6 +256,7 @@ namespace Dc.Webxdc {
         private string self_addr = "unknown";
         private string self_name = "me";
         private string app_name;
+        private string document_name = "";
         private string? chat_name = null;
         private bool allow_internet = false;
         private bool allow_wasm = false;
@@ -284,21 +285,37 @@ namespace Dc.Webxdc {
             start.begin ();
         }
 
-        /** "App — Chat": the window belongs to one specific chat, and the
-            title is where that binding is visible to the user. */
+        /** Mirror the official Delta Chat clients: cut at max_len
+            characters and append an ellipsis only when truncating. */
+        private static string truncate_text (string text, int max_len) {
+            if (max_len <= 0) return text;
+            int end = text.index_of_nth_char (max_len);
+            if (end < 0 || end >= text.length) return text;
+            return "%s…".printf (text.slice (0, end));
+        }
+
+        /** "app – chat" (or "document - app – chat" for editing apps),
+            exactly how the official clients build webxdc window titles.
+            The chat is where the app's binding to a chat is visible. */
         private string compose_title () {
+            var document = document_name != null && document_name.length > 0
+                ? "%s - ".printf (truncate_text (document_name, 32))
+                : "";
+            var name = truncate_text (app_name, 42);
             return chat_name != null && chat_name.length > 0
-                ? "%s — %s".printf (app_name, chat_name)
-                : app_name;
+                ? "%s%s – %s".printf (document, name, chat_name)
+                : "%s%s".printf (document, name);
         }
 
         private async void start () {
             try {
                 var info = yield rpc.call ("get_webxdc_info", Params.begin ()
                     .add_int (account_id).add_int (msg_id).build ());
-                var name = info.get_object ()
-                    .get_string_member_with_default ("name", "");
+                var obj = info.get_object ();
+                var name = obj.get_string_member_with_default ("name", "");
                 if (name.length > 0) app_name = name;
+                document_name =
+                    obj.get_string_member_with_default ("document", "");
             } catch (Error e) {
                 warning ("webxdc info: %s", e.message);
             }
@@ -434,9 +451,19 @@ namespace Dc.Webxdc {
                 var arr = parser.get_root ().get_array ();
                 if (arr.get_length () == 0) return;
                 for (uint i = 0; i < arr.get_length (); i++) {
-                    int64 serial = arr.get_object_element (i)
+                    var item = arr.get_object_element (i);
+                    int64 serial = item
                         .get_int_member_with_default ("serial", 0);
                     if (serial > last_serial) last_serial = serial;
+                    var doc = item.get_member ("document");
+                    if (doc != null
+                        && doc.get_node_type () == Json.NodeType.VALUE) {
+                        string d = doc.get_string ();
+                        if (d != null && d.length > 0 && d != document_name) {
+                            document_name = d;
+                            set_view_title (compose_title ());
+                        }
+                    }
                 }
             } catch (Error e) {
                 warning ("webxdc updates: %s", e.message);
