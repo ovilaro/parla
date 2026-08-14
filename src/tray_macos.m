@@ -50,15 +50,6 @@ idle_window_toggle (gpointer data)
 }
 
 static gboolean
-idle_window_show (gpointer data)
-{
-	if (tray.window_show != NULL) {
-		tray.window_show (tray.user_data);
-	}
-	return G_SOURCE_REMOVE;
-}
-
-static gboolean
 idle_quit (gpointer data)
 {
 	if (tray.quit != NULL) {
@@ -127,15 +118,59 @@ parla_tray_call_super_reopen (id self, SEL selector, NSApplication *app,
 	                                           has_visible);
 }
 
+/* Show the window synchronously from the AppKit callback. While the window
+ * is hidden the GLib main loop does not wake up promptly to dispatch a
+ * queued idle (up to ~12s), so deferring through g_idle_add is not fast
+ * enough for a Dock click. The reopen/did-become-active callbacks run on
+ * the main thread during ordinary AppKit event processing, where touching
+ * GTK is safe. */
+static void
+parla_tray_show_window_now (void)
+{
+	if (tray.window_visible) {
+		return;
+	}
+
+	/* Reopen and did-become-active both fire for one Dock click; show only
+	 * once. GTK's visible notify will sync the flag back once the window is
+	 * really on screen. */
+	tray.window_visible = YES;
+
+	if (tray.window_show != NULL) {
+		tray.window_show (tray.user_data);
+	}
+}
+
 static BOOL
 parla_tray_should_handle_reopen (id self, SEL selector, NSApplication *app,
                                  BOOL has_visible)
 {
 	if (!tray.window_visible) {
-		g_idle_add (idle_window_show, NULL);
+		parla_tray_show_window_now ();
 		return NO;
 	}
 	return parla_tray_call_super_reopen (self, selector, app, has_visible);
+}
+
+static void
+parla_tray_did_become_active (id self, SEL selector, NSNotification *notification)
+{
+	Class superclass = class_getSuperclass (object_getClass (self));
+	if (superclass != Nil &&
+	    class_getInstanceMethod (superclass, selector) != NULL) {
+		struct objc_super super_info = {
+			.receiver = self,
+			.super_class = superclass,
+		};
+		typedef void (*MsgSendSuper)(struct objc_super *, SEL, NSNotification *);
+		((MsgSendSuper) objc_msgSendSuper) (
+			&super_info, selector, notification);
+	}
+
+	/* The first Dock click activates the app before AppKit delivers the
+	 * reopen callback. Restore after activation so GTK cannot immediately
+	 * order the intentionally hidden window out again. */
+	parla_tray_show_window_now ();
 }
 
 static void
@@ -161,6 +196,9 @@ parla_tray_install_reopen_handler (void)
 		class_addMethod (subclass,
 		                 @selector (applicationShouldHandleReopen:hasVisibleWindows:),
 		                 (IMP) parla_tray_should_handle_reopen, "c@:@c");
+		class_addMethod (subclass,
+		                 @selector (applicationDidBecomeActive:),
+		                 (IMP) parla_tray_did_become_active, "v@:@");
 		objc_registerClassPair (subclass);
 	}
 
