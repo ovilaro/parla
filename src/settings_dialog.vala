@@ -75,6 +75,7 @@ namespace Dc {
         public MarkdownMode markdown_mode { get; set; default = MarkdownMode.ENABLED; }
         public CodeTheme code_theme { get; set; default = CodeTheme.ADAPTIVE; }
         public bool shift_enter_sends { get; set; default = false; }
+        public bool clean_pasted_links { get; set; default = false; }
         public bool notifications_enabled { get; set; default = true; }
         public bool show_notification_contents { get; set; default = true; }
         public bool minimize_to_tray { get; set; default = false; }
@@ -181,6 +182,7 @@ namespace Dc {
                 (int) CodeTheme.ADAPTIVE, (int) CodeTheme.NONE);
             SyntaxHighlight.theme = code_theme;
             shift_enter_sends = kf_bool (kf, "shift_enter_sends", false);
+            clean_pasted_links = kf_bool (kf, "clean_pasted_links", false);
             notifications_enabled = kf_bool (kf, "notifications_enabled", true);
             show_notification_contents =
                 kf_bool (kf, "show_notification_contents", true);
@@ -295,6 +297,11 @@ namespace Dc {
         public void save_shift_enter_sends (bool v) {
             shift_enter_sends = v;
             save_bool ("shift_enter_sends", v);
+        }
+
+        public void save_clean_pasted_links (bool v) {
+            clean_pasted_links = v;
+            save_bool ("clean_pasted_links", v);
         }
 
         public void save_notifications_enabled (bool v) {
@@ -792,6 +799,19 @@ namespace Dc {
             });
 
             behavior_group.add (shift_row);
+
+            var clean_links_row = action_row (
+                "Remove tracking from pasted links",
+                "Strip known tracking parameters (YouTube, X, Instagram, "
+                + "Facebook, LinkedIn and others) from links pasted into "
+                + "the message field");
+            var clean_links_switch = row_switch (
+                clean_links_row, app_window.settings.clean_pasted_links);
+            clean_links_switch.notify["active"].connect (() => {
+                app_window.settings.save_clean_pasted_links (
+                    clean_links_switch.active);
+            });
+            behavior_group.add (clean_links_row);
 
             var audio_row = action_row (
                 "System audio tools",

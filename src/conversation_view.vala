@@ -480,6 +480,8 @@ namespace Dc {
             compose_bar.halign = Gtk.Align.FILL;
             settings.bind_property ("shift-enter-sends", compose_bar,
                                     "shift-enter-sends", BindingFlags.SYNC_CREATE);
+            settings.bind_property ("clean-pasted-links", compose_bar,
+                                    "clean-pasted-links", BindingFlags.SYNC_CREATE);
             compose_bar.send_message.connect (on_send_message);
             compose_bar.send_voice_message.connect (on_send_voice_message);
             compose_bar.draft_changed.connect (on_draft_changed);

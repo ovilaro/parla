@@ -10,6 +10,9 @@ namespace Dc {
            newline. When true, the roles are swapped. */
         public bool shift_enter_sends { get; set; default = false; }
 
+        /* Strip known tracking parameters from URLs in pasted text. */
+        public bool clean_pasted_links { get; set; default = false; }
+
         public signal void send_message (string text, string? file_path,
             string? file_name, int quote_msg_id);
         /* `text` is the transcription typed into the composer alongside the
@@ -1493,6 +1496,7 @@ namespace Dc {
             try {
                 var text = yield clipboard.read_text_async (null);
                 if (text == null || text.length == 0 || !text_view.editable) return;
+                if (clean_pasted_links) text = LinkCleaner.clean_text (text);
 
                 var buffer = text_view.buffer;
                 buffer.begin_user_action ();
