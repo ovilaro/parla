@@ -3488,18 +3488,16 @@ namespace Dc {
             present_modal (dialog);
         }
 
-        public delegate void ToastAction ();
-
         /* Toast with a single action button, e.g. "Chat archived" + Mute. */
-        public void show_action_toast (string message, string button_label,
-                                       owned ToastAction action) {
+        public Adw.Toast show_action_toast (string message,
+                                            string button_label) {
             var toast = new Adw.Toast (message);
             toast.timeout = 6;
             toast.button_label = button_label;
-            toast.button_clicked.connect (() => { action (); });
             var modal_toasts = active_modal != null
                 ? active_modal.child as Adw.ToastOverlay : null;
             (modal_toasts ?? toast_overlay).add_toast (toast);
+            return toast;
         }
 
         public void show_toast (string message) {

@@ -351,12 +351,13 @@ namespace Dc {
                 } else {
                     /* Unmuted chats pop back on the next message; offer the
                        one-click way to make the archive stick. */
-                    window.show_action_toast (
+                    var toast = window.show_action_toast (
                         "Chat archived. New messages will unarchive it.",
-                        "Mute", () => {
-                            set_mute_state.begin (chat_id, true,
-                                "Muted. Chat will stay archived.");
-                        });
+                        "Mute");
+                    toast.button_clicked.connect (() => {
+                        set_mute_state.begin (chat_id, true,
+                            "Muted. Chat will stay archived.");
+                    });
                 }
                 yield window.load_chats ();
             } catch (Error e) {
